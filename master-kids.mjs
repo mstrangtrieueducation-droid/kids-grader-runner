@@ -15,8 +15,8 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  c.kidsEvidenceSchema_=masterSchema;
  c.kidsGenerationConfig_=(model,form)=>generationConfig(MASTER_MODEL,c.kidsEvidenceSchema_(form));
  const latest=c.latest_;if(latest)c.latest_=(rows,...args)=>latest(rows.map(r=>({...r,time:receiptDate(r.time).toISOString()})),...args);
- const fallbackDates=new Map(),sourceRows=c.sourceRows_;
- const stableDate=r=>{const key=[r.sourceTab,r.row,r.className,r.student,r.code].join('|');if(!fallbackDates.has(key)){const prior=c.loadJobs_().find(x=>x.job.receipt?.sourceTab===r.sourceTab&&x.job.receipt?.row===r.row)?.job.receipt?.time;fallbackDates.set(key,receiptDate(prior||r.time));}return receiptDate(r.time,fallbackDates.get(key)).toISOString();};
+ const fallbackDates=new Map(),sourceRows=c.sourceRows_;let priorDates;
+ const stableDate=r=>{const parsed=receiptDate(r.time,new Date(NaN));if(Number.isFinite(parsed.getTime()))return parsed.toISOString();const key=[r.sourceTab,r.row].join('|');if(!fallbackDates.has(key)){priorDates ||= new Map(c.loadJobs_().map(x=>[[x.job.receipt?.sourceTab,x.job.receipt?.row].join('|'),x.job.receipt?.time]));fallbackDates.set(key,receiptDate(priorDates.get(key)));}return fallbackDates.get(key).toISOString();};
  const receipt=c.receiptAt_;if(receipt)c.receiptAt_=(values,...rest)=>{const schema=rest[1],copy=[...values];if(copy[schema.time] instanceof Date&&!Number.isFinite(copy[schema.time].getTime()))copy[schema.time]='';const r=receipt(copy,...rest);r.time=stableDate(r);return r;};
  if(sourceRows)c.sourceRows_=(...args)=>sourceRows(...args).map(r=>({...r,time:stableDate(r)}));
  const locateColumn=(headers,route)=>{try{return c.autoColumns_(headers,route);}catch{throw Error('DESTINATION_COLUMN_MISSING');}};
