@@ -20,7 +20,7 @@ export function restoreFeedbackColors(c,cell,grade=null){
  return {status:'COLORS_RESTORED',cell:cell.getA1Notation(),backupId,assessmentRevalidated:false,apiCalls:0};
 }
 export function reconcileFeedbackColors(c,{limit=16,deadline=Date.now()+20000}={}){
- const jobs=c.loadJobs_().filter(x=>!x.job.phonicsTemplateVersion&&['RETURNED','SKIPPED_EXISTING_FEEDBACK'].includes(x.job.status));
+ const jobs=c.loadJobs_().filter(x=>!x.job.phonicsTemplateVersion&&!x.job.savedFeedbackVersion&&['RETURNED','SKIPPED_EXISTING_FEEDBACK'].includes(x.job.status));
  if(!jobs.length)return {checked:0,restored:0};
  const key='FLEET_WORK_COLOR_REPAIR_CURSOR',start=Number(c.runnerProperties.get(key)||0)%jobs.length;
  let checked=0,restored=0;const errors={};

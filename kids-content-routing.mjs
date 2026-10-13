@@ -1,6 +1,7 @@
 import {phonicsSequenceColumn} from './phonics-destination-repair.mjs';
 import {isPhonics,PHONICS_VERSION,PHONICS_LABELS,PHONICS_PROMPT,phonicsText,phonicsRich,sectionsFromText} from './phonics-template.mjs';
-import {fullFeedback,networkRetry} from './kids-fault-tolerance.mjs';
+import {networkRetry} from './kids-fault-tolerance.mjs';
+import {SAVED_FEEDBACK_VERSION,savedSections,savedFeedback,savedFeedbackRich} from './saved-feedback.mjs';
 import {normalizeCode} from './master-barem.mjs';
 
 export const ROUTING_VERSION='kids-single-pass-v3';
@@ -73,13 +74,15 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
   if(occupied(cell)){stop(j,row,'SKIPPED_ALREADY_GRADED');return;}
   if(process.env.RUNNER_SHEET_BATCH!=='1')j.noticeBackupId=c.saveArtifact_('single-pass-before-'+j.id,{value:cell.getValue(),note:cell.getNote(),cell:cell.getA1Notation(),output:message,rawId:j.rawId});
   refresh(j);if(occupied(cell)||cell.getDisplayValue()!==before)throw Error('DESTINATION_CHANGED');
-  cell.setRichTextValue(isPhonics(j)?phonicsRich(c,cell,message):c.coloredFeedback_(cell,message,null));if(process.env.RUNNER_SHEET_BATCH!=='1'){refresh(j);if(cell.getDisplayValue()!==message)throw Error('WRITE_READBACK_FAILED');}
-  if(isPhonics(j))j.phonicsTemplateVersion=PHONICS_VERSION;delete j.pendingFeedback;j.cell=cell.getA1Notation();j.autoNotice=message;j.manualReviewRequired=false;stop(j,row,status);c.audit_(j.id,'SINGLE_PASS_FEEDBACK',message);
+  const sections=!isPhonics(j)&&status==='RETURNED'&&j.rawId?(j.pendingFeedbackRender?.sections||savedSections(draft(j),j.snapshotId?c.readArtifact_(j.snapshotId):{})):null;
+  cell.setRichTextValue(isPhonics(j)?phonicsRich(c,cell,message):sections?savedFeedbackRich(c,cell,message,sections):c.coloredFeedback_(cell,message,null));if(process.env.RUNNER_SHEET_BATCH!=='1'){refresh(j);if(cell.getDisplayValue()!==message)throw Error('WRITE_READBACK_FAILED');}
+  if(isPhonics(j))j.phonicsTemplateVersion=PHONICS_VERSION;else if(sections)j.savedFeedbackVersion=SAVED_FEEDBACK_VERSION;delete j.pendingFeedback;delete j.pendingFeedbackRender;j.cell=cell.getA1Notation();j.autoNotice=message;j.manualReviewRequired=false;stop(j,row,status);c.audit_(j.id,'SINGLE_PASS_FEEDBACK',message);
  }
  function draft(j){const raw=c.readArtifact_(j.rawId);return JSON.parse((raw.candidates?.[0]?.content?.parts||[]).filter(p=>p.text&&!p.thought).map(p=>p.text).join(''));}
  function limitedFeedback(j,row,error){
   j.technicalWarnings ||= [];j.technicalWarnings.push({error,rawId:j.rawId,at:new Date().toISOString()});
-  const g=draft(j);const text=isPhonics(j)?phonicsText(g,j,destination(j).cell.getDisplayValue(),j.snapshotId?c.readArtifact_(j.snapshotId):null):'— NHẬN XÉT GV —\n'+fullFeedback(g);
+  const g=draft(j),before=destination(j).cell.getDisplayValue(),snapshot=j.snapshotId?c.readArtifact_(j.snapshotId):{};
+  const rendered=isPhonics(j)?null:savedFeedback(g,j,before,snapshot),text=rendered?.text||phonicsText(g,j,before,snapshot);if(rendered)j.pendingFeedbackRender={version:rendered.version,sections:rendered.sections,score:rendered.score};
   j.pendingFeedback=text;persist(j,row);feedback(j,row,text,j.route,'RETURNED');
  } c.generate_=(j,parts,snapshot)=>{
   if(!j.rawId&&!j.retryGenerationAuthorized&&(j.generateRequests||j.runnerGenerationStarted||j.previousGradingAttempts?.length))throw Error('SINGLE_PASS_ALREADY_REQUESTED');
@@ -121,14 +124,19 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
   try{handle(j,row,e);}catch(handlerError){j.status='RETRY';j.error=e.message;j.handlerError=handlerError.message;j.nextAt=Date.now()+300000;persist(j,row);}
  };
  c.recoverContentRouting_=()=>{const result={reopened:0,ids:[],repaired:0};for(const {job:j,row} of c.loadJobs_()){
+  if(j.status==='RETURNED'&&!isPhonics(j)&&j.rawId&&j.autoNotice&&j.savedFeedbackVersion!==SAVED_FEEDBACK_VERSION&&j.autoNotice.startsWith('— NHẬN XÉT GV —\n')){try{
+   const cell=destination(j).cell,before=cell.getDisplayValue();if(before!==j.autoNotice||cell.getFormula()||cell.getDataValidation())continue;
+   const rendered=savedFeedback(draft(j),j,before,j.snapshotId?c.readArtifact_(j.snapshotId):{}),backup=c.saveArtifact_('saved-feedback-format-before-'+j.id,{before,after:rendered.text,cell:cell.getA1Notation(),rawId:j.rawId});
+   refresh(j);if(cell.getDisplayValue()!==before)continue;cell.setRichTextValue(savedFeedbackRich(c,cell,rendered.text,rendered.sections));j.autoNotice=rendered.text;j.savedFeedbackVersion=SAVED_FEEDBACK_VERSION;j.savedFeedbackRepair={at:new Date().toISOString(),backup};persist(j,row);result.repaired++;
+  }catch(e){emit({event:'SAVED_FEEDBACK_FORMAT_REPAIR_ERROR',id:j.id,error:e.message});}continue;}
   if(j.status==='RETURNED'&&isPhonics(j)&&j.rawId&&j.phonicsTemplateVersion!==PHONICS_VERSION){try{const cell=returnedCell(j),before=cell.getDisplayValue();const expected=j.autoNotice||(j.backupId?c.readArtifact_(j.backupId)?.output:null);if((expected&&before===expected||sectionsFromText(before).length===3)&&!cell.getFormula()&&!cell.getDataValidation()){const priorRepair=before===j.autoNotice&&j.phonicsTemplateRepair?.backup?c.readArtifact_(j.phonicsTemplateRepair.backup)?.before:null;const text=phonicsText(draft(j),j,before,j.snapshotId?c.readArtifact_(j.snapshotId):null,priorRepair||before);const backup=c.saveArtifact_('phonics-hugo-before-'+j.id,{before,after:text,cell:cell.getA1Notation(),rawId:j.rawId});refresh(j);if(cell.getDisplayValue()!==before)continue;cell.setRichTextValue(phonicsRich(c,cell,text));j.cell=cell.getA1Notation();j.autoNotice=text;j.phonicsTemplateVersion=PHONICS_VERSION;j.phonicsTemplateRepair={at:new Date().toISOString(),backup};persist(j,row);result.repaired++;}}catch(e){emit({event:'PHONICS_TEMPLATE_REPAIR_ERROR',id:j.id,error:e.message});}continue;}
   if(j.status==='RETURNED_WITH_LIMITATIONS'&&j.rawId&&j.autoNotice){try{
    const cell=destination(j).cell,before=cell.getDisplayValue();
    if(before===j.autoNotice&&!cell.getFormula()&&!cell.getDataValidation()){
-    const g=draft(j);const text=isPhonics(j)?phonicsText(g,j,destination(j).cell.getDisplayValue(),j.snapshotId?c.readArtifact_(j.snapshotId):null):'— NHẬN XÉT GV —\n'+fullFeedback(g);
+    const g=draft(j),snapshot=j.snapshotId?c.readArtifact_(j.snapshotId):{},rendered=isPhonics(j)?null:savedFeedback(g,j,before,snapshot),text=rendered?.text||phonicsText(g,j,before,snapshot);
     const backup=c.saveArtifact_('restore-full-feedback-'+j.id,{before,after:text,rawId:j.rawId,cell:cell.getA1Notation()});
     refresh(j);if(cell.getDisplayValue()!==before)continue;
-    cell.setRichTextValue(c.coloredFeedback_(cell,text,null));refresh(j);if(cell.getDisplayValue()!==text)throw Error('WRITE_READBACK_FAILED');
+    cell.setRichTextValue(rendered?savedFeedbackRich(c,cell,text,rendered.sections):phonicsRich(c,cell,text));if(process.env.RUNNER_SHEET_BATCH!=='1'){refresh(j);if(cell.getDisplayValue()!==text)throw Error('WRITE_READBACK_FAILED');}if(rendered)j.savedFeedbackVersion=SAVED_FEEDBACK_VERSION;else j.phonicsTemplateVersion=PHONICS_VERSION;
     j.restoredFullFeedback={at:new Date().toISOString(),backup};j.autoNotice=text;j.status='RETURNED';persist(j,row);result.repaired++;
    }
   }catch(e){emit({event:'SAVED_FEEDBACK_REPAIR_ERROR',id:j.id,error:e.message});}continue;}
