@@ -14,6 +14,10 @@ export function fullFeedback(g){
 }
 export function networkRetry(j,error,now=Date.now()){
  if(!/NETWORK|TIMEOUT|UNCERTAIN_GENERATION|HTTP_(408|500|502|503|504)/.test(error)||j.rawId||j.gradeId)return false;
+ if(j.generateRequests||j.runnerGenerationStarted||j.generationReservation){
+  j.retryGenerationAuthorized=false;j.status='NEEDS_REVIEW';j.error='UNCERTAIN_GENERATION_DO_NOT_REPLAY';j.nextAt=0;
+  j.uncertainGenerationHeld={at:new Date(now).toISOString(),transportError:error};return true;
+ }
  j.networkAttempts=(j.networkAttempts||0)+1;
  j.networkHistory ||= [];j.networkHistory.push({at:new Date(now).toISOString(),error,generateRequests:j.generateRequests||0});
  j.networkHistory=j.networkHistory.slice(-20);
