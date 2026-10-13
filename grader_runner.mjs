@@ -1,7 +1,7 @@
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
 import {installMasterKids} from './master-kids.mjs';
-import {MASTER_MODEL,MASTER_TERMINAL} from './master-policy.mjs';
+import {MASTER_MODEL,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {nextDrainWait} from './runner-policies.mjs';
 import {extractStudentAudio,inspectAudio} from './student-audio.mjs';
 import {MasterBaremCatalog,installKidsBarem} from './master-barem.mjs';
@@ -333,6 +333,7 @@ function runCluster(cluster,pass=0,phase='all'){
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
   if(option('--kind')&&job.route.kind!==option('--kind'))continue;
   if(option('--job-id')&&job.id!==option('--job-id'))continue;
+  if(args.has('--new-only')&&(job.rawId||job.gradeId||generationSpent(job)))continue;
   if(attempted.has(job.id))continue;attempted.add(job.id);
   if(job.status==='GENERATING'&&!job.rawId){job.status='NEEDS_REVIEW';job.error='UNCERTAIN_GENERATION';c.persist_(job,row);continue;}
   if(!['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED'].includes(job.status))continue;

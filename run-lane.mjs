@@ -25,7 +25,7 @@ async function main(){
  }
  let finished=0,requests=0;
  if(lane==='kids'){
-  const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40','--max-jobs=16','--max-api-calls='+String(Number(process.env.RUNNER_API_LIMIT||16))],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:45*60000,maxBuffer:20*1024*1024});
+  const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40','--max-jobs=16','--max-api-calls='+String(Math.min(16,Math.max(1,Number(process.env.RUNNER_API_LIMIT)||16))),...(process.env.RUNNER_VERIFY_NEW_MODEL==='true'?['--new-only']:[])],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:45*60000,maxBuffer:20*1024*1024});
   if(result.status!==0){fs.writeFileSync(path.join(root,'private','run-failure.txt'),result.stdout+'\n'+result.stderr);throw Error('KIDS_RUN_FAILED');}
   const counter=JSON.parse(fs.readFileSync(path.join(root,'private/last-run.json'),'utf8'));finished=counter.finished;requests=counter.paidCalls;
  }else{
