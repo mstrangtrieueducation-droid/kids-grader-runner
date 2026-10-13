@@ -1,10 +1,12 @@
 import fs from 'node:fs';
-import {annotateScoreAttention,ATTENTION_LABEL} from './score-attention.mjs';
+const ATTENTION_LABEL='≤75% — CẦN THEO DÕI';
 import {fileURLToPath} from 'node:url';
 import {Google} from './google-adapter.mjs';
 const TITLE='TIẾN ĐỘ CHUNG', MARKER='TIẾN ĐỘ CHẤM — KIDS / IELTS / SHADOWING';
 const pending=new Set(['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED','GENERATING','GENERATED']);
 export function dashboardState(j){
+ if(['CẦN_NỘP_LẠI_DO_ĐỌC_BÀI','COMPLETED_UNASSESSABLE','COMPLETED_NEEDS_RESUBMISSION'].includes(j.status))return 'CẦN NỘP LẠI';
+ if(j.status==='NEEDS_ASSIGNMENT')return 'CẦN CÔ GÁN CỘT/TÊN';
  if(j.status==='NEEDS_RESUBMISSION')return 'CẦN NỘP LẠI';
  if(j.status==='AUTOMATION_FAILED')return 'LỖI TỰ ĐỘNG — ĐÃ GHI LOG';
  if(j.status==='SKIPPED_ALREADY_GRADED')return 'GIỮ NHẬN XÉT CŨ';
@@ -33,17 +35,17 @@ export function refreshProgressDashboard(g,cfg,label='Theo dõi hàng đợi'){
     const cell=j.cell||j.target?.a1||j.destination?.a1||j.dest?.a1||'';
     const issue=(j.error==='GRADE_MANUAL_RESUBMISSION'?'Bài nộp lại sau cảnh báo; dành cho cô chấm tay.':j.recordingIssue?.reason)||(j.error==='GRADE_RECORDING_REVIEW'?'Chưa xác minh được cách quay; cô kiểm tra trước khi chấm.':j.error||'');
     items.push([b.kind,j.cls?.className||j.source?.className||j.className||'',j.receipt?.student||j.source?.name||'',j.route?.code||j.source?.code||'',state,issue,String(r[2]||''),target?`https://docs.google.com/spreadsheets/d/${target}/edit${cell?'#range='+encodeURIComponent(cell):''}`:'',`https://docs.google.com/spreadsheets/d/${b.controlId}/edit#gid=${s.getSheetId()}&range=A${start+i}:F${start+i}`]);
-    if(b.kind==='Kids'&&['ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ'].includes(state))scoreTargets.push({book:target,sheet:j.cls?.sheetName,cell,row:items[items.length-1]});
+    if(b.kind==='Kids'&&['ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ'].includes(state))scoreTargets.push({text:j.autoNotice||'',row:items[items.length-1]});
    });
   }
  }
- const attention=annotateScoreAttention(g,scoreTargets);
- const order=['CẦN NỘP LẠI','CHỜ CÔ CHẤM','CẦN KIỂM TRA','LỖI HỆ THỐNG — CHỜ PHỤC HỒI','ĐANG XỬ LÝ','ĐANG CHỜ','ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ','BỎ LƯỢT NỘP CŨ','BỎ QUA'];
+ const attention={low:0,basis:'saved_feedback',extraClassReads:0};for(const target of scoreTargets){const m=target.text.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i);if(m&&Number(m[1].replace(',','.'))<=75){target.row.lowScore=true;target.row[5]+=(target.row[5]?'\n':'')+'⚠️ Cần theo dõi ('+m[1]+'%)';attention.low++;}}
+ const order=['CẦN CÔ GÁN CỘT/TÊN','CẦN NỘP LẠI','CHỜ CÔ CHẤM','CẦN KIỂM TRA','LỖI HỆ THỐNG — CHỜ PHỤC HỒI','ĐANG XỬ LÝ','ĐANG CHỜ','ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ','BỎ LƯỢT NỘP CŨ','BỎ QUA'];
  items.sort((a,b)=>order.indexOf(a[4])-order.indexOf(b[4])||a[1].localeCompare(b[1],'vi',{numeric:true})||a[2].localeCompare(b[2],'vi'));
  const b=g.book(cfg.clusters[0].controlId);b.cache.clear();let s=b.getSheetByName(TITLE);
  if(s&&s.getRange('A1').getValue()!==MARKER)throw Error('DASHBOARD_UNMANAGED_TAB');
  if(!s)s=b.insertSheet(TITLE);
- const at=new Date().toISOString(),rows=[[MARKER],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'}),label],['Hồ sơ đã quét',items.length,...['ĐÃ TRẢ','ĐANG CHỜ','ĐANG XỬ LÝ'].flatMap(k=>[k,counts[k]||0])],['CẦN NỘP LẠI',counts['CẦN NỘP LẠI']||0,'CẦN KIỂM TRA',counts['CẦN KIỂM TRA']||0,'GIỮ NHẬN XÉT CŨ',counts['GIỮ NHẬN XÉT CŨ']||0,ATTENTION_LABEL,attention.low],['Lọc hàng 6 theo lớp/trạng thái. Tổng là hồ sơ hàng đợi đã quét, không phải số bài chấm thành công.'],['Khối','Lớp','Học sinh','Bài','Trạng thái','Lý do / Cần xử lý','Cập nhật hồ sơ','Mở nhận xét','Mở hàng đợi'],...items];
+ const at=new Date().toISOString(),rows=[[MARKER],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'}),label],['Hồ sơ đã quét',items.length,...['ĐÃ TRẢ','ĐANG CHỜ','ĐANG XỬ LÝ'].flatMap(k=>[k,counts[k]||0])],['CẦN NỘP LẠI',counts['CẦN NỘP LẠI']||0,'CẦN CÔ GÁN CỘT/TÊN',counts['CẦN CÔ GÁN CỘT/TÊN']||0,'GIỮ NHẬN XÉT CŨ',counts['GIỮ NHẬN XÉT CŨ']||0,ATTENTION_LABEL,attention.low],['Lọc hàng 6 theo lớp/trạng thái. Theo kết quả đã lưu; tổng là hồ sơ đã quét, không phải số bài chấm thành công.'],['Khối','Lớp','Học sinh','Bài','Trạng thái','Lý do / Cần xử lý','Cập nhật hồ sơ','Mở nhận xét','Mở hàng đợi'],...items];
  const id=s.getSheetId(),n=Math.max(rows.length,s.meta.properties.gridProperties.rowCount),rgb=(r,g,b)=>({red:r,green:g,blue:b});
  const req=[{updateSheetProperties:{properties:{sheetId:id,gridProperties:{rowCount:n,columnCount:Math.max(9,s.meta.properties.gridProperties.columnCount),frozenRowCount:6}},fields:'gridProperties'}}];
  // Own only this dedicated report tab, not the job queues or learner cells.
@@ -56,7 +58,6 @@ export function refreshProgressDashboard(g,cfg,label='Theo dõi hàng đợi'){
  req.push({setBasicFilter:{filter:{range:{sheetId:id,startRowIndex:5,endRowIndex:Math.max(7,rows.length),startColumnIndex:0,endColumnIndex:9}}}});
  for(const [i,row]of items.entries())if(row.lowScore)req.push({repeatCell:{range:{sheetId:id,startRowIndex:i+6,endRowIndex:i+7,startColumnIndex:5,endColumnIndex:6},cell:{userEnteredFormat:{textFormat:{foregroundColor:rgb(183/255,28/255,28/255),bold:true}}},fields:'userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold'}});
  b.batch(req);
- b.cache.clear();if(s.getRange('A1').getValue()!==MARKER||s.getRange('B3').getValue()!==items.length)throw Error('DASHBOARD_READBACK_FAILED');
  const result={at,counts,attention,total:items.length,url:`https://docs.google.com/spreadsheets/d/${b.id}/edit#gid=${id}`};
  fs.mkdirSync('private',{recursive:true});fs.writeFileSync('private/unified-progress-latest.json',JSON.stringify(result,null,2));return result;
 }

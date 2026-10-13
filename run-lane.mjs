@@ -4,7 +4,7 @@ const required=n=>{const v=process.env[n]?.trim();if(!v)throw Error('MISSING_'+n
 const runTest=name=>{const r=spawnSync(process.execPath,[name],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,maxBuffer:10*1024*1024});if(r.status){fs.mkdirSync(path.join(root,'private'),{recursive:true});fs.writeFileSync(path.join(root,'private','test-failure.txt'),r.stdout+'\n'+r.stderr);throw Error('SAFEGUARD_TEST_FAILED');}console.log(JSON.stringify({test:name,passed:true,providerCalls:0}));};
 async function main(){
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');
- const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","export-runtime-import-tests.mjs"];runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
+ const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs"];runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  if(mode==='validate')return;
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/'+required('RUNNER_DEFAULT_BRANCH')))throw Error('TRUSTED_REPOSITORY_AND_BRANCH_REQUIRED');
  if(mode==='grade'&&process.env.GRADING_ENABLED!=='true')throw Error('HANDOFF_NOT_ENABLED');
@@ -25,7 +25,7 @@ async function main(){
  }
  let finished=0,requests=0;
  if(lane==='kids'){
-  const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40','--max-jobs=16','--max-api-calls=16'],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:45*60000,maxBuffer:20*1024*1024});
+  const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40','--max-jobs=16','--max-api-calls='+String(Number(process.env.RUNNER_API_LIMIT||16))],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:45*60000,maxBuffer:20*1024*1024});
   if(result.status!==0){fs.writeFileSync(path.join(root,'private','run-failure.txt'),result.stdout+'\n'+result.stderr);throw Error('KIDS_RUN_FAILED');}
   const counter=JSON.parse(fs.readFileSync(path.join(root,'private/last-run.json'),'utf8'));finished=counter.finished;requests=counter.paidCalls;
  }else{

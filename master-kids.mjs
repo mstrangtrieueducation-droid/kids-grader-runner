@@ -1,4 +1,4 @@
-import {MASTER_VERSION,MASTER_MODEL,MASTER_FORMS,MASTER_SYSTEM,PERCENT_BANDS,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL} from './master-policy.mjs';
+import {MASTER_VERSION,MASTER_MODEL,MASTER_SYSTEM,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {savedFeedbackRich} from './saved-feedback.mjs';
 import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
 import {PRESENTATION_RULE,confirmedScriptReading,readingResubmission,READING_RESUBMISSION_STATUS} from './presentation-resubmission.mjs';
@@ -30,7 +30,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   const ids=c.driveIds_(j.receipt.links);if(!ids.length||ids.length>8)throw Error('MEDIA_INVENTORY_INVALID');
   const files=ids.map(id=>c.fileMeta_(id));j.costPreflight={policy:MASTER_VERSION,checkedAt:new Date().toISOString(),files};return files;
  };
- function rejectReading(j,row,g){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';c.persist_(j,row);return;}const out=j.pendingMasterReading||readingResubmission(g,j);j.pendingMasterReading=out;c.persist_(j,row);cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));j.autoNotice=out.text;j.cell=cell.getA1Notation();j.status=READING_RESUBMISSION_STATUS;j.error='';j.nextAt=0;delete j.pendingMasterReading;c.persist_(j,row);}
+ function rejectReading(j,row,g){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}const out=j.pendingMasterReading||readingResubmission(g,j);j.pendingMasterReading=out;c.persist_(j,row);cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));j.autoNotice=out.text;j.cell=cell.getA1Notation();j.status=READING_RESUBMISSION_STATUS;j.manualReviewRequired=false;j.error='';j.nextAt=0;delete j.pendingMasterReading;c.persist_(j,row);}
  function pending(j,row,text,terminal='COMPLETED_NEEDS_RESUBMISSION'){
   const dst=c.destination_(j.cls,j.route,j.receipt.student),cell=dst.cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';c.persist_(j,row);return;}
   j.pendingMasterFeedback={text,terminal};c.persist_(j,row);
@@ -60,20 +60,21 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  }
  c.generate_=(j,parts,snapshot)=>{
   if(j.rawId)throw Error('FULL_FEEDBACK_READY');
-  if(j.generateRequests||j.masterGenerationReserved||j.runnerGenerationStarted||j.previousGradingAttempts?.length)throw Error('SINGLE_PASS_ALREADY_REQUESTED');
+  if(generationSpent(j))throw Error('SINGLE_PASS_ALREADY_REQUESTED');
   if(!snapshot.barem||snapshot.barem.masterVersion!==MASTER_VERSION)throw Error('BAREM_MASTER_REQUIRED');
   catalog.lookup('kids',j.route.code,{expectedHash:snapshot.barem.sha256});
   if((j.media||[]).some(m=>m.isReference))throw Error('BAREM_REFERENCE_MEDIA_FORBIDDEN');
   const mediaParts=c.masterGenerationParts_?c.masterGenerationParts_(j,parts):parts;
-  c.throttle_?.();j.masterGenerationReserved=true;delete j.retryGenerationAuthorized;j.generationModel=MASTER_MODEL;j.model=MASTER_MODEL;j.generateRequests=1;j.kidsReviewVersion=MASTER_VERSION;
+  const apiKey=c.keyFor_(j),payload=JSON.stringify({systemInstruction:{parts:[{text:c.kidsSystemInstruction_()}]},contents:[{role:'user',parts:[{text:c.prompt_(snapshot)}].concat(mediaParts)}],generationConfig:c.kidsGenerationConfig_(MASTER_MODEL,snapshot.form)});
+  c.throttle_?.();j.status='GENERATING';j.masterGenerationStartedAt=new Date().toISOString();j.masterGenerationReserved=true;delete j.retryGenerationAuthorized;j.generationModel=MASTER_MODEL;j.model=MASTER_MODEL;j.generateRequests=1;j.kidsReviewVersion=MASTER_VERSION;
   c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);
   c.recordMasterGeneration_?.(j);const started=Date.now();
   try{
-   const response=c.api_('/v1beta/models/'+MASTER_MODEL+':generateContent',c.keyFor_(j),{method:'post',contentType:'application/json',payload:JSON.stringify({systemInstruction:{parts:[{text:c.kidsSystemInstruction_()}]},contents:[{role:'user',parts:[{text:c.prompt_(snapshot)}].concat(mediaParts)}],generationConfig:c.kidsGenerationConfig_(MASTER_MODEL,snapshot.form)})});
+   const response=c.api_('/v1beta/models/'+MASTER_MODEL+':generateContent',apiKey,{method:'post',contentType:'application/json',payload});
    const raw=JSON.parse(response.getContentText());j.usageRecordedAt=new Date().toISOString();j.apiUsage=c.kidsUsageReceipt_?.(raw,j.usageRecordedAt);j.rawId=c.saveArtifact_('master-raw-'+j.id,raw);
    // All assessment/formatting uses this paid response, even if ancillary fields are absent.
    throw Error('FULL_FEEDBACK_READY');
-  }finally{j.lastGenerateMs=Date.now()-started;c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);if(j.apiUsage)c.recordMasterUsage_?.(j);}
+  }catch(e){if(e.message!=='FULL_FEEDBACK_READY'){j.technicalFailures ||= [];j.technicalFailures.push({at:new Date().toISOString(),phase:'generation',code:e.message,httpCode:e.httpCode||null,details:e.apiDetails||null});}throw e;}finally{j.lastGenerateMs=Date.now()-started;c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);if(j.apiUsage)c.recordMasterUsage_?.(j);}
  };
  c.step_=(j,row,deadline,options)=>{c.masterActiveRow=row;try{
   if(MASTER_TERMINAL.has(j.status))return;
@@ -81,13 +82,14 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   j.receipt.time=receiptDate(j.receipt.time).toISOString();
   if(j.pendingMasterReading){rejectReading(j,row,{});return;}
   if(j.pendingMasterFeedback){pending(j,row,j.pendingMasterFeedback.text,j.pendingMasterFeedback.terminal);return;}
-  if(!j.rawId&&(j.generateRequests||j.masterGenerationReserved||j.previousGradingAttempts?.length)){pending(j,row,'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.');return;}
+  if(!j.rawId&&generationSpent(j)){pending(j,row,'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.');return;}
   if(j.rawId){const d=decodeSavedDraft(c.readArtifact_(j.rawId));if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){pending(j,row,UNCLEAR_AUDIO,'COMPLETED_UNASSESSABLE');return;}
   }
   if(!j.rawId&&j.snapshotId){const s=c.readArtifact_(j.snapshotId);if(s.barem?.masterVersion!==MASTER_VERSION){const fresh=c.guide_(j.route);j.previousSnapshotId=j.snapshotId;j.snapshotId=c.saveArtifact_('master-local-input-'+j.id,fresh);j.sourceHash=c.hash_(fresh);j.media=(j.media||[]).filter(m=>!m.isReference);c.persist_(j,row);}}
   originalStep(j,row,deadline,options);
  }catch(e){c.handleError_(j,row,e);}finally{delete c.masterActiveRow;}};
  c.handleError_=(j,row,e)=>{try{
+  if(/^SKIPPED_/.test(e.message)||e.message==='STALE_RECEIPT'){j.status=e.message==='STALE_RECEIPT'?'SKIPPED_OLD_SUBMISSION':e.message;j.error='';j.nextAt=0;c.persist_(j,row);return;}
   if(j.rawId){const d=decodeSavedDraft(c.readArtifact_(j.rawId));if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){pending(j,row,UNCLEAR_AUDIO,'COMPLETED_UNASSESSABLE');return;}}
   if(j.rawId)return originalError(j,row,Error('FULL_FEEDBACK_READY'));
   if(/PREFLIGHT_EXISTING|DESTINATION_FORMULA|DESTINATION_VALIDATION/.test(e.message)){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}

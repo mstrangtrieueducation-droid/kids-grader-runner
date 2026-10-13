@@ -41,6 +41,7 @@ export const normalizeName=s=>String(s||'').split(/\r?\n/)[0].normalize('NFD').r
 export function studentRows(values,name,start=3){const n=normalizeName(name);return values.flatMap((r,i)=>i>=start&&n&&[r[1],r[2]].some(v=>normalizeName(v)===n)?[i+1]:[]);}
 export function generationConfig(model,schema){return {temperature:TEMPERATURE,maxOutputTokens:8192,responseMimeType:'application/json',responseJsonSchema:schema,...(model==='gemini-2.5-flash'?{thinkingConfig:{thinkingBudget:0,includeThoughts:false}}:{})};}
 export const MASTER_TERMINAL=new Set(['RETURNED','SKIPPED_ALREADY_GRADED','SKIPPED_EXISTING_FEEDBACK','SKIPPED_OLD_SUBMISSION','SKIPPED_NOT_ASSIGNED','COMPLETED_UNASSESSABLE','COMPLETED_NEEDS_RESUBMISSION','CẦN_NỘP_LẠI_DO_ĐỌC_BÀI']);
+export function generationSpent(j){return !!(j.generateRequests||j.masterGenerationReserved||j.runnerGenerationStarted||j.generationReservation||j.previousGradingAttempts?.length||j.failedAttempts?.some(a=>a.rawId||a.usage||a.generateRequests||a.calls));}
 export function masterSchema(form){
  const str={type:'string'},bool={type:'boolean'},obj=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
  const span=obj({text:str,tone:{type:'string',enum:['praise','correction','neutral']}});

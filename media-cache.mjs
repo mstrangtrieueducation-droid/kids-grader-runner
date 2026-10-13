@@ -15,7 +15,7 @@ export class MediaCache {
   if(!/^[A-Za-z0-9_-]+$/.test(tag)||!lock.endsWith('.lock')||path.dirname(path.resolve(lock))!==path.join(this.root,'locks'))throw Error('MEDIA_CACHE_PATH_INVALID');
   fs.writeFileSync(path.join(this.root,tag+'.cache.json'),JSON.stringify({lock:path.basename(lock)}));
  }
- files(tag){if(!/^[A-Za-z0-9_-]+$/.test(tag))throw Error('MEDIA_CACHE_PATH_INVALID');return ['.original','.original.part','.m4a','.flac','.context.mp4','.working.m4a','.working.flac','.working.mp4','.context.jpg'].map(s=>path.join(this.root,tag+s));}
+ files(tag){if(!/^[A-Za-z0-9_-]+$/.test(tag))throw Error('MEDIA_CACHE_PATH_INVALID');return ['.original','.original.part','.m4a','.flac','.context.mp4','.working.m4a','.working.flac','.working.mp4','.context.jpg','.mp3','.mp3.working.mp3','.context-1.jpg','.context-2.jpg','.context-3.jpg'].map(s=>path.join(this.root,tag+s));}
  remove(paths){let bytes=0;for(const file of paths){try{const stat=fs.lstatSync(file);if(stat.isFile()&&!stat.isSymbolicLink()){fs.unlinkSync(file);bytes+=stat.size;}}catch(e){if(e.code!=='ENOENT')throw e;}}return bytes;}
  dropOriginal(tag){return this.remove(this.files(tag).slice(0,2));}
  dropUnlocked(tag){

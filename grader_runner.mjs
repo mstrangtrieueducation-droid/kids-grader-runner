@@ -234,7 +234,7 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
  if(audioFirst&&!m.isReference)job.runnerAudioOnly=true;
  // Retire pre-policy video uploads for audio tasks; their payload is never sent.
  if(audioFirst){
-  if(m.runnerUpload?.name&&!m.runnerUpload.mime.startsWith('audio/')){delete m.runnerUpload;delete m.runnerSharedReference;save();}
+  if(m.runnerUpload?.name&&!['audio/mpeg','audio/flac'].includes(m.runnerUpload.mime)){delete m.runnerUpload;delete m.runnerSharedReference;save();}
   if(m.upload?.name){delete m.upload;save();}
  }
  if(frameAvailable()&&m.runnerUpload?.name&&!m.runnerUpload.deleted&&(!audioFirst||m.runnerUpload.mime.startsWith('audio/'))&&(!proxyVideo||m.runnerUpload.mime.startsWith('video/'))){
@@ -242,9 +242,9 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
   catch(e){if(e.httpCode!==404)throw e;delete m.runnerUpload;save();}
  }
  if(m.upload?.name&&!m.runnerAudio&&!audioFirst){try{const info=JSON.parse(c.api_('/v1beta/'+m.upload.name,c.keyFor_(job)).getContentText());m.processingState=info.state;save();if(info.state==='ACTIVE')return {fileData:{mimeType:m.mime,fileUri:info.uri}};if(info.state==='FAILED')throw Error('MEDIA_PROCESSING_FAILED');return null;}catch(e){if(e.httpCode!==404)throw e;delete m.upload;save();}}
- const tag=m.id+'-'+c.hash_(m.modified).slice(0,10),original=path.join(cache,tag+'.original'),audio=path.join(cache,tag+'.m4a'),flac=path.join(cache,tag+'.flac'),proxy=path.join(cache,tag+'.context.mp4');let file=original,mime=m.mime;
+ const tag=m.id+'-'+c.hash_(m.modified).slice(0,10),original=path.join(cache,tag+'.original'),audio=path.join(cache,tag+'.m4a'),mp3=path.join(cache,tag+'.mp3'),flac=path.join(cache,tag+'.flac'),proxy=path.join(cache,tag+'.context.mp4');let file=original,mime=m.mime;
  const present=p=>fs.existsSync(p)&&fs.statSync(p).size>0;
- if(audioFirst&&frameAvailable()&&(present(audio)||present(flac))){file=present(audio)?audio:flac;mime=file===audio?'audio/mp4':'audio/flac';}
+ if(audioFirst&&frameAvailable()&&(present(mp3)||present(flac))){file=present(mp3)?mp3:flac;mime=file===mp3?'audio/mpeg':'audio/flac';}
  else if(proxyVideo&&present(proxy)){file=proxy;mime='video/mp4';}
  if(fs.existsSync(original)&&fs.statSync(original).size!==m.size)fs.unlinkSync(original);
  // Large files use durable Drive -> Gemini chunks; a GitHub VM replacement cannot
@@ -271,7 +271,7 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
   try{if(job.route.kind==='phonics')m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});else{m.runnerContextFrames=extractPresentationFrames({ffmpeg,input:original,output,durationSeconds:duration});if(!m.runnerContextFrames.length)m.visualExtractionFailed=true;}}catch{m.visualExtractionFailed=true;}save();
  }
  if(audioFirst){
- if(file===original){mediaCache.sweep(Math.min(m.size,256*1024*1024));const extracted=extractStudentAudio({ffmpeg,input:original,audio,flac});file=extracted.file;mime=extracted.mime;m.audioSelection=extracted.selection;}
+ if(file===original){mediaCache.sweep(Math.min(m.size,256*1024*1024));const extracted=extractStudentAudio({ffmpeg,input:original,audio,flac,canonicalFormat:'mp3'});file=extracted.file;mime=extracted.mime;m.audioSelection=extracted.selection;}
   if(file===original){file=audio;mime='audio/mp4';}
   job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame&&!x.runnerContextFrames?.length);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4'};
   mediaCache.dropOriginal(tag);
