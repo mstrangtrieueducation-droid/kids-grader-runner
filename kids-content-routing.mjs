@@ -1,5 +1,5 @@
 import {phonicsSequenceColumn} from './phonics-destination-repair.mjs';
-import {isPhonics,PHONICS_VERSION,PHONICS_LABELS,PHONICS_PROMPT,phonicsText,phonicsRich} from './phonics-template.mjs';
+import {isPhonics,PHONICS_VERSION,PHONICS_LABELS,PHONICS_PROMPT,phonicsText,phonicsRich,sectionsFromText} from './phonics-template.mjs';
 import {fullFeedback,networkRetry} from './kids-fault-tolerance.mjs';
 import {normalizeCode} from './master-barem.mjs';
 
@@ -45,6 +45,21 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
  const index=routingIndex(catalog),step=c.step_,handle=c.handleError_,generate=c.generate_;
  const persist=(j,row)=>c.persist_(j,row);
  const destination=(j,route=j.route)=>{refresh(j);return c.destination_(j.cls,route,j.receipt.student);};
+ function returnedCell(j){
+  try{return destination(j).cell;}catch(e){
+   if(e.message!=='STUDENT_AMBIGUOUS'||j.status!=='RETURNED'||!j.backupId)throw e;
+   // A new pupil can share an old nickname. Anchor this formatting-only
+   // repair to the unique existing feedback, using today's lesson column.
+   const backup=c.readArtifact_(j.backupId),expected=j.autoNotice||backup?.output;
+   if(!expected||backup.spreadsheetId!==j.cls.spreadsheetId)throw e;
+   const sheet=c.SpreadsheetApp.openById(j.cls.spreadsheetId).getSheetByName(backup.sheet);
+   if(!sheet)throw e;
+   const column=c.autoColumns_(c.expandedHeaders_(sheet),j.route),names=sheet.getRange(4,3,sheet.getLastRow()-3,1).getDisplayValues().flat();
+   const cells=names.flatMap((name,i)=>c.norm_(name)===c.norm_(j.receipt.student)?[sheet.getRange(i+4,column)]:[]).filter(cell=>cell.getDisplayValue()===expected);
+   if(cells.length!==1)throw e;
+   return cells[0];
+  }
+ }
  const occupied=cell=>c.hasFeedback_(cell.getDisplayValue())||!!cell.getFormula()||!!cell.getDataValidation();
  const stop=(j,row,status,error='')=>{j.status=status;j.error=error;j.nextAt=0;persist(j,row);};
  const writeGrade=c.writeGrade_;
@@ -64,7 +79,7 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
  function draft(j){const raw=c.readArtifact_(j.rawId);return JSON.parse((raw.candidates?.[0]?.content?.parts||[]).filter(p=>p.text&&!p.thought).map(p=>p.text).join(''));}
  function limitedFeedback(j,row,error){
   j.technicalWarnings ||= [];j.technicalWarnings.push({error,rawId:j.rawId,at:new Date().toISOString()});
-  const g=draft(j);const text=isPhonics(j)?phonicsText(g,j,destination(j).cell.getDisplayValue()):'— NHẬN XÉT GV —\n'+fullFeedback(g);
+  const g=draft(j);const text=isPhonics(j)?phonicsText(g,j,destination(j).cell.getDisplayValue(),j.snapshotId?c.readArtifact_(j.snapshotId):null):'— NHẬN XÉT GV —\n'+fullFeedback(g);
   j.pendingFeedback=text;persist(j,row);feedback(j,row,text,j.route,'RETURNED');
  } c.generate_=(j,parts,snapshot)=>{
   if(!j.rawId&&!j.retryGenerationAuthorized&&(j.generateRequests||j.runnerGenerationStarted||j.previousGradingAttempts?.length))throw Error('SINGLE_PASS_ALREADY_REQUESTED');
@@ -106,11 +121,11 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
   try{handle(j,row,e);}catch(handlerError){j.status='RETRY';j.error=e.message;j.handlerError=handlerError.message;j.nextAt=Date.now()+300000;persist(j,row);}
  };
  c.recoverContentRouting_=()=>{const result={reopened:0,ids:[],repaired:0};for(const {job:j,row} of c.loadJobs_()){
-  if(j.status==='RETURNED'&&isPhonics(j)&&j.rawId&&j.phonicsTemplateVersion!==PHONICS_VERSION){try{const cell=destination(j).cell,before=cell.getDisplayValue();const expected=j.autoNotice||(j.backupId?c.readArtifact_(j.backupId)?.output:null);if(expected&&before===expected&&!cell.getFormula()&&!cell.getDataValidation()){const text=phonicsText(draft(j),j,before);const backup=c.saveArtifact_('phonics-hugo-before-'+j.id,{before,after:text,cell:cell.getA1Notation(),rawId:j.rawId});refresh(j);if(cell.getDisplayValue()!==before)continue;cell.setRichTextValue(phonicsRich(c,cell,text));j.autoNotice=text;j.phonicsTemplateVersion=PHONICS_VERSION;j.phonicsTemplateRepair={at:new Date().toISOString(),backup};persist(j,row);result.repaired++;}}catch(e){emit({event:'PHONICS_TEMPLATE_REPAIR_ERROR',id:j.id,error:e.message});}continue;}
+  if(j.status==='RETURNED'&&isPhonics(j)&&j.rawId&&j.phonicsTemplateVersion!==PHONICS_VERSION){try{const cell=returnedCell(j),before=cell.getDisplayValue();const expected=j.autoNotice||(j.backupId?c.readArtifact_(j.backupId)?.output:null);if((expected&&before===expected||sectionsFromText(before).length===3)&&!cell.getFormula()&&!cell.getDataValidation()){const priorRepair=before===j.autoNotice&&j.phonicsTemplateRepair?.backup?c.readArtifact_(j.phonicsTemplateRepair.backup)?.before:null;const text=phonicsText(draft(j),j,before,j.snapshotId?c.readArtifact_(j.snapshotId):null,priorRepair||before);const backup=c.saveArtifact_('phonics-hugo-before-'+j.id,{before,after:text,cell:cell.getA1Notation(),rawId:j.rawId});refresh(j);if(cell.getDisplayValue()!==before)continue;cell.setRichTextValue(phonicsRich(c,cell,text));j.cell=cell.getA1Notation();j.autoNotice=text;j.phonicsTemplateVersion=PHONICS_VERSION;j.phonicsTemplateRepair={at:new Date().toISOString(),backup};persist(j,row);result.repaired++;}}catch(e){emit({event:'PHONICS_TEMPLATE_REPAIR_ERROR',id:j.id,error:e.message});}continue;}
   if(j.status==='RETURNED_WITH_LIMITATIONS'&&j.rawId&&j.autoNotice){try{
    const cell=destination(j).cell,before=cell.getDisplayValue();
    if(before===j.autoNotice&&!cell.getFormula()&&!cell.getDataValidation()){
-    const g=draft(j);const text=isPhonics(j)?phonicsText(g,j,destination(j).cell.getDisplayValue()):'— NHẬN XÉT GV —\n'+fullFeedback(g);
+    const g=draft(j);const text=isPhonics(j)?phonicsText(g,j,destination(j).cell.getDisplayValue(),j.snapshotId?c.readArtifact_(j.snapshotId):null):'— NHẬN XÉT GV —\n'+fullFeedback(g);
     const backup=c.saveArtifact_('restore-full-feedback-'+j.id,{before,after:text,rawId:j.rawId,cell:cell.getA1Notation()});
     refresh(j);if(cell.getDisplayValue()!==before)continue;
     cell.setRichTextValue(c.coloredFeedback_(cell,text,null));refresh(j);if(cell.getDisplayValue()!==text)throw Error('WRITE_READBACK_FAILED');
