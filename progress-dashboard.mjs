@@ -5,6 +5,7 @@ import {Google} from './google-adapter.mjs';
 const TITLE='TIẾN ĐỘ CHUNG', MARKER='TIẾN ĐỘ CHẤM — KIDS / IELTS / SHADOWING';
 const pending=new Set(['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED','GENERATING','GENERATED']);
 export function dashboardState(j){
+ if(j.status==='WAITING_MODEL_ACCESS')return 'CHỜ MODEL KHẢ DỤNG';
  if(['CẦN_NỘP_LẠI_DO_ĐỌC_BÀI','COMPLETED_UNASSESSABLE','COMPLETED_NEEDS_RESUBMISSION'].includes(j.status))return 'CẦN NỘP LẠI';
  if(j.status==='NEEDS_ASSIGNMENT')return 'CẦN CÔ GÁN CỘT/TÊN';
  if(j.status==='NEEDS_RESUBMISSION')return 'CẦN NỘP LẠI';
@@ -40,7 +41,7 @@ export function refreshProgressDashboard(g,cfg,label='Theo dõi hàng đợi'){
   }
  }
  const attention={low:0,basis:'saved_feedback',extraClassReads:0};for(const target of scoreTargets){const m=target.text.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i);if(m&&Number(m[1].replace(',','.'))<=75){target.row.lowScore=true;target.row[5]+=(target.row[5]?'\n':'')+'⚠️ Cần theo dõi ('+m[1]+'%)';attention.low++;}}
- const order=['CẦN CÔ GÁN CỘT/TÊN','CẦN NỘP LẠI','CHỜ CÔ CHẤM','CẦN KIỂM TRA','LỖI HỆ THỐNG — CHỜ PHỤC HỒI','ĐANG XỬ LÝ','ĐANG CHỜ','ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ','BỎ LƯỢT NỘP CŨ','BỎ QUA'];
+ const order=['CẦN CÔ GÁN CỘT/TÊN','CHỜ MODEL KHẢ DỤNG','CẦN NỘP LẠI','CHỜ CÔ CHẤM','CẦN KIỂM TRA','LỖI HỆ THỐNG — CHỜ PHỤC HỒI','ĐANG XỬ LÝ','ĐANG CHỜ','ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ','BỎ LƯỢT NỘP CŨ','BỎ QUA'];
  items.sort((a,b)=>order.indexOf(a[4])-order.indexOf(b[4])||a[1].localeCompare(b[1],'vi',{numeric:true})||a[2].localeCompare(b[2],'vi'));
  const b=g.book(cfg.clusters[0].controlId);b.cache.clear();let s=b.getSheetByName(TITLE);
  if(s&&s.getRange('A1').getValue()!==MARKER)throw Error('DASHBOARD_UNMANAGED_TAB');

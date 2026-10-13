@@ -79,6 +79,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  c.step_=(j,row,deadline,options)=>{c.masterActiveRow=row;try{
   if(MASTER_TERMINAL.has(j.status))return;
   if(!j.rawId&&j.gradeId){j.rawId=j.gradeId;c.persist_(j,row);}
+  if(!j.rawId&&process.env.MODEL_GRADING_AVAILABLE==='false'){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;j.status=c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()?'SKIPPED_ALREADY_GRADED':'WAITING_MODEL_ACCESS';j.error=j.status==='WAITING_MODEL_ACCESS'?'MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT':'';j.nextAt=0;c.persist_(j,row);return;}
   j.receipt.time=receiptDate(j.receipt.time).toISOString();
   if(j.pendingMasterReading){rejectReading(j,row,{});return;}
   if(j.pendingMasterFeedback){pending(j,row,j.pendingMasterFeedback.text,j.pendingMasterFeedback.terminal);return;}
@@ -92,6 +93,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   if(/^SKIPPED_/.test(e.message)||e.message==='STALE_RECEIPT'){j.status=e.message==='STALE_RECEIPT'?'SKIPPED_OLD_SUBMISSION':e.message;j.error='';j.nextAt=0;c.persist_(j,row);return;}
   if(j.rawId){const d=decodeSavedDraft(c.readArtifact_(j.rawId));if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){pending(j,row,UNCLEAR_AUDIO,'COMPLETED_UNASSESSABLE');return;}}
   if(j.rawId)return originalError(j,row,Error('FULL_FEEDBACK_READY'));
+  if(e.httpCode===404&&/no longer available|not found|not supported/i.test(e.apiDetails?.message||'')){j.status='WAITING_MODEL_ACCESS';j.error='MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT';j.nextAt=0;c.persist_(j,row);return;}
   if(/PREFLIGHT_EXISTING|DESTINATION_FORMULA|DESTINATION_VALIDATION/.test(e.message)){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}
   return exception(j,row,e);
  }catch(delivery){j.status='RETRY';j.error=delivery.message;j.nextAt=Date.now()+60000;c.persist_(j,row);}};
