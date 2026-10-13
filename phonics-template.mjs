@@ -1,4 +1,4 @@
-export const PHONICS_VERSION='hugo-phonics-v4';
+export const PHONICS_VERSION='hugo-phonics-v5';
 export const PHONICS_LABELS=['Phát âm âm đang học','Âm đuôi & trọng âm','Thuộc mặt chữ'];
 export const isPhonics=j=>['phonics','phonicsVideo'].includes(j.route?.kind)||/phonics|\bOP[1-4][ -]?L\d+/i.test([j.receipt?.code,j.route?.code,j.receipt?.sourceTab].join(' '));
 export const PHONICS_PROMPT=`PHONICS — MẪU HUGO, THAY THẾ TIÊU CHÍ TỐC ĐỘ & NGỮ ĐIỆU CHUNG:
@@ -13,6 +13,12 @@ const recognition=/mặt chữ|nhận diện|nhận biết.*chữ|nhìn.*chữ|s
 const voice=/giọng|nhịp|ngữ điệu|nhạc|hào hứng|âm lượng/i;
 const clean=s=>String(s||'').replace(/^\s*(?:Âm đuôi|Phát âm)\s*:\s*/i,'').trim();
 const key=s=>clean(s).toLocaleLowerCase('vi').replace(/[\s.,:;!]+/g,' ').trim();
+function humanLine(text){
+ const parts=text.split(' — ');if(parts.length<4||!/^[a-z][a-z '’-]*$/i.test(parts[0])||!parts[1].startsWith('/'))return text;
+ const time=/^\d{1,2}:\d{2}$/.test(parts.at(-1))?parts.pop():'';
+ const [word,ipa,heard,...fix]=parts,observation=heard.toLowerCase()===word.toLowerCase()?'':/^(?:Con|Cô|phát âm|chưa|thiếu)/i.test(heard)?heard:'con đọc thành '+heard;
+ return 'Con chú ý từ '+word+' '+ipa+(time?' ở đoạn '+time:'')+': '+[observation,...fix].filter(Boolean).join('. ').replace(/\.\./g,'.');
+}
 export function sectionsFromText(text){
  const matches=[...String(text||'').matchAll(/•\s*(Phát âm âm đang học|Phát âm từ\/câu|Âm đuôi & trọng âm|Thuộc mặt chữ|Trôi chảy & ngữ điệu)\s*:?[ \t]*(?:\n)?/g)];
  return matches.map((m,i)=>({label:m[1],text:text.slice(m.index+m[0].length,matches[i+1]?.index??text.length).trim()}));
@@ -34,6 +40,8 @@ export function phonicsSections(g,{before='',snapshot=null}={}){
   // Generic voice praise must not stand in for endings or word recognition.
   if(voice.test(text)&&!ending.test(text)&&!recognition.test(text)&&!/đọc (?:được|đúng|đủ|trôi chảy)|hoàn thành/i.test(text))i=0;
   if(/^(?:Tốt|Khá tốt|Đánh giá theo phần có căn cứ dưới đây)[.!]?$/i.test(text))return;
+  text=humanLine(text);
+  text=text.replace(/Con đọc thành ([a-z][a-z '’-]*)\.\s*/gi,(match,word)=>new RegExp('Con chú ý từ '+word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?: |/)', 'i').test(text)?'':match);
   if(seen.has(key(text)))return;seen.add(key(text));blocks[i].push(text);
  }
  const currentText=supplied.map(s=>s.text||'').join('\n');
@@ -48,7 +56,7 @@ export function phonicsSections(g,{before='',snapshot=null}={}){
   // older raw response or repeat the same word's correction a second time.
   const escaped=String(e.word||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   if(current.length===3&&e.mechanism==='vowel'&&escaped&&new RegExp('\\b'+escaped+'\\b','i').test(currentText)&&ending.test(e.correction||'')){
-   const specific=[e.word,e.ipa,e.heardFeature,e.expectedFeature?'Con luyện rõ âm '+e.expectedFeature+'.':e.correction,e.time].filter(Boolean).join(' — ');
+   const specific=humanLine([e.word,e.ipa,e.heardFeature,e.expectedFeature?'Con luyện rõ âm '+e.expectedFeature+'.':e.correction,e.time].filter(Boolean).join(' — '));
    if(!seen.has(key(specific))){seen.add(key(specific));blocks[0].push(specific);}
   }
   if(escaped&&new RegExp('\\b'+escaped+'\\b','i').test(currentText)&&/chú ý|chưa|thiếu|nhầm|sửa| — |cần|lưu ý/i.test(currentText))continue;
@@ -59,6 +67,11 @@ export function phonicsSections(g,{before='',snapshot=null}={}){
   if(f.basis)add(f.basis,/letter_recognition|prompted_words|content_covered/.test(f.skill)?'Thuộc mặt chữ':'');
  }
  for(const x of g.contentChecks||[])if(x.feedback)add(x.feedback,'Thuộc mặt chữ');
+ const ledger=g.scoreLedger?.units,targets=snapshot?.barem?.phoneticTargets||[],wrong=new Set((ledger?.errors||[]).map(e=>e.unitIndex)),unclear=new Set(ledger?.unclearIndexes||[]);
+ if(g.scoreLedger?.complete&&ledger?.targets?.length&&targets.length&&blocks[0].some(t=>/một số từ|các âm chính|phần lớn|các từ vựng/i.test(t))){
+  const correct=targets.filter(word=>{const indexes=ledger.targets.flatMap((v,i)=>String(v).toLowerCase()===String(word).toLowerCase()?[i]:[]);return indexes.length&&indexes.every(i=>!wrong.has(i)&&!unclear.has(i));}).slice(0,6);
+  if(correct.length){const praise='Con đọc rõ các âm và từ '+correct.join(', ')+'.';blocks[0]=blocks[0].filter(t=>t!==praise&&!/^Con đọc (?:rõ một số từ trong bài|phát âm rõ các âm chính trong bài)[.!]?$/.test(t));blocks[0].unshift(praise);}
+ }
  const fallback=['Con tiếp tục luyện rõ từng âm và nhóm chữ của bài nhé.','Con tiếp tục chú ý phát âm đủ âm cuối và nhấn đúng trọng âm khi luyện lại bài nhé.','Con luyện nhìn chữ, đọc từng từ và sight words, rồi đọc lại câu trong bài nhé.'];
  if(blocks[0].some(t=>/âm|vần|nhóm chữ/i.test(t)&&!/^Con tiếp tục|^Con luyện/i.test(t)))blocks[0]=blocks[0].filter(t=>!/^Con đọc rõ một số từ trong bài[.!]?$/.test(t));
  // Restore meaningful reading observations from the saved assessment. A

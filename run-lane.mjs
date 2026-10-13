@@ -36,5 +36,7 @@ async function main(){
  }
  const report={lane,finished,providerGenerateCalls:requests};console.log(JSON.stringify(report));
  if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`${lane}: ${finished} results returned; ${requests} provider requests.\n`);
+ if(lane==='kids'&&bundle.progressConfig){try{const {refreshProgressDashboard}=await import('./progress-dashboard.mjs');refreshProgressDashboard(google,bundle.progressConfig,'GitHub public — quét định kỳ và giữ checkpoint');console.log(JSON.stringify({teacherProgressUpdated:true}));}catch{console.log(JSON.stringify({teacherProgressUpdated:false,gradingResultsPreserved:true}));}}
+
 }
 main().catch(e=>{const code=/^[A-Z][A-Z0-9_]+$/.test(e.message||'')?e.message:'RUN_FAILED';console.error(JSON.stringify({failed:true,code}));process.exitCode=1;});

@@ -11,3 +11,5 @@ Actions → Grade KIDS Pipeline → Run workflow: validate (no external calls), 
 The standard public GitHub runner has free minutes; Gemini charges and job/API/concurrency limits still apply. A green run is infrastructure success: check its returned-result counter for actual grading.
 
 Requires Node.js 24, Python 3 and ffmpeg. 
+
+The KIDS lane also refreshes the existing combined teacher progress Sheet using private queue bindings for KIDS, IELTS and Shadowing. This single progress writer preserves all lanes in the table. A progress-refresh issue does not replay already completed grading.
