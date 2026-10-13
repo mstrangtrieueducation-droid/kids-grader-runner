@@ -5,7 +5,8 @@ export const PHONICS_PROMPT=`PHONICS — MẪU HUGO, THAY THẾ TIÊU CHÍ TỐC
 roseSections phải có đúng 3 mục, đúng thứ tự: Phát âm âm đang học; Âm đuôi & trọng âm; Thuộc mặt chữ.
 Phát âm âm đang học: lấy đúng âm/nhóm chữ mục tiêu trong barem bài được giao, nêu cụ thể con phát âm thế nào ở từng từ nghe được, từ đúng và từ cần sửa. Không đoán âm mục tiêu từ tên Phonics chung.
 Âm đuôi & trọng âm: chỉ rõ từ, âm cuối/trọng âm thực sai, IPA chuẩn nếu có, cách sửa và mốc mm:ss khi xác định được. Nếu chưa xác định mốc/IPA vẫn trả đủ lời chữa, không bịa. Không thêm lỗi nếu không nghe thấy.
-Thuộc mặt chữ: nhận diện chữ, đọc từ, sight words và bài đọc/Story của đúng tiết. Phonics đọc PDF được nhìn chữ trong tài liệu cô giao. Không suy trí nhớ/thuộc lòng từ đọc trôi chảy. Nếu chỉ có audio hoặc không nhìn rõ chữ, nêu đúng phần đọc nghe được và giới hạn nhận diện, không tự chứng nhận nhìn hình/mặt chữ. Không dùng Tốc độ & ngữ điệu làm tiêu chí riêng.
+Thuộc mặt chữ: nhận diện chữ, đọc từ, sight words và bài đọc/Story của đúng tiết. Phonics đọc PDF được nhìn chữ trong tài liệu cô giao. Không suy trí nhớ/thuộc lòng từ đọc trôi chảy. Nếu chỉ có audio, nhận xét cụ thể con đọc được từ, sight words hoặc câu nào; không tự chứng nhận nhìn hình và không thêm câu tự giới hạn như "qua phần ghi âm", "cô chưa xác định". Không dùng Tốc độ & ngữ điệu làm tiêu chí riêng.
+Viết trực tiếp bằng lời cô nói với con, giống mẫu Hugo: mỗi mục có nhận xét cụ thể, lời khen và lời sửa khi có căn cứ. Không thêm dòng "Bài luyện", tên nội bộ, lời khen giọng chung chung, dấu bảng dữ liệu "—" giữa các trường, hay thông báo hạn chế kỹ thuật. Với từ đọc sai, nêu từ, âm cần sửa và cách luyện thành câu tiếng Việt tự nhiên. Lời khen phải được đánh dấu praise, lời sửa correction; không tô màu sửa lỗi cho câu khen phát âm đúng.
 rubricBand là chất lượng ước tính 0–100% dựa đủ ba mục, theo barem; không tự cho 100% khi còn thiếu căn cứ. Viết chi tiết, xưng cô/con, giữ đầy đủ từ, câu sửa và cách luyện.`;
 const strings=x=>Array.isArray(x)?x:Object.values(x||{});
 const ending=/âm (?:cuối|đuôi)|âm cuối|cuối từ|trọng âm|nuốt âm|missing_final|final_consonant|stress/i;
@@ -84,7 +85,7 @@ export function phonicsSections(g,{before='',snapshot=null}={}){
  return PHONICS_LABELS.map((label,i)=>({label,text:blocks[i].join('\n')||fallback[i]}));
 }
 export function phonicsText(g,j,before='',snapshot=null,sourceText=before){
- const sections=phonicsSections(g,{before:sourceText,snapshot}),raw=g.rubricBand||g.band||'',m=before.match(/Chất lượng:\s*(?:đạt khoảng\s*)?(\d+(?:\.\d+)?)%/i)||String(raw).match(/^(\d+(?:\.\d+)?)%$/),score=m&&Number(m[1])>=0&&Number(m[1])<=100?Number(m[1]):null;
+ const sections=phonicsSections(g,{before:sourceText,snapshot}),raw=g.rubricBand||g.band||'',m=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i)||String(raw).match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=m?Number(m[1].replace(',','.')):NaN,score=value>=0&&value<=100?value:null;
  let date=new Date(j.receipt?.time);if(!Number.isFinite(date.getTime()))date=new Date();
  const stamp=new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Bangkok',dateStyle:'short',timeStyle:'short'}).format(date);
  const marker='— NHẬN XÉT GV —',prefix=before.includes(marker)&&before.slice(0,before.indexOf(marker)).includes('ĐÃ NỘP')?before.slice(0,before.indexOf(marker)):'✅ ĐÃ NỘP '+stamp+'\n';
