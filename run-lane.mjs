@@ -4,7 +4,7 @@ const required=n=>{const v=process.env[n]?.trim();if(!v)throw Error('MISSING_'+n
 const runTest=name=>{const r=spawnSync(process.execPath,[name],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,maxBuffer:10*1024*1024});if(r.status){fs.mkdirSync(path.join(root,'private'),{recursive:true});fs.writeFileSync(path.join(root,'private','test-failure.txt'),r.stdout+'\n'+r.stderr);throw Error('SAFEGUARD_TEST_FAILED');}console.log(JSON.stringify({test:name,passed:true,providerCalls:0}));};
 async function main(){
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');
- const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs"];runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
+ const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","export-runtime-import-tests.mjs"];runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  if(mode==='validate')return;
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/'+required('RUNNER_DEFAULT_BRANCH')))throw Error('TRUSTED_REPOSITORY_AND_BRANCH_REQUIRED');
  if(mode==='grade'&&process.env.GRADING_ENABLED!=='true')throw Error('HANDOFF_NOT_ENABLED');

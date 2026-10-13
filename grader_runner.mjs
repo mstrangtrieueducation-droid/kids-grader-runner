@@ -14,8 +14,8 @@ import {isNewer,pronunciationEvidence,cameraEvidence,chooseTrackerTab,mediaQueue
 import {tryFileLock} from './shared-gate.mjs';
 import {MediaCache} from './media-cache.mjs';
 import {extractPhonicsFrame,phonicsFrameParts} from './phonics-frame.mjs';
-import {runIelts} from './ielts-runner.mjs';
-import {runShadowing} from './shadowing-runner.mjs';
+
+
 import {reconcileFeedbackColors} from './feedback-colors.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),cache=path.join(root,'private','cache');fs.mkdirSync(cache,{recursive:true});
 const mediaCache=new MediaCache(cache);
@@ -342,12 +342,9 @@ function runCluster(cluster,pass=0,phase='all'){
  return attempted.size;
  }finally{try{ramBatch?.close();updateProgress(c,cluster,'RUNNER — LƯỢT VỪA CHẠY ĐÃ KẾT THÚC');state.save(c.runnerProperties);}finally{state.release();}}
 }
-function runIeltsPass(){if(args.has('--shadowing-only')||poolWorker&&poolSlot!==lanes.ieltsSlot||option('--class')||Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;const r=runIelts({google,config,key,root,deadline:until,emit,audit:dry,maxJobs:Math.min(args.has('--drain')?8:Infinity,maxJobs-finished),maxApiCalls:maxApiCalls-paidCalls});finished+=r.finished;paidCalls+=r.paidCalls;return r.finished;}
-export function runShadowingPass({deadline=until,limit=2,apiLimit=Infinity,audit=dry,onlySignature=option('--shadow-signature')}={}){
- const c=buildContext(config.clusters[0]);return runShadowing({google,config,key,root,deadline,emit,audit,maxJobs:limit,maxApiCalls:apiLimit,onlySignature,
-  prepareAudio:(job,m,save,end)=>{job.keyHash=c.hash_(key);job.generationModel=config.shadowing?.model||'gemini-3.5-flash-lite';return c.mediaPart_(job,m,save,end);},cleanupAudio:job=>c.cleanupMedia_(job)});
-}
-function shadowPass(){if(scanOnly||args.has('--ielts-only')||option('--class')||option('--kind')||option('--job-id')||poolWorker&&poolSlot!==lanes.shadowingSlot||Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;const r=runShadowingPass({limit:Math.min(args.has('--shadowing-only')?maxJobs:args.has('--drain')?10:args.has('--scheduled')?1:2,maxJobs-finished),apiLimit:maxApiCalls-paidCalls});finished+=r.finished;paidCalls+=r.paidCalls;return r.attempted??r.finished;}
+function runIeltsPass(){return 0;}
+export function runShadowingPass(){return {finished:0,paidCalls:0};}
+function shadowPass(){return 0;}
 if(isMain){
  const ieltsFirst=args.has('--ielts-only')||args.has('--scheduled')&&Math.floor(Date.now()/3600000)%4===3;
  let pass=0,visited=0;
