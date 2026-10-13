@@ -19,8 +19,9 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  const stableDate=r=>{const key=[r.sourceTab,r.row,r.className,r.student,r.code].join('|');if(!fallbackDates.has(key)){const prior=c.loadJobs_().find(x=>x.job.receipt?.sourceTab===r.sourceTab&&x.job.receipt?.row===r.row)?.job.receipt?.time;fallbackDates.set(key,receiptDate(prior||r.time));}return receiptDate(r.time,fallbackDates.get(key)).toISOString();};
  const receipt=c.receiptAt_;if(receipt)c.receiptAt_=(values,...rest)=>{const schema=rest[1],copy=[...values];if(copy[schema.time] instanceof Date&&!Number.isFinite(copy[schema.time].getTime()))copy[schema.time]='';const r=receipt(copy,...rest);r.time=stableDate(r);return r;};
  if(sourceRows)c.sourceRows_=(...args)=>sourceRows(...args).map(r=>({...r,time:stableDate(r)}));
- c.autoTarget_=(s,route,student)=>{const rows=studentRows(s.values,student);if(rows.length!==1)throw Error('STUDENT_NOT_FOUND_OR_AMBIGUOUS');const column=c.autoColumns_(s.headers,route),row=rows[0];if(s.formulas?.[row-1]?.[column-1])throw Error('DESTINATION_FORMULA');return {row,column,value:s.values[row-1][column-1]};};
- c.destination_=(cls,route,student)=>{const b=c.SpreadsheetApp.openById(cls.spreadsheetId),s=b.getSheetByName(cls.sheetName)||b.getSheetByName('THEO DÕI TOÀN DIỆN')||b.getSheetByName('THEO DÕI');if(!s)throw Error('DESTINATION_COLUMN_MISSING');const rows=studentRows(s.getDataRange().getDisplayValues(),student);if(rows.length!==1)throw Error('STUDENT_NOT_FOUND_OR_AMBIGUOUS');const column=c.autoColumns_(c.expandedHeaders_(s),route),row=rows[0],cell=s.getRange(row,column);return {sheet:s,cell,row,column};};
+ const locateColumn=(headers,route)=>{try{return c.autoColumns_(headers,route);}catch{throw Error('DESTINATION_COLUMN_MISSING');}};
+ c.autoTarget_=(s,route,student)=>{const rows=studentRows(s.values,student);if(rows.length!==1)throw Error('STUDENT_NOT_FOUND_OR_AMBIGUOUS');const column=locateColumn(s.headers,route),row=rows[0];if(s.formulas?.[row-1]?.[column-1])throw Error('DESTINATION_FORMULA');return {row,column,value:s.values[row-1][column-1]};};
+ c.destination_=(cls,route,student)=>{const b=c.SpreadsheetApp.openById(cls.spreadsheetId),s=b.getSheetByName(cls.sheetName)||b.getSheetByName('THEO DÕI TOÀN DIỆN')||b.getSheetByName('THEO DÕI');if(!s)throw Error('DESTINATION_COLUMN_MISSING');const rows=studentRows(s.getDataRange().getDisplayValues(),student);if(rows.length!==1)throw Error('STUDENT_NOT_FOUND_OR_AMBIGUOUS');const column=locateColumn(c.expandedHeaders_(s),route),row=rows[0],cell=s.getRange(row,column);return {sheet:s,cell,row,column};};
  const assignment=c.currentAssignment_;c.currentAssignment_=(...args)=>{try{return assignment(...args);}catch(e){if(e.message==='ASSIGNMENT_DATE_MISSING')return true;throw e;}};
  const oldHas=c.hasFeedback_;c.hasFeedback_=text=>{const s=String(text);return !/\d+\s*%/.test(s)&&(s.trim().endsWith(UNCLEAR_AUDIO)||s.startsWith('❌ CẦN NỘP LẠI ')&&s.includes('Chất lượng: Chưa đạt (Yêu cầu quay lại).'))?false:oldHas(text);};
  c.kidsCostPreflight_=j=>{
@@ -76,6 +77,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  };
  c.step_=(j,row,deadline,options)=>{c.masterActiveRow=row;try{
   if(MASTER_TERMINAL.has(j.status))return;
+  if(!j.rawId&&j.gradeId){j.rawId=j.gradeId;c.persist_(j,row);}
   j.receipt.time=receiptDate(j.receipt.time).toISOString();
   if(j.pendingMasterReading){rejectReading(j,row,{});return;}
   if(j.pendingMasterFeedback){pending(j,row,j.pendingMasterFeedback.text,j.pendingMasterFeedback.terminal);return;}
@@ -91,7 +93,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   if(/PREFLIGHT_EXISTING|DESTINATION_FORMULA|DESTINATION_VALIDATION/.test(e.message)){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}
   return exception(j,row,e);
  }catch(delivery){j.status='RETRY';j.error=delivery.message;j.nextAt=Date.now()+60000;c.persist_(j,row);}};
- c.recoverContentRouting_=()=>{for(const {job:j,row}of c.loadJobs_())if(['NEEDS_REVIEW','BLOCKED','AUTOMATION_FAILED','GENERATING','NEEDS_ASSIGNMENT','NEEDS_RESUBMISSION'].includes(j.status)){
+ c.recoverContentRouting_=()=>{for(const {job:j,row}of c.loadJobs_())if(['NEEDS_REVIEW','BLOCKED','STALE','AUTOMATION_FAILED','GENERATING','NEEDS_ASSIGNMENT','NEEDS_RESUBMISSION'].includes(j.status)){
   try{if(j.rawId){j.status='READY';j.nextAt=0;c.persist_(j,row);}else if(/^STUDENT_|^DESTINATION_/.test(j.error||'')||j.status==='NEEDS_ASSIGNMENT'){const dst=c.destination_(j.cls,j.route,j.receipt.student);j.status=c.hasFeedback_(dst.cell.getDisplayValue())?'SKIPPED_ALREADY_GRADED':'READY';j.error='';j.nextAt=0;c.persist_(j,row);}else if(j.generateRequests||j.masterGenerationReserved||/UNCERTAIN_GENERATION/.test(j.error||'')){pending(j,row,'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.');}else{j.status='READY';j.error='';j.nextAt=0;c.persist_(j,row);}}catch(e){exception(j,row,e);}
   }return originalRecovery?.()||{repaired:0,reopened:0};};
 }
