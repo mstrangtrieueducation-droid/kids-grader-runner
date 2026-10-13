@@ -1,3 +1,4 @@
+import {decodeSavedDraft} from './saved-draft.mjs';
 import {phonicsSequenceColumn} from './phonics-destination-repair.mjs';
 import {isPhonics,PHONICS_VERSION,PHONICS_LABELS,PHONICS_PROMPT,phonicsText,phonicsRich,sectionsFromText} from './phonics-template.mjs';
 import {networkRetry} from './kids-fault-tolerance.mjs';
@@ -78,10 +79,10 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
   cell.setRichTextValue(isPhonics(j)?phonicsRich(c,cell,message):sections?savedFeedbackRich(c,cell,message,sections):c.coloredFeedback_(cell,message,null));if(process.env.RUNNER_SHEET_BATCH!=='1'){refresh(j);if(cell.getDisplayValue()!==message)throw Error('WRITE_READBACK_FAILED');}
   if(isPhonics(j))j.phonicsTemplateVersion=PHONICS_VERSION;else if(sections)j.savedFeedbackVersion=SAVED_FEEDBACK_VERSION;delete j.pendingFeedback;delete j.pendingFeedbackRender;j.cell=cell.getA1Notation();j.autoNotice=message;j.manualReviewRequired=false;stop(j,row,status);c.audit_(j.id,'SINGLE_PASS_FEEDBACK',message);
  }
- function draft(j){const raw=c.readArtifact_(j.rawId);return JSON.parse((raw.candidates?.[0]?.content?.parts||[]).filter(p=>p.text&&!p.thought).map(p=>p.text).join(''));}
+ function draft(j){return decodeSavedDraft(c.readArtifact_(j.rawId));}
  function limitedFeedback(j,row,error){
   j.technicalWarnings ||= [];j.technicalWarnings.push({error,rawId:j.rawId,at:new Date().toISOString()});
-  const g=draft(j),before=destination(j).cell.getDisplayValue(),snapshot=j.snapshotId?c.readArtifact_(j.snapshotId):{};
+  const g=draft(j),before=destination(j).cell.getDisplayValue(),snapshot=c.masterSnapshot_?c.masterSnapshot_(j):j.snapshotId?c.readArtifact_(j.snapshotId):{};
   const rendered=isPhonics(j)?null:savedFeedback(g,j,before,snapshot),text=rendered?.text||phonicsText(g,j,before,snapshot);if(rendered)j.pendingFeedbackRender={version:rendered.version,sections:rendered.sections,score:rendered.score};
   j.pendingFeedback=text;persist(j,row);feedback(j,row,text,j.route,'RETURNED');
  } c.generate_=(j,parts,snapshot)=>{
@@ -133,7 +134,7 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
   if(j.status==='RETURNED_WITH_LIMITATIONS'&&j.rawId&&j.autoNotice){try{
    const cell=destination(j).cell,before=cell.getDisplayValue();
    if(before===j.autoNotice&&!cell.getFormula()&&!cell.getDataValidation()){
-    const g=draft(j),snapshot=j.snapshotId?c.readArtifact_(j.snapshotId):{},rendered=isPhonics(j)?null:savedFeedback(g,j,before,snapshot),text=rendered?.text||phonicsText(g,j,before,snapshot);
+    const g=draft(j),snapshot=c.masterSnapshot_?c.masterSnapshot_(j):j.snapshotId?c.readArtifact_(j.snapshotId):{},rendered=isPhonics(j)?null:savedFeedback(g,j,before,snapshot),text=rendered?.text||phonicsText(g,j,before,snapshot);
     const backup=c.saveArtifact_('restore-full-feedback-'+j.id,{before,after:text,rawId:j.rawId,cell:cell.getA1Notation()});
     refresh(j);if(cell.getDisplayValue()!==before)continue;
     cell.setRichTextValue(rendered?savedFeedbackRich(c,cell,text,rendered.sections):phonicsRich(c,cell,text));if(process.env.RUNNER_SHEET_BATCH!=='1'){refresh(j);if(cell.getDisplayValue()!==text)throw Error('WRITE_READBACK_FAILED');}if(rendered)j.savedFeedbackVersion=SAVED_FEEDBACK_VERSION;else j.phonicsTemplateVersion=PHONICS_VERSION;

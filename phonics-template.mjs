@@ -1,6 +1,7 @@
+import {percentBand,publicText,receiptDate} from './master-policy.mjs';
 export const PHONICS_VERSION='hugo-phonics-v5';
 export const PHONICS_LABELS=['Phát âm âm đang học','Âm đuôi & trọng âm','Thuộc mặt chữ'];
-export const isPhonics=j=>['phonics','phonicsVideo'].includes(j.route?.kind)||/phonics|\bOP[1-4][ -]?L\d+/i.test([j.receipt?.code,j.route?.code,j.receipt?.sourceTab].join(' '));
+export const isPhonics=j=>j.route?.kind==='phonics'||/\bOP[1-4][ -]?L\d+/i.test([j.receipt?.code,j.route?.code].join(' '));
 export const PHONICS_PROMPT=`PHONICS — MẪU HUGO, THAY THẾ TIÊU CHÍ TỐC ĐỘ & NGỮ ĐIỆU CHUNG:
 roseSections phải có đúng 3 mục, đúng thứ tự: Phát âm âm đang học; Âm đuôi & trọng âm; Thuộc mặt chữ.
 Phát âm âm đang học: lấy đúng âm/nhóm chữ mục tiêu trong barem bài được giao, nêu cụ thể con phát âm thế nào ở từng từ nghe được, từ đúng và từ cần sửa. Không đoán âm mục tiêu từ tên Phonics chung.
@@ -12,7 +13,7 @@ const strings=x=>Array.isArray(x)?x:Object.values(x||{});
 const ending=/âm (?:cuối|đuôi)|âm cuối|cuối từ|trọng âm|nuốt âm|missing_final|final_consonant|stress/i;
 const recognition=/mặt chữ|nhận diện|nhận biết.*chữ|nhìn.*chữ|sight words/i;
 const voice=/giọng|nhịp|ngữ điệu|nhạc|hào hứng|âm lượng/i;
-const clean=s=>String(s||'').replace(/^\s*(?:Âm đuôi|Phát âm)\s*:\s*/i,'').trim();
+const clean=s=>publicText(s).replace(/^\s*(?:Âm đuôi|Phát âm)\s*:\s*/i,'').trim();
 const key=s=>clean(s).toLocaleLowerCase('vi').replace(/[\s.,:;!]+/g,' ').trim();
 function humanLine(text){
  const parts=text.split(' — ');if(parts.length<4||!/^[a-z][a-z '’-]*$/i.test(parts[0])||!parts[1].startsWith('/'))return text;
@@ -85,11 +86,11 @@ export function phonicsSections(g,{before='',snapshot=null}={}){
  return PHONICS_LABELS.map((label,i)=>({label,text:blocks[i].join('\n')||fallback[i]}));
 }
 export function phonicsText(g,j,before='',snapshot=null,sourceText=before){
- const sections=phonicsSections(g,{before:sourceText,snapshot}),raw=g.rubricBand||g.band||'',m=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i)||String(raw).match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=m?Number(m[1].replace(',','.')):NaN,score=value>=0&&value<=100?value:null;
- let date=new Date(j.receipt?.time);if(!Number.isFinite(date.getTime()))date=new Date();
+ const sections=phonicsSections(g,{before:sourceText,snapshot}),raw=g.rubricBand||g.band||'',m=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i)||String(raw).match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=m?Number(m[1].replace(',','.')):NaN,score=percentBand(value);
+ let date=receiptDate(j.receipt?.time);
  const stamp=new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Bangkok',dateStyle:'short',timeStyle:'short'}).format(date);
  const marker='— NHẬN XÉT GV —',prefix=before.includes(marker)&&before.slice(0,before.indexOf(marker)).includes('ĐÃ NỘP')?before.slice(0,before.indexOf(marker)):'✅ ĐÃ NỘP '+stamp+'\n';
- return prefix+marker+'\n'+(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&score<75?'⚠️ Cần theo dõi\n':'')+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
+ return prefix+marker+'\n'+(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&score<=75?'⚠️ Cần theo dõi\n':'')+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
 }
 export function phonicsRich(c,cell,text){
  const builder=c.coloredFeedback_(cell,text,null).copy();

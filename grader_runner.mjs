@@ -1,5 +1,7 @@
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
+import {installMasterKids} from './master-kids.mjs';
+import {MASTER_MODEL,MASTER_TERMINAL} from './master-policy.mjs';
 import {nextDrainWait} from './runner-policies.mjs';
 import {extractStudentAudio,inspectAudio} from './student-audio.mjs';
 import {MasterBaremCatalog,installKidsBarem} from './master-barem.mjs';
@@ -12,14 +14,15 @@ import {isNewer,pronunciationEvidence,cameraEvidence,chooseTrackerTab,mediaQueue
 import {tryFileLock} from './shared-gate.mjs';
 import {MediaCache} from './media-cache.mjs';
 import {extractPhonicsFrame,phonicsFrameParts} from './phonics-frame.mjs';
-
-
+import {runIelts} from './ielts-runner.mjs';
+import {runShadowing} from './shadowing-runner.mjs';
 import {reconcileFeedbackColors} from './feedback-colors.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),cache=path.join(root,'private','cache');fs.mkdirSync(cache,{recursive:true});
 const mediaCache=new MediaCache(cache);
-const config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
-const sa=JSON.parse(process.env.GOOGLE_CREDENTIALS||'{}');
-const key=(process.env.GEMINI_API_KEY||'').trim();if(!key)throw Error('GEMINI_KEY_MISSING');
+const config=JSON.parse(process.env.RUNNER_CONFIG||fs.readFileSync(path.join(root,'private','runner-config.json'),'utf8'));
+config.kids={...config.kids,model:MASTER_MODEL,routing:'teacher-master-v1-20261014'};
+const sa=JSON.parse(process.env.GOOGLE_CREDENTIALS||fs.readFileSync(path.join(root,'..','tracker-fast-pilot-20260924','private','google-service-account.json'),'utf8'));
+const key=(process.env.GEMINI_API_KEY||fs.readFileSync(path.join(root,'private','gemini-key.txt'),'utf8')).trim();if(!key)throw Error('GEMINI_KEY_MISSING');
 export const runnerGoogle=new Google(sa);const google=runnerGoogle,args=new Set(process.argv.slice(2)),dry=args.has('--audit'),scanOnly=args.has('--scan-only');
 const option=name=>process.argv.find(x=>x.startsWith(name+'='))?.slice(name.length+1);
 const poolWorker=args.has('--pool-worker'),poolSlot=Number(option('--pool-slot')||0),poolCount=Number(option('--pool-count')||5);
@@ -28,7 +31,7 @@ let poolState;
 if(poolWorker){poolState=JSON.parse(fs.readFileSync(process.env.RUNNER_POOL_STATE));if(poolState.session!==process.env.RUNNER_POOL_SESSION)throw Error('POOL_SESSION_INVALID');process.kill(poolState.pid,0);}
 const maxJobs=Number(option('--max-jobs')||Infinity),maxApiCalls=Number(option('--max-api-calls')||Infinity),maxMinutes=Number(option('--max-minutes')||80),until=Date.now()+maxMinutes*60000;
 const ffmpeg=process.env.FFMPEG_PATH||(process.platform==='win32'?path.join(root,'..','ielts-speaking-gemini-20261010','private','runtime','imageio_ffmpeg','binaries','ffmpeg-win-x86_64-v7.1.exe'):'ffmpeg');
-const emit=x=>{if(x.event==='RUN_COMPLETE')console.log(JSON.stringify({event:x.event,finished:x.finished,paidCalls:x.paidCalls}));};
+const emit=x=>console.log(JSON.stringify({...x,at:new Date().toISOString()}));
 let finished=0,paidCalls=0;const outcomes=[];
 const recoveredClusters=new Set(),preparedClusters=new Set(),contexts=new Map(),lastScans=new Map(),referenceUploads=new Map();
 let referenceStoreLoaded=false;
@@ -60,9 +63,8 @@ function attachReference(c,job,m){
 function safeError(e){return /^[A-Z0-9_: .-]+$/.test(e.message||'')?String(e.message).slice(0,160):'RUNNER_INTERNAL_ERROR';}
 function sourceKey(c,r){let code=c.norm_(r.code);try{const a=c.assignmentIdentity_(r.code);code=[a.family,a.number,c.norm_(a.detail||'')].join('|');}catch{}return [c.norm_(r.className),c.norm_(r.student),code].join('|');}
 export function buildContext(cluster){
- const kidsModel=config.kids?.model||'gemini-3.8-flash';
- if(!['gemini-3.6-flash','gemini-3.8-flash'].includes(kidsModel))throw Error('KIDS_MODEL_BINDING_INVALID');
- const props=new Map(Object.entries({KIDS_NATIVE_CONFIG:process.env.KIDS_NATIVE_CONFIG,KIDS_CONTROL_ID:cluster.controlId,KIDS_ARTIFACT_FOLDER:cluster.artifactFolder,KIDS21_AUTOMATION:'ACTIVE',GEMINI_API_KEYS:key,GEMINI_MODEL:kidsModel,KIDS_MODEL_ROUTING:config.kids?.routing||'',GEMINI_KEY_PROJECT_IDS:cluster.projectId||'paid-central',GEMINI_PAID_CONFIRMED:'YES',GEMINI_PAID_PROJECT_ID:cluster.projectId||'paid-central'}));
+ const kidsModel=MASTER_MODEL;
+ const props=new Map(Object.entries({KIDS_CONTROL_ID:cluster.controlId,KIDS_ARTIFACT_FOLDER:cluster.artifactFolder,KIDS21_AUTOMATION:'ACTIVE',GEMINI_API_KEYS:key,GEMINI_MODEL:kidsModel,KIDS_MODEL_ROUTING:config.kids?.routing||'',GEMINI_KEY_PROJECT_IDS:cluster.projectId||'paid-central',GEMINI_PAID_CONFIRMED:'YES',GEMINI_PAID_PROJECT_ID:cluster.projectId||'paid-central'}));
  const prop={getProperty:k=>props.get(k)||null,setProperty:(k,v)=>{props.set(k,String(v));return prop;},deleteProperty:k=>{props.delete(k);return prop;},setProperties:x=>{Object.entries(x).forEach(([k,v])=>props.set(k,String(v)));return prop;}};
  const c=vm.createContext({Date,console,FLEET_CLUSTER:cluster,PropertiesService:{getScriptProperties:()=>prop},Utilities:utilities(),SpreadsheetApp:{openById:id=>google.book(id),flush:()=>{},newRichTextValue:()=>new RichBuilder(),newTextStyle:()=>new Style()},
   DriveApp:{getFileById:id=>google.file(id)},ScriptApp:{getOAuthToken:()=>google.token()},Logger:{log:()=>{}},UrlFetchApp:{fetch:(url,o={})=>{
@@ -70,7 +72,7 @@ export function buildContext(cluster){
   }} });
  const source=path.join(root,'gas');for(const f of fs.readdirSync(source).filter(f=>f.endsWith('.gs')))vm.runInContext(fs.readFileSync(path.join(source,f),'utf8'),c,{filename:f});
  // Teacher approved upgrading every Kids class; never silently downgrade to Lite.
- c.fleetModelPool_=()=>['gemini-3.8-flash'];
+ c.fleetModelPool_=()=>[MASTER_MODEL];
  c.assertClusterOwner_=()=>{if(!config.clusters.some(x=>x.controlId===cluster.controlId&&x.email===cluster.email)||sa.client_email!==config.serviceAccount)throw Error('RUNNER_CLUSTER_BINDING_INVALID');};
  c.assertClusterOwner_();
  const writeCurrent=c.writeGrade_;c.writeGrade_=(job,grade)=>{if(!kidsReleaseCompatible(job,grade,vm.runInContext('KIDS_REVIEW_VERSION',c)))throw Error('GRADE_POLICY_VERSION_REVIEW');return writeCurrent(job,grade);};
@@ -137,6 +139,11 @@ export function buildContext(cluster){
  }
  if(process.env.MASTER_BAREM_CATALOG){const catalog=MasterBaremCatalog.fromFile(process.env.MASTER_BAREM_CATALOG);installKidsBarem(c,catalog,vm.runInContext('FORMS',c));
  installContentRouting(c,catalog,{refresh:j=>{google.books.get(j.cls.spreadsheetId)?.cache.clear();},lock:j=>tryFileLock(path.join(cache,'locks','student-'+c.hash_([j.cls.spreadsheetId,c.norm_(j.receipt.student)])+'.lock')),onCall:()=>{paidCalls++;},emit});
+ installMasterKids(c,catalog,{emit});
+ c.masterGenerationParts_=(j,parts)=>parts.flatMap((p,i)=>[{text:'FILE HỌC SINH '+(i+1)+' (fileIndex '+i+'): âm thanh đầy đủ.'},p]).concat(phonicsFrameParts(j));
+ c.recordMasterGeneration_=()=>{paidCalls++;};
+ c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
+ c.flushMasterCheckpoint_=row=>google.books.get(cluster.controlId)?.ramBatch?.checkpointControl(cluster.controlId,row);
  }
  c.persistRecoveryBatch_=entries=>{
   const name='Jobs',sheet=google.book(cluster.controlId).getSheetByName(name);if(!sheet)throw Error('RECOVERY_QUEUE_MISSING');
@@ -215,10 +222,11 @@ function migrateSnapshots(c){
 }
 function prepareMedia(c,job,m,save,deadline,originalMedia){
  // Record why visual evidence was retained/discarded, for both student and reference.
- job.mediaDecision=mediaDecision(job.route.kind);
+ job.mediaDecision={...mediaDecision(job.route.kind),mode:['phonics','science','scienceK','critical','de'].includes(job.route.kind)?'audio_frame':'audio'};
+ if(m.isReference||!m.mime.match(/^(audio|video)\//))throw Error('PREFLIGHT_FILE_MISSING_OR_INVALID');
  const audioFirst=(['audio','audio_frame'].includes(job.mediaDecision.mode)||m.mime.startsWith('audio/'))&&/^(audio|video)\//.test(m.mime);
  const needsFrame=job.mediaDecision.mode==='audio_frame'&&!m.isReference&&m.mime.startsWith('video/');
- const frameAvailable=()=>!needsFrame||!!(m.runnerPdfFrame?.path&&fs.existsSync(m.runnerPdfFrame.path));
+ const frameAvailable=()=>!needsFrame||m.visualExtractionFailed||!!(m.runnerPdfFrame?.path&&fs.existsSync(m.runnerPdfFrame.path));
  const proxyVideo=!audioFirst&&!m.isReference&&m.mime.startsWith('video/');
  if(audioFirst&&!m.isReference)job.runnerAudioOnly=true;
  // Retire pre-policy video uploads for audio tasks; their payload is never sent.
@@ -255,14 +263,14 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
   }
   m.runnerDownloadBytes=offset;save();if(offset<m.size)return null;fs.renameSync(partial,original);
  }
- if(needsFrame&&!frameAvailable()){
+ if(needsFrame&&!frameAvailable()&&!m.visualExtractionFailed){
   const output=path.join(cache,tag+'.context.jpg'),duration=Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000;
-  m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});save();
+  try{m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});}catch{m.visualExtractionFailed=true;}save();
  }
  if(audioFirst){
  if(file===original){mediaCache.sweep(Math.min(m.size,256*1024*1024));const extracted=extractStudentAudio({ffmpeg,input:original,audio,flac});file=extracted.file;mime=extracted.mime;m.audioSelection=extracted.selection;}
   if(file===original){file=audio;mime='audio/mp4';}
-  job.runnerAudioOnly=!needsFrame;m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4'};
+  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4'};
   mediaCache.dropOriginal(tag);
  }
  if(proxyVideo){
@@ -291,9 +299,9 @@ function updateProgress(c,cluster,label,lastJob=null){
  const pending=['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED'].reduce((n,k)=>n+(counts[k]||0),0);
  s.getRange(2,1,19,2).setValues([
  ['Chế độ',label],['Tài khoản cụm',cluster.email],['Các lớp',cluster.classes.map(x=>x.className).join(', ')],['Nguồn',vm.runInContext('KIDS21_AUTO.tabs',c).join(', ')],
- ['Phạm vi','Từ 01/09/2026; bài mới nhất; giữ nhận xét nhân viên'],['Quét nền','GitHub quét định kỳ 10 phút; tiếp tục từ checkpoint; lịch có thể trễ'],['Batch','8 bài/cụm/lượt chấm bù; kiểm tra video đã tải trước; PROCESSING bỏ qua'],
+ ['Phạm vi','Từ 01/09/2026; bài mới nhất; giữ nhận xét nhân viên'],['Quét nền','Chấm bù tự nối lượt tới khi hết bài hợp lệ; sau đó mỗi giờ 24/7 (UTC+7)'],['Batch','8 bài/cụm/lượt chấm bù; kiểm tra video đã tải trước; PROCESSING bỏ qua'],
  ['Trigger',process.env.RUNNER_HOST==='local'?'Windows Task Scheduler; chạy trên máy cô':'Apps Script đã dừng; runner dùng Service Account trên GitHub'],['Tiến độ quét',c.runnerProperties.get('FLEET_SCAN_CURSOR')||'Tiếp tục từ checkpoint'],['Đã trả',counts.RETURNED||0],['Chờ xử lý',pending],['Cần kiểm tra',(counts.NEEDS_REVIEW||0)+(counts.BLOCKED||0)+(counts.STALE||0)],
- ['Batch gần nhất',JSON.stringify(lastJob||{counts})],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'})],['Thời gian đã dùng','Không dùng hạn mức trigger Apps Script'],['Tiếp tục sau',args.has('--drain')?'Tự nối lượt chấm bù ngay nếu còn bài hợp lệ':'Lượt GitHub kế tiếp'],['Ưu tiên','Video sẵn sàng; lỗi tên/cột/file tách khỏi luồng chấm'],['Bài cần kiểm tra','Không tự gọi lại Gemini cho bài chưa rõ hoặc phản hồi thiếu căn cứ'],['Hạn mức API','Kids: '+(config.kids?.model||'gemini-3.8-flash')+'; key dự án trả phí đã được cô xác nhận']]);
+ ['Batch gần nhất',JSON.stringify(lastJob||{counts})],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'})],['Thời gian đã dùng','Không dùng hạn mức trigger Apps Script'],['Tiếp tục sau',args.has('--drain')?'Tự nối lượt chấm bù ngay nếu còn bài hợp lệ':'Lượt chạy mỗi giờ kế tiếp'],['Ưu tiên','Video sẵn sàng; lỗi tên/cột/file tách khỏi luồng chấm'],['Bài cần kiểm tra','Không tự gọi lại Gemini cho bài chưa rõ hoặc phản hồi thiếu căn cứ'],['Hạn mức API','Kids: '+(config.kids?.model||MASTER_MODEL)+'; key dự án trả phí đã được cô xác nhận']]);
 }
 function runCluster(cluster,pass=0,phase='all'){
  if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;
@@ -304,6 +312,7 @@ function runCluster(cluster,pass=0,phase='all'){
  let ramBatch;
  try{
  if(process.env.RUNNER_SHEET_BATCH==='1')replaySheetBatches(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});
+ if(process.env.RUNNER_SHEET_BATCH==='1'){c.ensureMasterAssignmentTab_?.();ramBatch=beginSheetBatch(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});}
  if(!preparedClusters.has(cluster.controlId)){google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));if(!poolWorker){emit({event:'DEDUPLICATION',account:cluster.email,...deduplicate(c)});
  let repair;do{repair=c.repairKidsCostQueue_();emit({event:'REPAIR',...repair});}while(repair.reopened&&Date.now()<until);
  emit({event:'SNAPSHOT_MIGRATION',...migrateSnapshots(c)});emit({event:'FEEDBACK_COLOR_RECONCILIATION',...reconcileFeedbackColors(c,{deadline:Math.min(until-90000,Date.now()+20000)})});}
@@ -313,7 +322,6 @@ function runCluster(cluster,pass=0,phase='all'){
  }
  if(!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:10000)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
  if(scanOnly)return 0;
- if(process.env.RUNNER_SHEET_BATCH==='1')ramBatch=beginSheetBatch(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});
  if(!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}
  const selected=option('--class');const attempted=new Set();
  const queued=c.batchQueue_(c.loadJobs_());
@@ -328,14 +336,17 @@ function runCluster(cluster,pass=0,phase='all'){
   emit({event:'JOB_STARTED',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status});
   const jobStarted=Date.now(),metricBefore={...google.metrics};
   try{c.preparePoolRetry_(job,row);c.step_(job,row,Math.min(until,Date.now()+20*60000),{});}catch(e){try{c.handleError_(job,row,e);}catch(handlerError){job.status='RETRY';job.error=e.message;job.handlerError=handlerError.message;job.nextAt=Date.now()+300000;try{c.persist_(job,row);}catch(persistError){emit({event:'JOB_STATE_WRITE_ERROR',id:job.id,error:safeError(persistError)});}}}
-  emit({event:'JOB',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status,error:job.error||'',cell:job.cell||'',phase,elapsedMs:Date.now()-jobStarted,sheetCalls:google.metrics.sheetCalls-metricBefore.sheetCalls,sheetMs:google.metrics.sheetMs-metricBefore.sheetMs,audio:job.media?.filter(m=>!m.isReference).map(m=>m.runnerAudio||null)});outcomes.push({id:job.id,status:job.status,className:job.cls.className});if(job.status==='RETURNED'){finished++;if(!ramBatch)updateProgress(c,cluster,'RUNNER — ĐANG CHẤM BÙ / TỰ ĐỘNG',{student:job.receipt.student,className:job.cls.className,code:job.route.code,cell:job.cell,status:job.status});}
+  emit({event:'JOB',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status,error:job.error||'',cell:job.cell||'',phase,elapsedMs:Date.now()-jobStarted,sheetCalls:google.metrics.sheetCalls-metricBefore.sheetCalls,sheetMs:google.metrics.sheetMs-metricBefore.sheetMs,audio:job.media?.filter(m=>!m.isReference).map(m=>m.runnerAudio||null)});outcomes.push({id:job.id,status:job.status,className:job.cls.className});if(MASTER_TERMINAL.has(job.status)){finished++;if(!ramBatch)updateProgress(c,cluster,'RUNNER — ĐANG CHẤM BÙ / TỰ ĐỘNG',{student:job.receipt.student,className:job.cls.className,code:job.route.code,cell:job.cell,status:job.status});}
  }
  emit({event:'CLUSTER_COMPLETE',account:cluster.email,counts:c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{})});
  return attempted.size;
  }finally{try{ramBatch?.close();updateProgress(c,cluster,'RUNNER — LƯỢT VỪA CHẠY ĐÃ KẾT THÚC');state.save(c.runnerProperties);}finally{state.release();}}
 }
-function runIeltsPass(){return 0;}
-export function runShadowingPass(){return {finished:0,paidCalls:0,attempted:0};}
+function runIeltsPass(){if(args.has('--shadowing-only')||poolWorker&&poolSlot!==lanes.ieltsSlot||option('--class')||Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;const r=runIelts({google,config,key,root,deadline:until,emit,audit:dry,maxJobs:Math.min(args.has('--drain')?8:Infinity,maxJobs-finished),maxApiCalls:maxApiCalls-paidCalls});finished+=r.finished;paidCalls+=r.paidCalls;return r.finished;}
+export function runShadowingPass({deadline=until,limit=2,apiLimit=Infinity,audit=dry,onlySignature=option('--shadow-signature')}={}){
+ const c=buildContext(config.clusters[0]);return runShadowing({google,config,key,root,deadline,emit,audit,maxJobs:limit,maxApiCalls:apiLimit,onlySignature,
+  prepareAudio:(job,m,save,end)=>{job.keyHash=c.hash_(key);job.generationModel=config.shadowing?.model||'gemini-3.5-flash-lite';return c.mediaPart_(job,m,save,end);},cleanupAudio:job=>c.cleanupMedia_(job)});
+}
 function shadowPass(){if(scanOnly||args.has('--ielts-only')||option('--class')||option('--kind')||option('--job-id')||poolWorker&&poolSlot!==lanes.shadowingSlot||Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;const r=runShadowingPass({limit:Math.min(args.has('--shadowing-only')?maxJobs:args.has('--drain')?10:args.has('--scheduled')?1:2,maxJobs-finished),apiLimit:maxApiCalls-paidCalls});finished+=r.finished;paidCalls+=r.paidCalls;return r.attempted??r.finished;}
 if(isMain){
  const ieltsFirst=args.has('--ielts-only')||args.has('--scheduled')&&Math.floor(Date.now()/3600000)%4===3;

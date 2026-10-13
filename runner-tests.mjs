@@ -654,7 +654,7 @@ test('Phonics sends one context image with the same audio call, never regenerate
 
  assert.deepEqual(phonicsFrameParts({...job,rawId:'saved'}),[]);assert.deepEqual(phonicsFrameParts({...job,gradeId:'saved'}),[]);
 
- assert.throws(()=>phonicsFrameParts({...job,media:[{mime:'video/mp4'}]}),/FRAME_UNAVAILABLE/);
+ assert.deepEqual(phonicsFrameParts({...job,media:[{mime:'video/mp4'}]}),[]);
 
 });
 

@@ -14,14 +14,10 @@ export function fullFeedback(g){
 }
 export function networkRetry(j,error,now=Date.now()){
  if(!/NETWORK|TIMEOUT|UNCERTAIN_GENERATION|HTTP_(408|500|502|503|504)/.test(error)||j.rawId||j.gradeId)return false;
- if(j.generateRequests||j.runnerGenerationStarted||j.generationReservation){
-  j.retryGenerationAuthorized=false;j.status='NEEDS_REVIEW';j.error='UNCERTAIN_GENERATION_DO_NOT_REPLAY';j.nextAt=0;
-  j.uncertainGenerationHeld={at:new Date(now).toISOString(),transportError:error};return true;
+ if(j.generateRequests||j.runnerGenerationStarted||j.generationReservation||j.masterGenerationReserved){
+  j.retryGenerationAuthorized=false;j.status='NEEDS_REVIEW';j.error='UNCERTAIN_GENERATION_DO_NOT_REPLAY';j.nextAt=0;return true;
  }
- j.networkAttempts=(j.networkAttempts||0)+1;
- j.networkHistory ||= [];j.networkHistory.push({at:new Date(now).toISOString(),error,generateRequests:j.generateRequests||0});
- j.networkHistory=j.networkHistory.slice(-20);
- j.retryGenerationAuthorized=true;j.runnerGenerationStarted=false;
- j.status='RETRY';j.error=error;j.nextAt=now+Math.min(3600000,60000*2**Math.min(j.networkAttempts,6));
+ // Only media/preparation can resume. The Master generation guard remains absolute.
+ j.networkAttempts=(j.networkAttempts||0)+1;j.status='RETRY';j.error=error;j.nextAt=now+Math.min(3600000,60000*2**Math.min(j.networkAttempts,6));
  return true;
 }

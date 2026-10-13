@@ -8,12 +8,12 @@ export function extractPhonicsFrame({ffmpeg,input,output,durationSeconds,run=spa
  return {path:output,timeSeconds:time,bytes:fs.statSync(output).size,mime:'image/jpeg'};
 }
 export function phonicsFrameParts(job,{read=fs.readFileSync,exists=fs.existsSync}={}){
- if(job.route?.kind!=='phonics'||job.rawId||job.gradeId)return [];
+ if(!['phonics','science','scienceK','critical','de'].includes(job.route?.kind)||job.rawId||job.gradeId)return [];
  const parts=[];
  for(const [i,m] of (job.media||[]).filter(m=>!m.isReference).entries()){
   if(!m.mime.startsWith('video/'))continue;
-  if(!m.runnerPdfFrame?.path||!exists(m.runnerPdfFrame.path))throw Error('KIDS_PHONICS_FRAME_UNAVAILABLE');
-  parts.push({text:`Ảnh duy nhất từ FILE HỌC SINH ${i+1}, tại ${m.runnerPdfFrame.timeSeconds}s. Đây là khung hình của cùng tệp âm thanh, không phải tệp/bài mới. Kiểm tra chữ/hình trên trang có khớp PDF Phonics được giao không. Một ảnh không chứng minh tất cả trang, sự trôi chảy, trí nhớ hay tư thế suốt bài.`},{inlineData:{mimeType:'image/jpeg',data:read(m.runnerPdfFrame.path).toString('base64')}});
+  if(!m.runnerPdfFrame?.path||!exists(m.runnerPdfFrame.path))continue;
+  parts.push({text:`Ảnh duy nhất từ FILE HỌC SINH ${i+1}, tại ${m.runnerPdfFrame.timeSeconds}s. Đây là khung hình của cùng tệp âm thanh, không phải tệp/bài mới. Đối chiếu chữ/hình và cách trình bày với barem text local của đúng bài. Một ảnh không chứng minh tất cả trang, sự trôi chảy, trí nhớ hay tư thế suốt bài.`},{inlineData:{mimeType:'image/jpeg',data:read(m.runnerPdfFrame.path).toString('base64')}});
  }
  return parts;
 }

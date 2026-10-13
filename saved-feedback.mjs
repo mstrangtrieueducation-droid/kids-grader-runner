@@ -1,16 +1,17 @@
+import {percentBand,publicText,receiptDate} from './master-policy.mjs';
 export const SAVED_FEEDBACK_VERSION='kids-saved-feedback-v1';
 const array=x=>Array.isArray(x)?x:Object.values(x||{});
 const tone=text=>/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→|Con (?:cần|chú ý|nhớ|luyện)|cần sửa|lưu ý/i.test(text)&&!(/(?:rất tốt|phát âm (?:đúng|rõ|tốt)|đọc (?:đúng|rõ|tốt))/i.test(text)&&!/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→/i.test(text))?'correction':'praise';
 const parts=text=>String(text).split(/(?<=\n)|(?<=[.!?])(?=\s+(?:Con|Cô|Tuy nhiên)\b)/u).filter(Boolean).map(text=>({text,tone:tone(text)}));
 const valid=s=>s.spans?.length&&s.spans.every(p=>['praise','correction','neutral'].includes(p.tone))&&s.spans.map(p=>p.text).join('')===s.text;
 export function savedSections(g,snapshot={}){
- const supplied=array(g.roseSections||g.sections).filter(s=>typeof s.text==='string'&&s.text.trim());
+ const supplied=array(g.roseSections||g.sections).filter(s=>typeof s.text==='string'&&publicText(s.text).trim());
  // Keep the complete model-authored reply when one exists. Missing ancillary
  // evidence fields must not remove or downgrade any of its corrections.
- if(supplied.length)return supplied.map(s=>({...s,spans:valid(s)?s.spans:parts(s.text)}));
+ if(supplied.length)return supplied.map(s=>{const text=publicText(s.text);return {...s,text,spans:text===s.text&&valid(s)?s.spans:parts(text)};});
  const findings=array(g.rubricFindings),labels=snapshot.form?.length?snapshot.form:findings.map(f=>f.label).filter(Boolean);
  const sections=(labels.length?labels:['Nội dung','Phát âm & ngữ pháp','Cách luyện']).map(label=>({label,text:'',spans:[]}));
- const add=(s,text,t='neutral')=>{if(!text?.trim()||s.spans.some(p=>p.text.trim()===text.trim()))return;s.spans.push({text:(s.spans.length?'\n':'')+text.trim(),tone:t});s.text=s.spans.map(p=>p.text).join('');};
+ const add=(s,text,t='neutral')=>{text=publicText(text);if(!text?.trim()||s.spans.some(p=>p.text.trim()===text.trim()))return;s.spans.push({text:(s.spans.length?'\n':'')+text.trim(),tone:t});s.text=s.spans.map(p=>p.text).join('');};
  const matching=pattern=>sections.find(s=>pattern.test(s.label));
  for(const f of findings){const s=sections.find(s=>s.label===f.label)||sections[0];for(const p of f.strengths||[])add(s,p.basis,'praise');}
  for(const check of g.contentChecks||[])add(matching(/nội dung|thuộc|dịch|ngữ pháp/i)||sections[0],check.feedback||check.heard,tone(check.feedback||check.heard||''));
@@ -26,15 +27,15 @@ export function savedSections(g,snapshot={}){
  for(const o of g.presentation?.observations||[])add(matching(/phong thái|biểu cảm|trình bày/i)||sections.at(-1),o.assessment||o.correction||o.observation,o.tone||'neutral');
  for(const r of array(g.recordingChecks))if(r.feedback?.trim())add(sections.at(-1),r.feedback,'correction');
  if(!sections.some(s=>s.text)&&g.reason)add(sections[0],g.reason,tone(g.reason));
- return sections.filter(s=>s.text.trim());
+ return sections.filter(s=>publicText(s.text).trim());
 }
 export function savedFeedback(g,j,before='',snapshot={}){
  const sections=savedSections(g,snapshot);if(!sections.length)throw Error('SAVED_FEEDBACK_EMPTY');
  const marker='— NHẬN XÉT GV —',prefix=before.includes(marker)?before.slice(0,before.indexOf(marker)):'';
- let date=new Date(j.receipt?.time);if(!Number.isFinite(date.getTime()))date=new Date();
+ let date=receiptDate(j.receipt?.time);
  const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date).replace(',','');
- const current=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i),raw=String(g.rubricBand||g.band||'').match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=Number((current||raw)?.[1]?.replace(',','.')??NaN),score=value>=0&&value<=100?value:null;
- const heading=(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&score<75?'⚠️ Cần theo dõi\n':'');
+ const current=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i),raw=String(g.rubricBand||g.band||'').match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=Number((current||raw)?.[1]?.replace(',','.')??NaN),score=percentBand(value);
+ const heading=(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&score<=75?'⚠️ Cần theo dõi\n':'');
  const text=(prefix.includes('ĐÃ NỘP')?prefix:'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+heading+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
  return {text,sections,score,version:SAVED_FEEDBACK_VERSION};
 }

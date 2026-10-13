@@ -22,12 +22,12 @@ export function replaySheetBatches(g,cluster,journalDir,{emit=()=>{}}={}){
 }
 export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{}}={}){
  installBatchAdapter();replaySheetBatches(g,cluster,journalDir,{emit});
- const active=new Map(),originalBook=g.book,journal=path.join(journalDir,cluster.controlId+'-'+Date.now()+'.json');
+ const active=new Map(),originalBook=g.book,originalPreload=g.preloadSource,sourceReads=new Set(),journal=path.join(journalDir,cluster.controlId+'-'+Date.now()+'.json');
  const ids=new Set([cluster.controlId,...cluster.classes.map(c=>c.spreadsheetId)]);
  const writeJournal=()=>{const books=[...active.values()].filter(b=>b.requests.length).sort((a,b)=>(a.book.id===cluster.controlId?1:0)-(b.book.id===cluster.controlId?1:0)).map(b=>({id:b.book.id,requests:b.requests}));if(books.length){const temp=journal+'.tmp';fs.writeFileSync(temp,JSON.stringify({at:new Date().toISOString(),books}));fs.renameSync(temp,journal);}};
  function load(id){
   if(active.has(id))return active.get(id).book;
-  const names=id===cluster.controlId?(g.books.get(id)?.sheets||[]).map(s=>s.getName()).filter(n=>['Jobs','RunnerArtifacts','Audit','Automation','RunnerReferences'].includes(n)):cluster.classes.filter(c=>c.spreadsheetId===id).map(c=>c.sheetName).filter(Boolean);
+  const names=id===cluster.controlId?(g.books.get(id)?.sheets||[]).map(s=>s.getName()).filter(n=>['Jobs','RunnerArtifacts','Audit','Automation','RunnerReferences','[CẦN_CÔ_GÁN_CỘT_HOẶC_TÊN]'].includes(n)):cluster.classes.filter(c=>c.spreadsheetId===id).map(c=>c.sheetName).filter(Boolean);
   const scopedRanges=names.map(n=>'&ranges='+encodeURIComponent("'"+n.replaceAll("'","''")+"'")).join('');
   const data=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+'?includeGridData=true'+scopedRanges+'&fields=spreadsheetId,properties(title),sheets(properties,merges,data(rowData(values(effectiveValue,userEnteredValue,formattedValue,hyperlink,textFormatRuns,userEnteredFormat,dataValidation,note))))');
   const book=g.books.get(id)||Object.assign(Object.create(Book.prototype),{g,id,cache:new Map()});
@@ -52,7 +52,13 @@ export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{}}={}){
   writeJournal();for(const item of [...active.values()].sort((a,b)=>(a.book.id===cluster.controlId?1:0)-(b.book.id===cluster.controlId?1:0))){if(!item.requests.length)continue;g.api('https://sheets.googleapis.com/v4/spreadsheets/'+item.book.id+':batchUpdate','POST',{requests:item.requests});emit({event:'SHEET_BATCH_WRITTEN',spreadsheetId:item.book.id,mutations:item.requests.length,requests:1});item.requests=[];writeJournal();}
   if(fs.existsSync(journal))fs.unlinkSync(journal);
  }
- function close(){try{flush();}finally{g.book=originalBook;for(const {book,clear,invalidate}of active.values()){delete book.ramBatch;book.cache.clear=clear;book.invalidateSheet=invalidate;book.cache.clear();}}}
- const session={stage,flush,close};g.book=function(id){return ids.has(id)?load(id):originalBook.call(g,id);};
- try{load(cluster.controlId);}catch(e){g.book=originalBook;throw e;}return session;
+ function close(){try{flush();}finally{g.book=originalBook;if(originalPreload)g.preloadSource=originalPreload;for(const {book,clear,invalidate}of active.values()){delete book.ramBatch;book.cache.clear=clear;book.invalidateSheet=invalidate;book.cache.clear();}}}
+ function checkpointControl(id,row){
+  const item=active.get(id);if(!item)return;const artifacts=item.book.getSheetByName('RunnerArtifacts')?.getSheetId(),jobs=item.book.getSheetByName('Jobs')?.getSheetId();
+  const selected=item.requests.filter(r=>r.appendDimension||r.updateCells?.range.sheetId===artifacts||r.updateCells?.range.sheetId===jobs&&r.updateCells.range.startRowIndex===row-1);
+  if(!selected.length)return;g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+':batchUpdate','POST',{requests:selected});item.requests=item.requests.filter(r=>!selected.includes(r));writeJournal();
+ }
+ const session={stage,flush,close,checkpointControl};g.book=function(id){return ids.has(id)?load(id):originalBook.call(g,id);};
+ if(originalPreload)g.preloadSource=function(id,width,names){if(ids.has(id)){load(id);return;}const key=JSON.stringify([id,width,names]);if(sourceReads.has(key))return;originalPreload.call(g,id,width,names);sourceReads.add(key);};
+ try{load(cluster.controlId);}catch(e){g.book=originalBook;if(originalPreload)g.preloadSource=originalPreload;throw e;}return session;
 }
