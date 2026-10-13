@@ -6,6 +6,7 @@ export function confirmedScriptReading(g,j,snapshot={}){
  const mode=snapshot.barem?.requirements?.contract?.mode;
  if(['read_text','dubbing','shadowing','translate'].includes(mode))return false;
  const x=g.presentationReadingCheck;
+ if(Array.isArray(j.masterVisualFileIndexes)&&!j.masterVisualFileIndexes.includes(x?.sourceFileIndex))return false;
  // No visual input means the model cannot certify reading a prepared script.
  const visual=(j.media||[]).filter(m=>!m.isReference).some(m=>m.runnerPdfFrame||m.runnerContextFrames?.length||m.mime?.startsWith('video/')&&j.runnerAudioOnly!==true&&!j.mediaDecision?.mode?.startsWith('audio'));
  if(!visual)return false;

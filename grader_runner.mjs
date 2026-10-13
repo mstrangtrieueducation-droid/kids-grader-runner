@@ -13,7 +13,7 @@ import {localGuard,stateStore} from './runner-state.mjs';
 import {isNewer,pronunciationEvidence,cameraEvidence,chooseTrackerTab,mediaQueuePriority,googleQueueFailure,throughputQueue,hasUploadedMedia,reusableReference,mediaPolicy,mediaDecision,canRepairTaskReference,kidsReleaseCompatible,jobShard,workerLanes} from './runner-policies.mjs';
 import {tryFileLock} from './shared-gate.mjs';
 import {MediaCache} from './media-cache.mjs';
-import {extractPhonicsFrame,phonicsFrameParts} from './phonics-frame.mjs';
+import {extractPhonicsFrame,extractPresentationFrames,phonicsFrameParts} from './phonics-frame.mjs';
 
 
 import {reconcileFeedbackColors} from './feedback-colors.mjs';
@@ -64,7 +64,7 @@ function safeError(e){return /^[A-Z0-9_: .-]+$/.test(e.message||'')?String(e.mes
 function sourceKey(c,r){let code=c.norm_(r.code);try{const a=c.assignmentIdentity_(r.code);code=[a.family,a.number,c.norm_(a.detail||'')].join('|');}catch{}return [c.norm_(r.className),c.norm_(r.student),code].join('|');}
 export function buildContext(cluster){
  const kidsModel=MASTER_MODEL;
- const props=new Map(Object.entries({KIDS_CONTROL_ID:cluster.controlId,KIDS_ARTIFACT_FOLDER:cluster.artifactFolder,KIDS21_AUTOMATION:'ACTIVE',GEMINI_API_KEYS:key,GEMINI_MODEL:kidsModel,KIDS_MODEL_ROUTING:config.kids?.routing||'',GEMINI_KEY_PROJECT_IDS:cluster.projectId||'paid-central',GEMINI_PAID_CONFIRMED:'YES',GEMINI_PAID_PROJECT_ID:cluster.projectId||'paid-central'}));
+ const props=new Map(Object.entries({KIDS_NATIVE_CONFIG:process.env.KIDS_NATIVE_CONFIG||'{}',KIDS_CONTROL_ID:cluster.controlId,KIDS_ARTIFACT_FOLDER:cluster.artifactFolder,KIDS21_AUTOMATION:'ACTIVE',GEMINI_API_KEYS:key,GEMINI_MODEL:kidsModel,KIDS_MODEL_ROUTING:config.kids?.routing||'',GEMINI_KEY_PROJECT_IDS:cluster.projectId||'paid-central',GEMINI_PAID_CONFIRMED:'YES',GEMINI_PAID_PROJECT_ID:cluster.projectId||'paid-central'}));
  const prop={getProperty:k=>props.get(k)||null,setProperty:(k,v)=>{props.set(k,String(v));return prop;},deleteProperty:k=>{props.delete(k);return prop;},setProperties:x=>{Object.entries(x).forEach(([k,v])=>props.set(k,String(v)));return prop;}};
  const c=vm.createContext({Date,console,FLEET_CLUSTER:cluster,PropertiesService:{getScriptProperties:()=>prop},Utilities:utilities(),SpreadsheetApp:{openById:id=>google.book(id),flush:()=>{},newRichTextValue:()=>new RichBuilder(),newTextStyle:()=>new Style()},
   DriveApp:{getFileById:id=>google.file(id)},ScriptApp:{getOAuthToken:()=>google.token()},Logger:{log:()=>{}},UrlFetchApp:{fetch:(url,o={})=>{
@@ -73,6 +73,9 @@ export function buildContext(cluster){
  const source=path.join(root,'gas');for(const f of fs.readdirSync(source).filter(f=>f.endsWith('.gs')))vm.runInContext(fs.readFileSync(path.join(source,f),'utf8'),c,{filename:f});
  // Teacher approved upgrading every Kids class; never silently downgrade to Lite.
  c.fleetModelPool_=()=>[MASTER_MODEL];
+ c.configuredModel_=()=>MASTER_MODEL;c.model_=()=>MASTER_MODEL;c.fallbackModelFor_=()=>null;
+ c.kidsTaskModel_=s=>({version:'teacher-master-v1-20261014',model:MASTER_MODEL,kind:s.kind,reason:'teacher_master'});
+ c.routeKidsCostModel_=j=>{if(!j.rawId&&!j.gradeId){j.generationModel=MASTER_MODEL;j.model=MASTER_MODEL;}};
  c.assertClusterOwner_=()=>{if(!config.clusters.some(x=>x.controlId===cluster.controlId&&x.email===cluster.email)||sa.client_email!==config.serviceAccount)throw Error('RUNNER_CLUSTER_BINDING_INVALID');};
  c.assertClusterOwner_();
  const writeCurrent=c.writeGrade_;c.writeGrade_=(job,grade)=>{if(!kidsReleaseCompatible(job,grade,vm.runInContext('KIDS_REVIEW_VERSION',c)))throw Error('GRADE_POLICY_VERSION_REVIEW');return writeCurrent(job,grade);};
@@ -140,7 +143,7 @@ export function buildContext(cluster){
  if(process.env.MASTER_BAREM_CATALOG){const catalog=MasterBaremCatalog.fromFile(process.env.MASTER_BAREM_CATALOG);installKidsBarem(c,catalog,vm.runInContext('FORMS',c));
  installContentRouting(c,catalog,{refresh:j=>{google.books.get(j.cls.spreadsheetId)?.cache.clear();},lock:j=>tryFileLock(path.join(cache,'locks','student-'+c.hash_([j.cls.spreadsheetId,c.norm_(j.receipt.student)])+'.lock')),onCall:()=>{paidCalls++;},emit});
  installMasterKids(c,catalog,{emit});
- c.masterGenerationParts_=(j,parts)=>parts.flatMap((p,i)=>[{text:'FILE HỌC SINH '+(i+1)+' (fileIndex '+i+'): âm thanh đầy đủ.'},p]).concat(phonicsFrameParts(j));
+ c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'FILE HỌC SINH '+(i+1)+' (fileIndex '+i+'): âm thanh đầy đủ.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
  c.flushMasterCheckpoint_=row=>google.books.get(cluster.controlId)?.ramBatch?.checkpointControl(cluster.controlId,row);
@@ -226,7 +229,7 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
  if(m.isReference||!m.mime.match(/^(audio|video)\//))throw Error('PREFLIGHT_FILE_MISSING_OR_INVALID');
  const audioFirst=(['audio','audio_frame'].includes(job.mediaDecision.mode)||m.mime.startsWith('audio/'))&&/^(audio|video)\//.test(m.mime);
  const needsFrame=job.mediaDecision.mode==='audio_frame'&&!m.isReference&&m.mime.startsWith('video/');
- const frameAvailable=()=>!needsFrame||m.visualExtractionFailed||!!(m.runnerPdfFrame?.path&&fs.existsSync(m.runnerPdfFrame.path));
+ const frameAvailable=()=>!needsFrame||m.visualExtractionFailed||!!(m.runnerPdfFrame?.path&&fs.existsSync(m.runnerPdfFrame.path))||m.runnerContextFrames?.some(f=>fs.existsSync(f.path));
  const proxyVideo=!audioFirst&&!m.isReference&&m.mime.startsWith('video/');
  if(audioFirst&&!m.isReference)job.runnerAudioOnly=true;
  // Retire pre-policy video uploads for audio tasks; their payload is never sent.
@@ -265,12 +268,12 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
  }
  if(needsFrame&&!frameAvailable()&&!m.visualExtractionFailed){
   const output=path.join(cache,tag+'.context.jpg'),duration=Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000;
-  try{m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});}catch{m.visualExtractionFailed=true;}save();
+  try{if(job.route.kind==='phonics')m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});else{m.runnerContextFrames=extractPresentationFrames({ffmpeg,input:original,output,durationSeconds:duration});if(!m.runnerContextFrames.length)m.visualExtractionFailed=true;}}catch{m.visualExtractionFailed=true;}save();
  }
  if(audioFirst){
  if(file===original){mediaCache.sweep(Math.min(m.size,256*1024*1024));const extracted=extractStudentAudio({ffmpeg,input:original,audio,flac});file=extracted.file;mime=extracted.mime;m.audioSelection=extracted.selection;}
   if(file===original){file=audio;mime='audio/mp4';}
-  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4'};
+  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame&&!x.runnerContextFrames?.length);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4'};
   mediaCache.dropOriginal(tag);
  }
  if(proxyVideo){
