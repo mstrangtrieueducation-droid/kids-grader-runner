@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {appleCompatibilityTrack,prepareAppleCompatibleAudio} from './apple-audio-compatibility.mjs';
+import {consumedAudioJob,canRecoverProvenAppleInput,installKidsAppleInputRecovery} from './kids-apple-input-recovery.mjs';
+const stderr='com.apple.quicktime.make : Apple\nStream #0:1: Audio: aac (LC), 48000 Hz, stereo (default)\nStream #0:2: Audio: none (apac / spatial), 48000 Hz, 4.0';
+assert.deepEqual(appleCompatibilityTrack(stderr),{index:1,spatialIndex:2});
+for(const invalid of [stderr.replace('Apple','Other'),stderr.replace('stereo','mono'),stderr.replace('Audio: none (apac','Audio: aac (aac'),stderr+'\nStream #0:3: Audio: aac, 48000 Hz, stereo'])assert.throws(()=>appleCompatibilityTrack(invalid));
+for(const job of [{rawId:'r'},{gradeId:'g'},{generateRequests:1},{physicalGenerateRequests:1},{generationReservation:{}},{apiUsage:{}},{previousGradingAttempts:[{rawId:'old'}]},{failedAttempts:[{generateRequests:1}]},{recoveryHistory:[{previousRequests:1}]}])assert.equal(consumedAudioJob(job),true);
+assert.equal(consumedAudioJob({generateRequests:0,failedAttempts:[{generateRequests:0}]}),false);
+assert.equal(canRecoverProvenAppleInput({status:'SYSTEM_AUDIO_ERROR',receipt:{time:'2026-10-01'},media:[{id:'unknown',modified:'x',size:1}]}),false);
+let repaired=0;const ordinary={inlineData:{mimeType:'audio/mpeg',data:'unchanged'}};
+assert.equal(prepareAppleCompatibleAudio({prepare:()=>ordinary,repair:()=>{repaired++;}}),ordinary);assert.equal(repaired,0);
+assert.throws(()=>prepareAppleCompatibleAudio({prepare:()=>{throw Error('DRIVE_RANGE_DOWNLOAD_FAILED');},repair:()=>{repaired++;}}),/DRIVE_RANGE_DOWNLOAD_FAILED/);assert.equal(repaired,0);
+const c={mediaPart_:()=>ordinary,recoverContentRouting_:()=>({old:true}),loadJobs_:()=>[{job:{status:'SYSTEM_AUDIO_ERROR',rawId:'paid',media:[]},row:2}],persist_:()=>{throw Error('PAID_JOB_MUTATED');}};
+installKidsAppleInputRecovery(c,{});assert.equal(c.mediaPart_({},{}),ordinary);assert.deepEqual(c.recoverContentRouting_(),{old:true,appleInputsRestored:0});
+console.log('Apple AAC compatibility only on proven Apple spatial pair; normal audio and consumed calls preserved; no provider calls.');

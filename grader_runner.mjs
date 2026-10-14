@@ -1,6 +1,7 @@
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {installSubmissionAssignmentScope} from './submission-assignment-scope.mjs';
+import {installKidsAppleInputRecovery} from './kids-apple-input-recovery.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
 import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
 import {prepareKidsMasterSweep,installMasterScoreProtection} from './master-kids-sweep.mjs';
@@ -155,6 +156,7 @@ export function buildContext(cluster){
  installContentRouting(c,catalog,{refresh:j=>{google.books.get(j.cls.spreadsheetId)?.cache.clear();},lock:j=>tryFileLock(path.join(cache,'locks','student-'+c.hash_([j.cls.spreadsheetId,c.norm_(j.receipt.student)])+'.lock')),onCall:()=>{paidCalls++;},emit});
  installMasterKids(c,catalog,{emit});
  installLinkedDestinationBindings(c,{google,config});
+ installKidsAppleInputRecovery(c,{g:google,root,ffmpeg,emit});
  installTeacherApprovalGuards(c,{g:google,root,ffmpeg,emit,session:{finish:j=>c.teacherApprovalSession_?.finish(j)}});
  installMasterScoreProtection(c);
  installReturnedScorePolicy(c);
