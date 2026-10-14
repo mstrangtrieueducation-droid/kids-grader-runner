@@ -1,4 +1,5 @@
 import {percentBand,publicText,receiptDate} from './master-policy.mjs';
+import {approvedPhonicsSections} from './approved-phonics-sections.mjs';
 export const PHONICS_VERSION='hugo-phonics-v5';
 export const PHONICS_LABELS=['Phát âm âm đang học','Âm đuôi & trọng âm','Thuộc mặt chữ'];
 export const isPhonics=j=>j.route?.kind==='phonics'||/\bOP[1-4][ -]?L\d+/i.test([j.receipt?.code,j.route?.code].join(' '));
@@ -31,6 +32,7 @@ function lessonTopic(snapshot){
 // Classify the observations themselves, including replies already carrying the
 // three headings. A heading alone never establishes the assessed skill.
 export function phonicsSections(g,{before='',snapshot=null}={}){
+ const approved=approvedPhonicsSections(g,before);if(approved)return approved;
  const current=sectionsFromText(before),supplied=current.length===3?current:strings(g.roseSections||g.sections);
  const blocks=[[],[],[]],seen=new Set();
  function add(text,hint='',mechanism=''){
