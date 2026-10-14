@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import os from 'node:os';import {spawnSync} from 'node:child_process';
+import {parseSilence,inspectSilence,oldGradedSubmission,SILENT_NOTICE,hasExistingFeedback} from './zero-cost-gates.mjs';
+import {confirmedPresentationMismatch,presentationNotice,knownInvalidPresentation} from './teacher-presentation-policy.mjs';
+import {approvalSession,acceptTeacherApprovals} from './teacher-approval-guards.mjs';import {establishCodeFreeze,verifyCodeFreeze} from './code-freeze.mjs';import {extractPresentationFrames} from './phonics-frame.mjs';
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'kids-additive-test-'));
+try{
+ assert.equal(parseSilence('Duration: 00:01:00.00\nmean_volume: -inf dB\nmax_volume: -inf dB\nsilence_duration: 60').silent,true);
+ assert.equal(parseSilence('Duration: 00:01:00.00\nmean_volume: -40 dB\nmax_volume: -15 dB\nsilence_duration: 55').silent,false);
+ assert.throws(()=>parseSilence('invalid'),/PROBE_FAILED/);assert.equal(hasExistingFeedback('Nhận xét riêng của cô'),true);assert.equal(hasExistingFeedback('✅ ĐÃ NỘP\n12/10/2026 19:38\n— NHẬN XÉT GV —'),false);
+ const job={id:'new',route:{kind:'de',code:'DE-09'},cls:{className:'KIDS 25'},receipt:{student:'CHERRY',time:'13/10/2026 22:16'},media:[{id:'old-video'}],masterVisualFileIndexes:[0]},history=[{job:{...job,id:'old',presentationResubmissionRequired:{invalidFileIds:['old-video']}}}];
+ assert.equal(knownInvalidPresentation(job,history),true);assert.equal(knownInvalidPresentation({...job,media:[{id:'new-video'}]},history),false);
+ const d={presentationVisualCheck:{confirmed:true,studentVisible:false,capture:'screen_only',basis:'Chỉ thấy màn hình trong ảnh cung cấp.',sourceFileIndex:0}};
+ assert.equal(confirmedPresentationMismatch(d,job),true);assert.equal(confirmedPresentationMismatch(d,{...job,masterVisualFileIndexes:[]}),false);assert.equal(confirmedPresentationMismatch(d,{...job,route:{kind:'shadowing'}}),false);
+ const out=presentationNotice(job);assert.equal(out.score,null);assert.ok(!out.text.includes('%'));assert.ok(out.text.includes('• Lý do yêu cầu nộp lại:'));assert.ok(!out.text.includes('• Ngữ pháp & phát âm:'));
+ const prior={...job,id:'graded',route:{code:'DE-08'},status:'RETURNED'};assert.equal(oldGradedSubmission(job,[{job:prior}],()=>true).id,'graded');assert.equal(oldGradedSubmission(job,[{job:prior}],()=>false),null);
+ const calls=[],g={book:()=>({getSheetByName:()=>({getSheetId:()=>1,meta:{properties:{gridProperties:{rowCount:20}}}})}),api:(url,method,body)=>{calls.push({url,method,body});return method?{}:{values:[['Mở hàng đợi','DUYỆT CHẤM','Mã hồ sơ'],['https://docs.google.com/spreadsheets/d/control/edit#range=A2:F2',true,'new'],['link',false,'not-approved']]};}};
+ const session=approvalSession(g,'progress');assert.equal(session.approved.size,1);const waiting={...job,status:'QUEUED'};acceptTeacherApprovals([{job:waiting,row:2}],session,'control','Jobs',()=>{});assert.equal(waiting.teacherApproval.approved,true);session.finish(waiting);session.flush();assert.equal(calls.at(-1).body.requests[0].updateCells.rows[0].values[0].userEnteredValue.boolValue,false);
+ const frozen=path.join(tmp,'frozen.mjs');fs.writeFileSync(frozen,'approved decoder');establishCodeFreeze(tmp,['frozen.mjs']);fs.writeFileSync(frozen,'bad change');assert.deepEqual(verifyCodeFreeze(tmp).restored,['frozen.mjs']);assert.equal(fs.readFileSync(frozen,'utf8'),'approved decoder');
+ const ffmpeg=process.env.FFMPEG_PATH;if(ffmpeg&&fs.existsSync(ffmpeg)){const silent=path.join(tmp,'silent.wav'),tone=path.join(tmp,'tone.wav');for(const [input,output]of [['anullsrc=r=16000:cl=mono',silent],['sine=frequency=440:duration=2',tone]])assert.equal(spawnSync(ffmpeg,['-nostdin','-v','error','-f','lavfi','-i',input,'-t','2','-y',output],{windowsHide:true}).status,0);assert.equal(inspectSilence(ffmpeg,silent).silent,true);assert.equal(inspectSilence(ffmpeg,tone).silent,false);}
+ const times=[];extractPresentationFrames({ffmpeg:'stub',input:'stub',output:path.join(tmp,'frame.jpg'),durationSeconds:100,run:(_exe,args)=>{times.push(Number(args[args.indexOf('-ss')+1]));fs.writeFileSync(args.at(-1),'fake-image');return {status:0};}});assert.deepEqual(times,[10,40]);
+ console.log(JSON.stringify({passed:true,checks:'silence, quiet speech retained, no overwrite, old file, strict presentation, new video, checkbox, automatic code rollback, 10s/40s frames',providerGenerateCalls:0}));
+}finally{fs.rmSync(tmp,{recursive:true,force:true});}

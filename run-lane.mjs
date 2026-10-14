@@ -1,20 +1,22 @@
+import './hosted-bootstrap.mjs';
 import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {createDecipheriv} from 'node:crypto';import {gunzipSync} from 'node:zlib';import {spawnSync} from 'node:child_process';
 const root=path.dirname(fileURLToPath(import.meta.url)),lane='kids',repository='mstrangtrieueducation-droid/'+lane+'-grader-runner';
 const required=n=>{const v=process.env[n]?.trim();if(!v)throw Error('MISSING_'+n);return v;};
 const runTest=name=>{const r=spawnSync(process.execPath,[name],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,maxBuffer:10*1024*1024});if(r.status){fs.mkdirSync(path.join(root,'private'),{recursive:true});fs.writeFileSync(path.join(root,'private','test-failure.txt'),r.stdout+'\n'+r.stderr);throw Error('SAFEGUARD_TEST_FAILED');}console.log(JSON.stringify({test:name,passed:true,providerCalls:0}));};
 async function main(){
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');
- const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs"];runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
+ const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","new-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs"];runTest('automatic-authorization-tests.mjs');runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  if(mode==='validate')return;
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/'+required('RUNNER_DEFAULT_BRANCH')))throw Error('TRUSTED_REPOSITORY_AND_BRANCH_REQUIRED');
  if(mode==='grade'&&process.env.GRADING_ENABLED!=='true')throw Error('HANDOFF_NOT_ENABLED');
+ if(mode==='grade')process.env.AUTOMATIC_GRADING_AUTHORIZED='true';
  const bytes=fs.readFileSync(path.join(root,'approved-policy.enc'));if(bytes.subarray(0,4).toString()!=='GB01')throw Error('PRIVATE_BUNDLE_SCHEMA_INVALID');
  const decipher=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),bytes.subarray(4,16));decipher.setAAD(Buffer.from(repository));decipher.setAuthTag(bytes.subarray(16,32));
  const bundle=JSON.parse(gunzipSync(Buffer.concat([decipher.update(bytes.subarray(32)),decipher.final()])).toString('utf8'));
- const config=bundle.config; if(config.kids?.model!=='gemini-2.5-flash'||config.kids?.routing!=='teacher-master-v1-20261014')throw Error('MASTER_POLICY_BINDING_REQUIRED'); const sa=JSON.parse(required('GOOGLE_SERVICE_ACCOUNT_JSON')),key=required('GEMINI_KEY_'+lane.toUpperCase());
+ const config=bundle.config; if(config.kids?.model!=='gemini-3.8-flash'||config.kids?.routing!=='teacher-master-v2-20261014')throw Error('MASTER_POLICY_BINDING_REQUIRED'); const sa=JSON.parse(required('GOOGLE_SERVICE_ACCOUNT_JSON')),key=required('GEMINI_KEY_'+lane.toUpperCase());
  if(bundle.lane!==lane||bundle.schema!=='private-grading-bundle-v1'||config.approvedRepository!==repository||config.serviceAccount!==sa.client_email)throw Error('PRIVATE_BINDING_INVALID');
  fs.mkdirSync(path.join(root,'private'),{recursive:true,mode:0o700});
- process.env.RUNNER_CONFIG=JSON.stringify(config);process.env.GOOGLE_CREDENTIALS=JSON.stringify(sa);process.env.GEMINI_API_KEY=key;process.env.KIDS_NATIVE_CONFIG=JSON.stringify(config.nativeConfig);process.env.RUNNER_SHEET_BATCH='1';process.env.RUNNER_HOST='github';
+ process.env.RUNNER_CONFIG=JSON.stringify(config);process.env.GOOGLE_CREDENTIALS=JSON.stringify(sa);process.env.GEMINI_API_KEY=key;process.env.KIDS_NATIVE_CONFIG=JSON.stringify(config.nativeConfig);process.env.RUNNER_SHEET_BATCH='1';process.env.RUNNER_HOST='github';if(bundle.nonStudentAudioRegistry)fs.writeFileSync(path.join(root,'private/non-student-audio-registry.json'),JSON.stringify(bundle.nonStudentAudioRegistry));
  if(lane==='kids'){const catalog=path.join(root,'migration/kids-barem-20261012/catalog.approved.json');fs.mkdirSync(path.dirname(catalog),{recursive:true});fs.writeFileSync(catalog,JSON.stringify(bundle.barem),{mode:0o600});process.env.MASTER_BAREM_CATALOG=catalog;runTest('kids-barem-recovery-tests.mjs');}
  else{fs.writeFileSync(path.join(root,'shadowing-references.json'),JSON.stringify(bundle.references),{mode:0o600});runTest('shadowing-tests.mjs');}
  const {Google,request}=await import('./google-adapter.mjs');const google=new Google(sa),model=lane==='kids'?config.kids.model:config.shadowing.model;

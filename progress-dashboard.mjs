@@ -6,7 +6,8 @@ const TITLE='TIẾN ĐỘ CHUNG', MARKER='TIẾN ĐỘ CHẤM — KIDS / IELTS /
 const pending=new Set(['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED','GENERATING','GENERATED']);
 export function dashboardState(j){
  if(j.status==='WAITING_MODEL_ACCESS')return 'CHỜ MODEL KHẢ DỤNG';
- if(['CẦN_NỘP_LẠI_DO_ĐỌC_BÀI','COMPLETED_UNASSESSABLE','COMPLETED_NEEDS_RESUBMISSION'].includes(j.status))return 'CẦN NỘP LẠI';
+ if(['CẦN_NỘP_LẠI_DO_ĐỌC_BÀI','COMPLETED_UNASSESSABLE','COMPLETED_NEEDS_RESUBMISSION','COMPLETED_PRESENTATION_RESUBMISSION'].includes(j.status))return 'CẦN NỘP LẠI';
+ if(j.status==='WAITING_TEACHER_APPROVAL')return 'CHỜ DUYỆT CHẤM';
  if(j.status==='NEEDS_ASSIGNMENT')return 'CẦN CÔ GÁN CỘT/TÊN';
  if(j.status==='NEEDS_RESUBMISSION')return 'CẦN NỘP LẠI';
  if(j.status==='AUTOMATION_FAILED')return 'LỖI TỰ ĐỘNG — ĐÃ GHI LOG';
@@ -25,6 +26,8 @@ export function dashboardState(j){
 export function refreshProgressDashboard(g,cfg,label='Theo dõi hàng đợi'){
  const bindings=[...cfg.clusters.map(b=>({...b,kind:'Kids',tab:'Jobs'})),...(cfg.ielts?[{...cfg.ielts,kind:'IELTS',tab:'IELTS SPEAKING AI'}]:[]),...(cfg.shadowing?.enabled?[{...cfg.shadowing,kind:'Shadowing',tab:'SHADOWING AI'}]:[])];
  const counts={},items=[],scoreTargets=[];
+ const progressBook=g.book(cfg.clusters[0].controlId),existingProgress=progressBook.getSheetByName(TITLE),forceRequests=new Map();
+ if(existingProgress){g.preloadSource(progressBook.id,11,[TITLE]);const existingRows=existingProgress.getDataRange().getValues();if(existingRows[5]?.[9]==='DUYỆT CHẤM')for(const r of existingRows.slice(6))if(r[9]===true&&r[10])forceRequests.set(String(r[10]),true);}
  for(const b of bindings){
   const book=g.book(b.controlId),s=book.getSheetByName(b.tab);if(!s)throw Error('DASHBOARD_QUEUE_MISSING');
   const max=s.meta.properties.gridProperties.rowCount;
@@ -36,6 +39,7 @@ export function refreshProgressDashboard(g,cfg,label='Theo dõi hàng đợi'){
     const cell=j.cell||j.target?.a1||j.destination?.a1||j.dest?.a1||'';
     const issue=(j.error==='GRADE_MANUAL_RESUBMISSION'?'Bài nộp lại sau cảnh báo; dành cho cô chấm tay.':j.recordingIssue?.reason)||(j.error==='GRADE_RECORDING_REVIEW'?'Chưa xác minh được cách quay; cô kiểm tra trước khi chấm.':j.error||'');
     items.push([b.kind,j.cls?.className||j.source?.className||j.className||'',j.receipt?.student||j.source?.name||'',j.route?.code||j.source?.code||'',state,issue,String(r[2]||''),target?`https://docs.google.com/spreadsheets/d/${target}/edit${cell?'#range='+encodeURIComponent(cell):''}`:'',`https://docs.google.com/spreadsheets/d/${b.controlId}/edit#gid=${s.getSheetId()}&range=A${start+i}:F${start+i}`]);
+    items.at(-1).push(forceRequests.has(j.id),j.id);
     if(b.kind==='Kids'&&['ĐÃ TRẢ','GIỮ NHẬN XÉT CŨ'].includes(state))scoreTargets.push({text:j.autoNotice||'',row:items[items.length-1]});
    });
   }
@@ -46,17 +50,17 @@ export function refreshProgressDashboard(g,cfg,label='Theo dõi hàng đợi'){
  const b=g.book(cfg.clusters[0].controlId);b.cache.clear();let s=b.getSheetByName(TITLE);
  if(s&&s.getRange('A1').getValue()!==MARKER)throw Error('DASHBOARD_UNMANAGED_TAB');
  if(!s)s=b.insertSheet(TITLE);
- const at=new Date().toISOString(),rows=[[MARKER],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'}),label],['Hồ sơ đã quét',items.length,...['ĐÃ TRẢ','ĐANG CHỜ','ĐANG XỬ LÝ'].flatMap(k=>[k,counts[k]||0])],['CẦN NỘP LẠI',counts['CẦN NỘP LẠI']||0,'CẦN CÔ GÁN CỘT/TÊN',counts['CẦN CÔ GÁN CỘT/TÊN']||0,'GIỮ NHẬN XÉT CŨ',counts['GIỮ NHẬN XÉT CŨ']||0,ATTENTION_LABEL,attention.low],['Lọc hàng 6 theo lớp/trạng thái. Theo kết quả đã lưu; tổng là hồ sơ đã quét, không phải số bài chấm thành công.'],['Khối','Lớp','Học sinh','Bài','Trạng thái','Lý do / Cần xử lý','Cập nhật hồ sơ','Mở nhận xét','Mở hàng đợi'],...items];
+ const at=new Date().toISOString(),rows=[[MARKER],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'}),label],['Hồ sơ đã quét',items.length,...['ĐÃ TRẢ','ĐANG CHỜ','ĐANG XỬ LÝ'].flatMap(k=>[k,counts[k]||0])],['CẦN NỘP LẠI',counts['CẦN NỘP LẠI']||0,'CẦN CÔ GÁN CỘT/TÊN',counts['CẦN CÔ GÁN CỘT/TÊN']||0,'GIỮ NHẬN XÉT CŨ',counts['GIỮ NHẬN XÉT CŨ']||0,ATTENTION_LABEL,attention.low],['Chỉ chấm hồ sơ được tích DUYỆT CHẤM; tự bỏ tích sau khi trả bài.'],['Khối','Lớp','Học sinh','Bài','Trạng thái','Lý do / Cần xử lý','Cập nhật hồ sơ','Mở nhận xét','Mở hàng đợi','DUYỆT CHẤM','Mã hồ sơ'],...items];
  const id=s.getSheetId(),n=Math.max(rows.length,s.meta.properties.gridProperties.rowCount),rgb=(r,g,b)=>({red:r,green:g,blue:b});
- const req=[{updateSheetProperties:{properties:{sheetId:id,gridProperties:{rowCount:n,columnCount:Math.max(9,s.meta.properties.gridProperties.columnCount),frozenRowCount:6}},fields:'gridProperties'}}];
+ const req=[{updateSheetProperties:{properties:{sheetId:id,gridProperties:{rowCount:n,columnCount:Math.max(11,s.meta.properties.gridProperties.columnCount),frozenRowCount:6}},fields:'gridProperties'}},{setDataValidation:{range:{sheetId:id,startRowIndex:6,endRowIndex:Math.max(7,rows.length),startColumnIndex:9,endColumnIndex:10},rule:{condition:{type:'BOOLEAN'},strict:true,showCustomUi:true}}},{updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:9,endIndex:10},properties:{pixelSize:110},fields:'pixelSize'}},{updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:10,endIndex:11},properties:{hiddenByUser:true},fields:'hiddenByUser'}}];
  // Own only this dedicated report tab, not the job queues or learner cells.
- req.push({updateCells:{range:{sheetId:id,startRowIndex:0,endRowIndex:n,startColumnIndex:0,endColumnIndex:9},rows:rows.map(r=>({values:Array.from({length:9},(_,i)=>({userEnteredValue:typeof r[i]==='number'?{numberValue:r[i]}:{stringValue:String(r[i]??'')}}))})),fields:'userEnteredValue'}});
+ req.push({updateCells:{range:{sheetId:id,startRowIndex:0,endRowIndex:n,startColumnIndex:0,endColumnIndex:11},rows:rows.map(r=>({values:Array.from({length:11},(_,i)=>({userEnteredValue:typeof r[i]==='boolean'?{boolValue:r[i]}:typeof r[i]==='number'?{numberValue:r[i]}:{stringValue:String(r[i]??'')}}))})),fields:'userEnteredValue'}});
  req.push({repeatCell:{range:{sheetId:id,startRowIndex:0,endRowIndex:rows.length,startColumnIndex:0,endColumnIndex:9},cell:{userEnteredFormat:{textFormat:{fontFamily:'Arial',fontSize:10},verticalAlignment:'TOP',wrapStrategy:'WRAP'}},fields:'userEnteredFormat'}});
  req.push({repeatCell:{range:{sheetId:id,startRowIndex:5,endRowIndex:6,startColumnIndex:0,endColumnIndex:9},cell:{userEnteredFormat:{backgroundColor:rgb(.92,.94,.95),textFormat:{bold:true}}},fields:'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold'}});
  [90,110,160,145,175,350,175,130,130].forEach((w,i)=>req.push({updateDimensionProperties:{range:{sheetId:id,dimension:'COLUMNS',startIndex:i,endIndex:i+1},properties:{pixelSize:w},fields:'pixelSize'}}));
  for(const row of [0,4])if(!s.meta.merges?.some(m=>m.startRowIndex===row&&m.startColumnIndex===0&&m.endColumnIndex===9))req.push({mergeCells:{range:{sheetId:id,startRowIndex:row,endRowIndex:row+1,startColumnIndex:0,endColumnIndex:9},mergeType:'MERGE_ALL'}});
  req.push({repeatCell:{range:{sheetId:id,startRowIndex:6,endRowIndex:Math.max(7,rows.length),startColumnIndex:7,endColumnIndex:9},cell:{userEnteredFormat:{wrapStrategy:'CLIP'}},fields:'userEnteredFormat.wrapStrategy'}});
- req.push({setBasicFilter:{filter:{range:{sheetId:id,startRowIndex:5,endRowIndex:Math.max(7,rows.length),startColumnIndex:0,endColumnIndex:9}}}});
+ req.push({setBasicFilter:{filter:{range:{sheetId:id,startRowIndex:5,endRowIndex:Math.max(7,rows.length),startColumnIndex:0,endColumnIndex:10}}}});
  for(const [i,row]of items.entries())if(row.lowScore)req.push({repeatCell:{range:{sheetId:id,startRowIndex:i+6,endRowIndex:i+7,startColumnIndex:5,endColumnIndex:6},cell:{userEnteredFormat:{textFormat:{foregroundColor:rgb(183/255,28/255,28/255),bold:true}}},fields:'userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.textFormat.bold'}});
  b.batch(req);
  const result={at,counts,attention,total:items.length,url:`https://docs.google.com/spreadsheets/d/${b.id}/edit#gid=${id}`};

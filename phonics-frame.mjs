@@ -8,12 +8,13 @@ export function extractPhonicsFrame({ffmpeg,input,output,durationSeconds,timeSec
  return {path:output,timeSeconds:time,bytes:fs.statSync(output).size,mime:'image/jpeg'};
 }
 export function extractPresentationFrames(options){
- const times=Number.isFinite(options.durationSeconds)&&options.durationSeconds>0?[0.15,0.5,0.85].map(r=>r*options.durationSeconds):[2,15,30],frames=[];
+ const times=[10,40].filter(t=>!Number.isFinite(options.durationSeconds)||t<options.durationSeconds),frames=[];
+ if(!times.length)times.push(Math.max(0,(options.durationSeconds||1)/2));
  for(const [i,timeSeconds] of times.entries())try{const f=extractPhonicsFrame({...options,timeSeconds,output:options.output.replace(/\.jpg$/,`-${i+1}.jpg`)});if(!frames.some(x=>x.timeSeconds===f.timeSeconds))frames.push(f);}catch{}
  return frames;
 }
 export function phonicsFrameParts(job,{read=fs.readFileSync,exists=fs.existsSync}={}){
- if(!['phonics','science','scienceK','critical','de'].includes(job.route?.kind)||job.rawId||job.gradeId)return [];
+ if(!['phonics','science','scienceK','critical','de','project'].includes(job.route?.kind)||job.rawId||job.gradeId)return [];
  const parts=[];
  for(const [i,m] of (job.media||[]).filter(m=>!m.isReference).entries()){
   if(!m.mime.startsWith('video/'))continue;

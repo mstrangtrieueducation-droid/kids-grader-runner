@@ -5,5 +5,5 @@ process.env.RUNNER_CONFIG=JSON.stringify({clusters:[cluster],serviceAccount:'sa@
 process.env.KIDS_NATIVE_CONFIG=JSON.stringify({source:'test-source',classroom:'test-classroom',practice:'test-practice'});
 const runner=await import('./grader_runner.mjs');assert.equal(typeof runner.buildContext,'function');
 assert.deepEqual(runner.runShadowingPass(),{finished:0,paidCalls:0});
-const c=runner.buildContext(cluster);assert.equal(vm.runInContext('KG.source',c),'test-source');assert.equal(c.configuredModel_(),'gemini-2.5-flash');assert.deepEqual(c.fleetModelPool_(),['gemini-2.5-flash']);
+const c=runner.buildContext(cluster);assert.equal(vm.runInContext('KG.source',c),'test-source');assert.equal(c.configuredModel_(),'gemini-3.8-flash');assert.deepEqual(c.fleetModelPool_(),['gemini-3.8-flash']);
 console.log('PASS actual public Kids runtime imports without other-lane dependencies or any provider/network call.');

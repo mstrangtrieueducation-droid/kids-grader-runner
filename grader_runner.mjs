@@ -1,13 +1,16 @@
+import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
 import {installMasterKids} from './master-kids.mjs';
 import {MASTER_MODEL,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {nextDrainWait} from './runner-policies.mjs';
 import {extractStudentAudio,inspectAudio} from './student-audio.mjs';
+import {approvalSession,acceptTeacherApprovals,installTeacherApprovalGuards} from './teacher-approval-guards.mjs';
+import {verifyCodeFreeze} from './code-freeze.mjs';
 import {MasterBaremCatalog,installKidsBarem} from './master-barem.mjs';
 import {recoverUnpaidKidsBarem} from './kids-barem-recovery.mjs';
 import fs from 'node:fs';import path from 'node:path';import vm from 'node:vm';
-import {spawnSync} from 'node:child_process';import {randomUUID} from 'node:crypto';import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';import {randomUUID,createHash} from 'node:crypto';import {fileURLToPath} from 'node:url';
 import {Google,Blob,RichBuilder,Style,request,utilities,pause} from './google-adapter.mjs';
 import {localGuard,stateStore} from './runner-state.mjs';
 import {isNewer,pronunciationEvidence,cameraEvidence,chooseTrackerTab,mediaQueuePriority,googleQueueFailure,throughputQueue,hasUploadedMedia,reusableReference,mediaPolicy,mediaDecision,canRepairTaskReference,kidsReleaseCompatible,jobShard,workerLanes} from './runner-policies.mjs';
@@ -19,6 +22,7 @@ import {extractPhonicsFrame,extractPresentationFrames,phonicsFrameParts} from '.
 import {reconcileFeedbackColors} from './feedback-colors.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),cache=path.join(root,'private','cache');fs.mkdirSync(cache,{recursive:true});
 const mediaCache=new MediaCache(cache);
+verifyCodeFreeze(root);
 const config=JSON.parse(process.env.RUNNER_CONFIG||fs.readFileSync(path.join(root,'private','runner-config.json'),'utf8'));
 config.kids={...config.kids,model:MASTER_MODEL,routing:'teacher-master-v1-20261014'};
 const sa=JSON.parse(process.env.GOOGLE_CREDENTIALS||fs.readFileSync(path.join(root,'..','tracker-fast-pilot-20260924','private','google-service-account.json'),'utf8'));
@@ -143,7 +147,8 @@ export function buildContext(cluster){
  if(process.env.MASTER_BAREM_CATALOG){const catalog=MasterBaremCatalog.fromFile(process.env.MASTER_BAREM_CATALOG);installKidsBarem(c,catalog,vm.runInContext('FORMS',c));
  installContentRouting(c,catalog,{refresh:j=>{google.books.get(j.cls.spreadsheetId)?.cache.clear();},lock:j=>tryFileLock(path.join(cache,'locks','student-'+c.hash_([j.cls.spreadsheetId,c.norm_(j.receipt.student)])+'.lock')),onCall:()=>{paidCalls++;},emit});
  installMasterKids(c,catalog,{emit});
- c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'FILE HỌC SINH '+(i+1)+' (fileIndex '+i+'): âm thanh đầy đủ.'},p]).concat(phonicsFrameParts(j));};
+ installTeacherApprovalGuards(c,{g:google,root,ffmpeg,emit,session:{finish:j=>c.teacherApprovalSession_?.finish(j)}});
+ c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
  c.flushMasterCheckpoint_=row=>google.books.get(cluster.controlId)?.ramBatch?.checkpointControl(cluster.controlId,row);
@@ -273,7 +278,7 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
  if(audioFirst){
  if(file===original){mediaCache.sweep(Math.min(m.size,256*1024*1024));const extracted=extractStudentAudio({ffmpeg,input:original,audio,flac,canonicalFormat:'mp3'});file=extracted.file;mime=extracted.mime;m.audioSelection=extracted.selection;}
   if(file===original){file=audio;mime='audio/mp4';}
-  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame&&!x.runnerContextFrames?.length);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4'};
+  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame&&!x.runnerContextFrames?.length);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4',sha256:createHash('sha256').update(fs.readFileSync(file)).digest('hex')};
   mediaCache.dropOriginal(tag);
  }
  if(proxyVideo){
@@ -327,7 +332,8 @@ function runCluster(cluster,pass=0,phase='all'){
  if(scanOnly)return 0;
  if(!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}
  const selected=option('--class');const attempted=new Set();
- const queued=c.batchQueue_(c.loadJobs_());
+ c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')addAutomaticAuthorizations(c.teacherApprovalSession_,c.teacherApprovalJobs_,cluster.controlId,'Jobs',google.book(cluster.controlId).getSheetByName('Jobs').getSheetId());acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
+ const queued=c.batchQueue_(c.teacherApprovalJobs_);
  for(const {job,row} of phase==='all'?queued:throughputQueue(queued,phase)){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
@@ -344,7 +350,7 @@ function runCluster(cluster,pass=0,phase='all'){
  }
  emit({event:'CLUSTER_COMPLETE',account:cluster.email,counts:c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{})});
  return attempted.size;
- }finally{try{ramBatch?.close();updateProgress(c,cluster,'RUNNER — LƯỢT VỪA CHẠY ĐÃ KẾT THÚC');state.save(c.runnerProperties);}finally{state.release();}}
+ }finally{try{ramBatch?.close();c.teacherApprovalSession_?.flush();updateProgress(c,cluster,'RUNNER — LƯỢT VỪA CHẠY ĐÃ KẾT THÚC');state.save(c.runnerProperties);}finally{state.release();}}
 }
 function runIeltsPass(){return 0;}
 export function runShadowingPass(){return {finished:0,paidCalls:0};}

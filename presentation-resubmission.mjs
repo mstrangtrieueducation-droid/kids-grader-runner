@@ -2,7 +2,7 @@ import {receiptDate,publicText} from './master-policy.mjs';
 export const READING_RESUBMISSION_STATUS='CẦN_NỘP_LẠI_DO_ĐỌC_BÀI';
 export const PRESENTATION_RULE=`QUY TẮC SƯ PHẠM BẮT BUỘC: D.E, Science và Critical chỉ áp dụng khi bài yêu cầu TỰ THUYẾT TRÌNH theo hình/mindmap. Nếu có bằng chứng rõ học sinh đọc bài viết sẵn/đọc thoại từng chữ thụ động thay cho thuyết trình: assessable=false, band và rubricBand rỗng, roseSections=[], không chấm các tiêu chí chi tiết; presentationReadingCheck phải nêu requiresPresentation=true, readsPreparedScript=true, confirmed=true, basis là quan sát cụ thể và sourceFileIndex, time nếu biết. Trả lời yêu cầu luyện nói từ hình/mindmap rồi quay lại nhìn camera. Chỉ nhìn hình, đọc từ khóa mindmap, một lần nhìn xuống, giọng chậm hay chỉ có audio KHÔNG chứng minh đọc bài viết sẵn. Không áp dụng quy tắc này cho bài đọc/dịch, lồng tiếng, shadowing hoặc bài được phép đọc văn bản.`;
 export function confirmedScriptReading(g,j,snapshot={}){
- if(!['de','scienceK','science','critical'].includes(j.route?.kind||snapshot.kind))return false;
+ if(!['de','scienceK','science','critical','project'].includes(j.route?.kind||snapshot.kind))return false;
  const mode=snapshot.barem?.requirements?.contract?.mode;
  if(['read_text','dubbing','shadowing','translate'].includes(mode))return false;
  const x=g.presentationReadingCheck;

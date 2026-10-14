@@ -16,5 +16,5 @@ export function postprocessShadow(raw){
  const digest=createHash('sha256').update(JSON.stringify(raw)).digest('hex');
  fs.writeFileSync(path.join(dir,digest+'.json'),JSON.stringify(result));
  const grade=restoreFixedTargets(result.grade,raw._shadowRequestLedger);
- return raw._shadowRequestLedger?checkShadowCoverage(grade,raw._shadowRequestLedger):grade;
+ return grade.scoreLedger?checkShadowCoverage(grade,raw._shadowRequestLedger):grade;
 }

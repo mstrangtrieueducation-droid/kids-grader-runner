@@ -1,0 +1,29 @@
+{
+  "version": "teacher-code-freeze-20261014",
+  "createdAt": "2026-10-14T07:11:04.702Z",
+  "files": {
+    "student-audio.mjs": "1d005aee6d54895342957aac10d543745d5ba5b664caac606de7a8b5f6402b38",
+    "master-barem.mjs": "5d3e858b09622dfa2219006b68e5c8ea8fc847d6116a4d08ebefc73c1f9927cd",
+    "speaking-barem-runtime.mjs": "d8466b99cb1a56b37d7b0e50e25a7a1999d31754ad966f62cf3ff83b8f9c0f3d",
+    "kids-sheet-batch.mjs": "35dff170816c108caac92c8401055f575a215a43c0e8717d71b6d5de254572fe",
+    "google-adapter.mjs": "24c8f08b7ba3299730ef7f8d9d3d78483f3b32cc69e37b03c553f643c2fc8d7c",
+    "runner-state.mjs": "edee069a9e6b9ba250ea92fbb6f354f4e72ee7d3e0fcf91ee85cf28ba9bbadca",
+    "gas/AssessmentPolicy.gs": "79eef02d6dd095108be3c9e166c6f3b3b51e580cbe02f4e4ec1d3dd686f7d591",
+    "gas/Config.gs": "e3e32a26d4a5a6379707e307cb5ea0db811b63855a7e4d44282831415b258b46",
+    "gas/CostPolicy.gs": "2c49b6c2f24511045558b71513d195ca73c84415bc275bd65ea939a9f7ee20eb",
+    "gas/Engine.gs": "7ba9774c0b2e52bd0d14accc586a586c9ad46a19941cbd52f4d4560e812614d2",
+    "gas/Fleet.gs": "9405568bd53f060703f616f862903a26ad3230f7b59ab4ca91ce300c262ab0a0",
+    "gas/FleetDiagnostics.gs": "6c70859bc2598b0fec791666586d7d61a6fb03a0afc90bce8704c6c6bfebe5ac",
+    "gas/FleetKeyPool.gs": "8384d3626c28a584358e7e46405265a177794c7a4b4273ee04d74913217658bd",
+    "gas/FleetReference.gs": "e11a32f920c03a15d89e592950db855d62f35af956378666f0eaf05076d83a40",
+    "gas/FleetScheduler.gs": "89af58946f7987e9b052a3d4f0ee1cc311de423a77dd512e60f1b0f6dbf9d007",
+    "gas/Gemini.gs": "4ae1e5d44f4dd0361c3172473acf7316e3720be92b5b090c1f226f5f44d9e400",
+    "gas/KidsEvidence.gs": "abc23a7ae94b74b8205f6f89dc2be3b44cb350cd1ab8d9c9ad11ef73bbf78500",
+    "gas/KidsReview.gs": "18aa5d42f22e1d4790a4e3462c4497d9f079ae8e66a563fff0ac1a501ffa3d91",
+    "gas/ModelRouting.gs": "8d8c5ed0fc7a7fd65dec2022835abee5b579786ec0b7201e1b6d951b29536d8a",
+    "gas/QuantScore.gs": "0b957bc3de5da25fbf4ce1f079cf9487470807a65117b88d82b507cf8e96bc49",
+    "gas/RichText.gs": "878c6bfc8e8cf3c9aa793ff23498fde24e7b3399b7e527713b406a42be1005de",
+    "gas/Sources.gs": "bb066cd7d72100606c9ed5752b6bcc23f235ee34292a5d50d71b9bb08e5b28a5",
+    "gas/TaskContract.gs": "2d114df19197b08e630f4f5063b107e37a6f6614a1d74b8d5773717e22125028"
+  }
+}
