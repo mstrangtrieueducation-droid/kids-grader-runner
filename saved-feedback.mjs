@@ -1,4 +1,5 @@
-import {percentBand,publicText,receiptDate} from './master-policy.mjs';
+import {returnedPercent as percentBand} from './returned-score-policy.mjs';
+import {publicText,receiptDate} from './master-policy.mjs';
 import {applyCompletionPolicy} from './content-completion-policy.mjs';
 import {pedagogicSection} from './pedagogical-language.mjs';
 export const SAVED_FEEDBACK_VERSION='kids-saved-feedback-v1';
