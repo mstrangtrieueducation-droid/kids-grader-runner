@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {fairAutomaticCandidates,authorizeFairKidsWork,authorizedWorkQueue} from './automatic-work-queue.mjs';
+import {fairAutomaticCandidates,authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {acceptTeacherApprovals} from './teacher-approval-guards.mjs';
 const item=(id,cls,time,status='READY',extra={})=>({row:Number(id.replace(/\D/g,''))||1,job:{id,status,nextAt:0,cls:{className:cls,spreadsheetId:cls},receipt:{student:id,time},route:{code:'OP1-L01'},...extra}});
 const rows=[...Array.from({length:8},(_,i)=>item('a'+i,'A','2026-10-14T12:00:00Z')),...Array.from({length:8},(_,i)=>item('b'+i,'B','2026-09-14T12:00:00Z'))];
@@ -13,4 +13,6 @@ const authorized=authorizedWorkQueue(c);assert.equal(authorized.length,6);assert
 assert.equal(fairAutomaticCandidates(rows,['A','B','C','D','E','F','G','H','I','J'],0).nextCursor,6);
 const a=item('x1','A','2026-10-01'),b=item('x2','A','2026-10-14');a.job.receipt.student=b.job.receipt.student='same';const dedup=fairAutomaticCandidates([a,b],['A']);assert.equal(dedup.ordered[0].job.id,'x2');assert.equal(dedup.ordered.length,1);
 const delayed=item('d1','A','2026-10-14');delayed.job.nextAt=Date.now()+60000;assert.equal(fairAutomaticCandidates([delayed],['A']).ordered.length,0);
-console.log('Fair classes, waiting-state authorization, paid/rejected guards and authorized-only processing passed; provider calls: 0.');
+const large=item('l1','A','2026-10-14','WAITING_MEDIA',{media:[{mime:'video/mp4',size:100000000}]}),small=item('s1','B','2026-10-14','WAITING_MEDIA',{media:[{mime:'video/mp4',size:1000}]});
+assert.equal(authorizedPhaseQueue([large,small],'prepare',true)[0].job.id,'l1');assert.equal(authorizedPhaseQueue([large,small],'prepare',false)[0].job.id,'s1');
+console.log('Fair classes, waiting-state authorization, preparation fairness, paid/rejected guards and authorized-only processing passed; provider calls: 0.');

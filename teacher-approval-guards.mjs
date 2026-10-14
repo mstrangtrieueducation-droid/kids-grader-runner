@@ -6,6 +6,7 @@ import {STRICT_PRESENTATION_RULE,knownInvalidPresentation,confirmedPresentationM
 import {prepareAudioWithRepair,validateAudioPart,assertAudioPayload} from './audio-payload-guard.mjs';
 import {COMPLETION_INSTRUCTION,completionSchema,incompleteFeedback} from './content-completion-policy.mjs';
 import {PEDAGOGY_INSTRUCTION} from './pedagogical-language.mjs';
+import {retireReferenceInputs} from './retired-reference-inputs.mjs';
 export const APPROVAL_HEADER='DUYỆT CHẤM';
 export function approvalSession(g,controlId){
  const book=g.book(controlId),sheet=book.getSheetByName('TIẾN ĐỘ CHUNG'),approved=new Map(),pending=new Map();if(!sheet)return {approved,finish:()=>{},flush:()=>{}};
@@ -65,7 +66,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
   try{const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(j.teacherApprovalOverwrite)c.approvalActiveOverwrite={before:cell.getDisplayValue()};if(knownInvalidPresentation(j,c.teacherApprovalJobs_)||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}const old=oldFile(j);if(old){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
    if(j.status==='SYSTEM_AUDIO_ERROR')return;
    if(rejectIncomplete(j,row))return;
-   if(!j.rawId&&!generationSpent(j)){if(c.bindPoolJob_&&process.env.GEMINI_API_KEY)c.bindPoolJob_(j,{keyHash:c.hash_(process.env.GEMINI_API_KEY),model:MASTER_MODEL});if(!(j.media||[]).some(m=>!m.isReference)&&c.kidsCostPreflight_){const files=c.kidsCostPreflight_(j);j.media=files.map(m=>({...m,isReference:false}));j.studentFileCount=j.media.length;c.persist_(j,row);}}
+   if(!j.rawId&&!generationSpent(j)){retireReferenceInputs(c,j,row);if(c.bindPoolJob_&&process.env.GEMINI_API_KEY)c.bindPoolJob_(j,{keyHash:c.hash_(process.env.GEMINI_API_KEY),model:MASTER_MODEL});if(!(j.media||[]).some(m=>!m.isReference)&&c.kidsCostPreflight_){const files=c.kidsCostPreflight_(j);j.media=files.map(m=>({...m,isReference:false}));j.studentFileCount=j.media.length;c.persist_(j,row);}}
    originalStep(j,row,deadline,options);if(MASTER_TERMINAL.has(j.status)){session.finish(j);delete j.teacherApprovalOverwrite;c.persist_(j,row);}}
   catch(e){c.handleError_(j,row,e);}finally{delete c.approvalActiveOverwrite;}
  };

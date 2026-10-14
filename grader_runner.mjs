@@ -1,5 +1,5 @@
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
-import {authorizeFairKidsWork,authorizedWorkQueue} from './automatic-work-queue.mjs';
+import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
@@ -338,7 +338,7 @@ function runCluster(cluster,pass=0,phase='all'){
  if(c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
  c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c);
- for(const {job,row} of phase==='all'?queued:throughputQueue(queued,phase)){
+ for(const {job,row} of authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
   if(option('--kind')&&job.route.kind!==option('--kind'))continue;

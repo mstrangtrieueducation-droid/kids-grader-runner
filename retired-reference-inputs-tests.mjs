@@ -1,0 +1,8 @@
+import assert from 'node:assert/strict';import {retireReferenceInputs} from './retired-reference-inputs.mjs';
+let guides=0,saved=0,persisted=0;const snapshot={reference:'approved barem text',referenceMedia:[],referenceAssets:[]},c={guide_:()=>{guides++;return snapshot;},saveArtifact_:()=>{saved++;return 'new-snapshot';},hash_:()=> 'snapshot-hash',persist_:()=>persisted++};
+const student1={id:'student-one',mime:'video/mp4'},student2={id:'student-two',mime:'audio/mp4'},pdf={id:'teacher-pdf',isReference:true,mime:'application/pdf'},sample={id:'teacher-video',isReference:true,mime:'video/mp4'},j={id:'fixture',snapshotId:'old-snapshot',media:[student1,pdf,student2,sample],route:{code:'OP1-L01'}};
+assert.equal(retireReferenceInputs(c,j,2),true);assert.deepEqual(j.media,[student1,student2]);assert.equal(j.studentFileCount,2);assert.equal(j.previousSnapshotId,'old-snapshot');assert.equal(j.sourceHash,'snapshot-hash');assert.deepEqual(j.retiredReferenceInputs.ids,['teacher-pdf','teacher-video']);assert.equal(snapshot.reference,'approved barem text');assert.equal(saved,1);assert.equal(persisted,1);
+assert.equal(retireReferenceInputs(c,j,2),false);assert.equal(guides,1);
+for(const guard of [{rawId:'saved'},{generateRequests:1},{masterGenerationReserved:true}]){const paid={id:'paid',media:[student1,pdf],...guard};assert.equal(retireReferenceInputs(c,paid,3),false);assert.equal(paid.media.length,2);}assert.equal(guides,1);
+assert.throws(()=>retireReferenceInputs(c,{id:'empty',media:[pdf],route:{}},4),/MISSING_STUDENT_AUDIO/);
+console.log('Only retired teacher media removed; all student files/barem text/paid results preserved; provider calls: 0.');

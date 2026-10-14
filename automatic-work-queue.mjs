@@ -1,5 +1,6 @@
 import {addAutomaticAuthorizations,automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {receiptDate} from './master-policy.mjs';
+import {readyForMediaCheck,throughputQueue} from './runner-policies.mjs';
 export function fairAutomaticCandidates(jobs,classes,cursor=0){
  const all=jobs.map(x=>x.job),latest=new Map();
  for(const item of jobs.slice().sort((a,b)=>receiptDate(b.job.receipt?.time,new Date(0))-receiptDate(a.job.receipt?.time,new Date(0)))){
@@ -16,3 +17,4 @@ export function authorizeFairKidsWork(c,cluster,google){
  c.runnerProperties.set('FLEET_WORK_AUTO_CURSOR',String(selection.nextCursor));return session;
 }
 export function authorizedWorkQueue(c){return c.batchQueue_(c.teacherApprovalJobs_).filter(({job})=>c.teacherApprovalSession_.approved.has(job.id));}
+export function authorizedPhaseQueue(items,phase,automatic=false){if(phase==='all')return items;return automatic&&phase==='prepare'?items.filter(x=>!readyForMediaCheck(x.job)):throughputQueue(items,phase);}
