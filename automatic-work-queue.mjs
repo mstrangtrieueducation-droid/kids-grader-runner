@@ -7,7 +7,7 @@ export function fairAutomaticCandidates(jobs,classes,cursor=0){
   const j=item.job;if(j.nextAt>Date.now()||!(automaticEligible(j,all)||mayResumeSaved(j)))continue;
   const key=[j.cls?.spreadsheetId,j.receipt?.student,j.route?.code].join('|');if(!latest.has(key))latest.set(key,item);
  }
- const names=classes.map(x=>typeof x==='string'?x:x.className),offset=((Number(cursor)||0)%names.length+names.length)%names.length,buckets=names.slice(offset).concat(names.slice(0,offset)).map(name=>[...latest.values()].filter(x=>x.job.cls?.className===name)),ordered=[];
+ const names=classes.map(x=>typeof x==='string'?x:x.className),offset=((Number(cursor)||0)%names.length+names.length)%names.length,buckets=names.slice(offset).concat(names.slice(0,offset)).map(name=>[...latest.values()].filter(x=>x.job.cls?.className===name).sort((a,b)=>Number(mayResumeSaved(b.job))-Number(mayResumeSaved(a.job)))),ordered=[];
  while(buckets.some(x=>x.length))for(const bucket of buckets)if(bucket.length)ordered.push(bucket.shift());
  return {ordered,nextCursor:names.length?(offset+Math.min(6,names.length))%names.length:0};
 }

@@ -7,6 +7,7 @@ import {prepareAudioWithRepair,validateAudioPart,assertAudioPayload} from './aud
 import {COMPLETION_INSTRUCTION,completionSchema,incompleteFeedback} from './content-completion-policy.mjs';
 import {PEDAGOGY_INSTRUCTION} from './pedagogical-language.mjs';
 import {retireReferenceInputs} from './retired-reference-inputs.mjs';
+import {systemSourceFailure,repairUnsupportedSourceNotices} from './source-input-guards.mjs';
 export const APPROVAL_HEADER='DUYỆT CHẤM';
 export function approvalSession(g,controlId){
  const book=g.book(controlId),sheet=book.getSheetByName('TIẾN ĐỘ CHUNG'),approved=new Map(),pending=new Map();if(!sheet)return {approved,finish:()=>{},flush:()=>{}};
@@ -18,7 +19,7 @@ export function approvalSession(g,controlId){
 export function acceptTeacherApprovals(jobs,session,controlId,tab,save){
  for(const {job:j,row}of jobs){const a=session.approved.get(j.id);if(!a||!String(a.sourceLink).includes('/'+controlId+'/')||!String(a.sourceLink).includes('A'+row+':F'+row)){if(j.teacherApproval?.approved)j.teacherApproval.approved=false;continue;}
   if(j.teacherApproval?.approved)continue;
-  if(a.automatic&&j.rawId){j.teacherApproval={...a,approved:true,acceptedAt:new Date().toISOString(),resumingSavedResult:true};j.nextAt=0;save(j,row);continue;}
+  if(a.automatic&&j.rawId){j.teacherApproval={...a,approved:true,acceptedAt:new Date().toISOString(),resumingSavedResult:true};if(j.status==='WAITING_TEACHER_APPROVAL')j.status='READY';j.nextAt=0;save(j,row);continue;}
   if(MASTER_TERMINAL.has(j.status)||j.status==='DONE'||generationSpent(j)){
    j.teacherApprovedHistory ||= [];j.teacherApprovedHistory.push({at:new Date().toISOString(),rawId:j.rawId,gradeId:j.gradeId,status:j.status,generateRequests:j.generateRequests,usage:j.apiUsage||j.usage,autoNotice:j.autoNotice});
    for(const k of ['rawId','gradeId','pendingFeedback','pendingFeedbackRender','pendingMasterFeedback','pendingMasterReading','generateRequests','approvedGenerateRequests','attempts','attemptsToday','verificationRawId','verificationStarted','masterGenerationReserved','runnerGenerationStarted','generationReservation','previousGradingAttempts','failedAttempts','retryGenerationAuthorized','apiUsage','usage'])delete j[k];
@@ -37,6 +38,7 @@ export function auditPreparedPart({g,c,job,m,part,root,ffmpeg}){
 }
 export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{}}){
  const originalStep=c.step_,originalGenerate=c.generate_,originalError=c.handleError_,originalSystem=c.kidsSystemInstruction_,hasFeedback=c.hasFeedback_,mediaPart=c.mediaPart_;
+ const recovery=c.recoverContentRouting_;c.recoverContentRouting_=()=>{const sourceNotices=repairUnsupportedSourceNotices(c);return {...(recovery?.()||{}),sourceNotices};};
  c.kidsSystemInstruction_=()=>originalSystem()+'\n'+STUDENT_VOICE_INSTRUCTION+'\n'+STRICT_PRESENTATION_RULE+'\n'+COMPLETION_INSTRUCTION+'\n'+PEDAGOGY_INSTRUCTION;
  const schema=c.kidsEvidenceSchema_;if(schema)c.kidsEvidenceSchema_=form=>{const s=schema(form);return {...s,properties:{...s.properties,completionCheck:completionSchema},required:[...(s.required||[]),'completionCheck']};};
  c.hasFeedback_=text=>c.approvalActiveOverwrite&&text===c.approvalActiveOverwrite.before?false:hasFeedback(text);
@@ -72,6 +74,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
  };
  c.handleError_=(j,row,e)=>{
   emit({event:'ADDITIVE_GUARD_ERROR',id:j.id,error:e.message});
+  const sourceFailure=systemSourceFailure(j,e);if(sourceFailure){j.sourceInputFailure={at:new Date().toISOString(),cause:e.message,providerCalls:0};e=Error(sourceFailure);}
   if(e.message.startsWith('SYSTEM_AUDIO_INPUT_')&&!j.rawId){j.status='SYSTEM_AUDIO_ERROR';j.error=e.message;j.nextAt=0;j.audioPayloadFailure={...j.audioPayloadFailure,at:new Date().toISOString(),error:e.message,providerGenerateRequests:j.physicalGenerateRequests||0};c.persist_(j,row);return;}
   if(e.message==='AUDIO_LOCAL_REPAIR_PENDING'&&!j.rawId){j.status='WAITING_MEDIA';j.error=e.message;j.nextAt=Date.now()+2000;c.persist_(j,row);return;}
   if(/KEY_REMOVED|KEY_(?:PROJECT|BINDING)|POOL_|AUDIO_PAYLOAD_MISSING|AUDIO_(?:AUDIT|SILENCE_PROBE|PROBE|EXTRACTION)_|RUNNER_DISK|GOOGLE_HTTP_|NETWORK_OUTCOME_UNKNOWN/.test(e.message)&&!j.rawId){j.status='RETRY';j.error=e.message;j.nextAt=Date.now()+60000;c.persist_(j,row);return;}
