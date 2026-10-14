@@ -1,3 +1,4 @@
+import {SPEECH_CLASSIFICATION_INSTRUCTION,wrongLessonWithoutFeedback,WRONG_LESSON_NOTICE} from './student-speech-evidence.mjs';
 import fs from 'node:fs';import path from 'node:path';import {randomUUID} from 'node:crypto';
 import {MASTER_TERMINAL,MASTER_MODEL,generationSpent} from './master-policy.mjs';import {STUDENT_VOICE_INSTRUCTION,voiceOrigin,audioDigest} from './student-voice-origin.mjs';
 import {SILENT_NOTICE,OLD_FILE_NOTICE,oldGradedSubmission,noSpeech,inspectSilence} from './zero-cost-gates.mjs';
@@ -39,7 +40,7 @@ export function auditPreparedPart({g,c,job,m,part,root,ffmpeg}){
 export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{}}){
  const originalStep=c.step_,originalGenerate=c.generate_,originalError=c.handleError_,originalSystem=c.kidsSystemInstruction_,hasFeedback=c.hasFeedback_,mediaPart=c.mediaPart_;
  const recovery=c.recoverContentRouting_;c.recoverContentRouting_=()=>{const sourceNotices=repairUnsupportedSourceNotices(c);return {...(recovery?.()||{}),sourceNotices};};
- c.kidsSystemInstruction_=()=>originalSystem()+'\n'+STUDENT_VOICE_INSTRUCTION+'\n'+STRICT_PRESENTATION_RULE+'\n'+COMPLETION_INSTRUCTION+'\n'+PEDAGOGY_INSTRUCTION;
+ c.kidsSystemInstruction_=()=>originalSystem()+'\n'+STUDENT_VOICE_INSTRUCTION+'\n'+STRICT_PRESENTATION_RULE+'\n'+COMPLETION_INSTRUCTION+'\n'+PEDAGOGY_INSTRUCTION+'\n'+SPEECH_CLASSIFICATION_INSTRUCTION;
  const schema=c.kidsEvidenceSchema_;if(schema)c.kidsEvidenceSchema_=form=>{const s=schema(form);return {...s,properties:{...s.properties,completionCheck:completionSchema},required:[...(s.required||[]),'completionCheck']};};
  c.hasFeedback_=text=>c.approvalActiveOverwrite&&text===c.approvalActiveOverwrite.before?false:hasFeedback(text);
  if(mediaPart)c.mediaPart_=(j,m,save,deadline)=>{const part=prepareAudioWithRepair({job:j,m,prepare:()=>mediaPart(j,m,save,deadline),save,root,g,ffmpeg,emit});if(part){auditPreparedPart({g,c,job:j,m,part,root,ffmpeg});save();}return part;};
@@ -67,7 +68,8 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
   if(!j.teacherApproval?.approved){if(!MASTER_TERMINAL.has(j.status)){j.status='WAITING_TEACHER_APPROVAL';j.nextAt=0;c.persist_(j,row);}return;}
   try{const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(j.teacherApprovalOverwrite)c.approvalActiveOverwrite={before:cell.getDisplayValue()};if(knownInvalidPresentation(j,c.teacherApprovalJobs_)||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}const old=oldFile(j);if(old){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
    if(j.status==='SYSTEM_AUDIO_ERROR')return;
-   if(rejectIncomplete(j,row))return;
+   if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){notice(j,row,WRONG_LESSON_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
+  if(rejectIncomplete(j,row))return;
    if(!j.rawId&&!generationSpent(j)){retireReferenceInputs(c,j,row);if(c.bindPoolJob_&&process.env.GEMINI_API_KEY)c.bindPoolJob_(j,{keyHash:c.hash_(process.env.GEMINI_API_KEY),model:MASTER_MODEL});if(!(j.media||[]).some(m=>!m.isReference)&&c.kidsCostPreflight_){const files=c.kidsCostPreflight_(j);j.media=files.map(m=>({...m,isReference:false}));j.studentFileCount=j.media.length;c.persist_(j,row);}}
    originalStep(j,row,deadline,options);if(MASTER_TERMINAL.has(j.status)){session.finish(j);delete j.teacherApprovalOverwrite;c.persist_(j,row);}}
   catch(e){c.handleError_(j,row,e);}finally{delete c.approvalActiveOverwrite;}
@@ -82,6 +84,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
   if(['LOCAL_SILENT_AUDIO','AUDIO_NO_STREAM'].includes(e.message)){notice(j,row,SILENT_NOTICE,'COMPLETED_UNASSESSABLE');return;}
   if(e.message==='LOCAL_OLD_GRADED_FILE'){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
   if(e.message==='PRESENTATION_FORMAT_RESUBMISSION'||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}
+  if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){notice(j,row,WRONG_LESSON_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
   if(rejectIncomplete(j,row))return;
   if(j.rawId&&noSpeech(decodeSavedDraft(c.readArtifact_(j.rawId)))&&!decodeSavedDraft(c.readArtifact_(j.rawId)).presentationReadingCheck?.confirmed){notice(j,row,SILENT_NOTICE,'COMPLETED_UNASSESSABLE');return;}
   originalError(j,row,e);
