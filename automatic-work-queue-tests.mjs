@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {fairAutomaticCandidates,authorizeFairKidsWork,authorizedWorkQueue} from './automatic-work-queue.mjs';
+import {acceptTeacherApprovals} from './teacher-approval-guards.mjs';
+const item=(id,cls,time,status='READY',extra={})=>({row:Number(id.replace(/\D/g,''))||1,job:{id,status,nextAt:0,cls:{className:cls,spreadsheetId:cls},receipt:{student:id,time},route:{code:'OP1-L01'},...extra}});
+const rows=[...Array.from({length:8},(_,i)=>item('a'+i,'A','2026-10-14T12:00:00Z')),...Array.from({length:8},(_,i)=>item('b'+i,'B','2026-09-14T12:00:00Z'))];
+const fair=fairAutomaticCandidates(rows,['A','B']);assert.deepEqual(fair.ordered.slice(0,6).map(x=>x.job.cls.className),['A','B','A','B','A','B']);
+const ordinary=item('c1','C','2026-10-14','WAITING_TEACHER_APPROVAL'),paid=item('c2','C','2026-10-14','RETRY',{generateRequests:1}),rejected=item('c3','C','2026-10-14','COMPLETED_PRESENTATION_RESUBMISSION'),resubmit=item('c4','C','2026-10-14','READY',{receipt:{student:'c3',time:'2026-10-14'}});
+assert.deepEqual(fairAutomaticCandidates([ordinary,paid,rejected,resubmit],['C']).ordered.map(x=>x.job.id),['c1']);
+const props=new Map(),session={approved:new Map(),finish:()=>{}},c={teacherApprovalSession_:session,teacherApprovalJobs_:[...rows,ordinary,paid,rejected,resubmit],runnerProperties:props,batchQueue_:jobs=>jobs.filter(x=>['READY','WAITING_MEDIA'].includes(x.job.status))},g={book:()=>({getSheetByName:()=>({getSheetId:()=>1})})};
+authorizeFairKidsWork(c,{controlId:'fixture',classes:['A','B','C']},g);assert.equal(session.approved.size,6);assert(session.approved.has('c1'));assert(!session.approved.has('c2'));assert(!session.approved.has('c4'));
+acceptTeacherApprovals(c.teacherApprovalJobs_,session,'fixture','Jobs',()=>{});assert.equal(ordinary.job.status,'READY');assert(ordinary.job.teacherApproval.approved);
+const authorized=authorizedWorkQueue(c);assert.equal(authorized.length,6);assert(authorized.every(x=>session.approved.has(x.job.id)));assert(!authorized.some(x=>x.job.id==='c2'||x.job.id==='c4'));
+assert.equal(fairAutomaticCandidates(rows,['A','B','C','D','E','F','G','H','I','J'],0).nextCursor,6);
+const a=item('x1','A','2026-10-01'),b=item('x2','A','2026-10-14');a.job.receipt.student=b.job.receipt.student='same';const dedup=fairAutomaticCandidates([a,b],['A']);assert.equal(dedup.ordered[0].job.id,'x2');assert.equal(dedup.ordered.length,1);
+const delayed=item('d1','A','2026-10-14');delayed.job.nextAt=Date.now()+60000;assert.equal(fairAutomaticCandidates([delayed],['A']).ordered.length,0);
+console.log('Fair classes, waiting-state authorization, paid/rejected guards and authorized-only processing passed; provider calls: 0.');
