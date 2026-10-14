@@ -6,10 +6,11 @@ const runTest=name=>{const r=spawnSync(process.execPath,[name],{cwd:root,env:{..
 async function main(){
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');
  const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","new-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs","automatic-work-queue-tests.mjs","linked-destination-binding-tests.mjs","retired-reference-inputs-tests.mjs","source-input-guards-tests.mjs"];runTest('automatic-authorization-tests.mjs');runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
+ runTest('master-cross-class-sweep-tests.mjs');
  if(mode==='validate')return;
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/'+required('RUNNER_DEFAULT_BRANCH')))throw Error('TRUSTED_REPOSITORY_AND_BRANCH_REQUIRED');
  if(mode==='grade'&&process.env.GRADING_ENABLED!=='true')throw Error('HANDOFF_NOT_ENABLED');
- if(mode==='grade')process.env.AUTOMATIC_GRADING_AUTHORIZED='true';
+ if(mode==='grade'){process.env.AUTOMATIC_GRADING_AUTHORIZED='true';process.env.MASTER_CROSS_CLASS_SWEEP='true';}
  const bytes=fs.readFileSync(path.join(root,'approved-policy.enc'));if(bytes.subarray(0,4).toString()!=='GB01')throw Error('PRIVATE_BUNDLE_SCHEMA_INVALID');
  const decipher=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),bytes.subarray(4,16));decipher.setAAD(Buffer.from(repository));decipher.setAuthTag(bytes.subarray(16,32));
  const bundle=JSON.parse(gunzipSync(Buffer.concat([decipher.update(bytes.subarray(32)),decipher.final()])).toString('utf8'));
@@ -27,7 +28,7 @@ async function main(){
  }
  let finished=0,requests=0;
  if(lane==='kids'){
-  const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40','--max-jobs=16','--max-api-calls='+String(Math.min(16,Math.max(1,Number(process.env.RUNNER_API_LIMIT)||16))),...(process.env.RUNNER_VERIFY_NEW_MODEL==='true'?['--new-only']:[])],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:45*60000,maxBuffer:20*1024*1024});
+  const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40',...(process.env.RUNNER_VERIFY_NEW_MODEL==='true'?['--new-only']:[])],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:45*60000,maxBuffer:20*1024*1024});
   if(result.status!==0){fs.writeFileSync(path.join(root,'private','run-failure.txt'),result.stdout+'\n'+result.stderr);throw Error('KIDS_RUN_FAILED');}
   const counter=JSON.parse(fs.readFileSync(path.join(root,'private/last-run.json'),'utf8'));finished=counter.finished;requests=counter.paidCalls;
  }else{

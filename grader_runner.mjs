@@ -1,6 +1,8 @@
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
+import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
+import {prepareKidsMasterSweep,installMasterScoreProtection} from './master-kids-sweep.mjs';
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
 import {installMasterKids} from './master-kids.mjs';
@@ -151,6 +153,7 @@ export function buildContext(cluster){
  installMasterKids(c,catalog,{emit});
  installLinkedDestinationBindings(c,{google,config});
  installTeacherApprovalGuards(c,{g:google,root,ffmpeg,emit,session:{finish:j=>c.teacherApprovalSession_?.finish(j)}});
+ installMasterScoreProtection(c);
  c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
@@ -321,6 +324,7 @@ function runCluster(cluster,pass=0,phase='all'){
  if(dry){const metadata=google.book(cluster.controlId);const counts=c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{});emit({event:'AUDIT',account:cluster.email,counts,controlTitle:metadata.meta.properties.title});return 0;}
  const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);if(!poolWorker)state.acquire(until+60000);for(const [k,v] of Object.entries(state.initial))c.runnerProperties.set(k,v);
  let ramBatch;
+ let masterSweep;
  try{
  if(process.env.RUNNER_SHEET_BATCH==='1')replaySheetBatches(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});
  if(process.env.RUNNER_SHEET_BATCH==='1'){c.ensureMasterAssignmentTab_?.();ramBatch=beginSheetBatch(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});}
@@ -331,14 +335,15 @@ function runCluster(cluster,pass=0,phase='all'){
  if(!args.has('--skip-scan')){google.preloadSource(vm.runInContext('KG.classroom',c),2);google.preloadSource(vm.runInContext('KG.practice',c),2);}
  preparedClusters.add(cluster.controlId);
  }
- if(!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
- if(scanOnly)return 0;
+ if(masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});}
+ else if(!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
+ if(scanOnly||phase==='scan')return 0;
  if(!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}
  const selected=option('--class');const attempted=new Set();
  if(c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
  c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c);
- for(const {job,row} of authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')){
+ for(const {job,row} of (phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'))){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
   if(option('--kind')&&job.route.kind!==option('--kind'))continue;
@@ -354,7 +359,7 @@ function runCluster(cluster,pass=0,phase='all'){
  }
  emit({event:'CLUSTER_COMPLETE',account:cluster.email,counts:c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{})});
  return attempted.size;
- }finally{try{ramBatch?.close();c.teacherApprovalSession_?.flush();updateProgress(c,cluster,'RUNNER — LƯỢT VỪA CHẠY ĐÃ KẾT THÚC');state.save(c.runnerProperties);}finally{state.release();}}
+ }finally{try{try{ramBatch?.flush();try{masterSweep?.publish();}catch(e){emit({event:'MASTER_SWEEP_REPORT_ERROR',error:safeError(e)});}}finally{ramBatch?.close();c.teacherApprovalSession_?.flush();updateProgress(c,cluster,'RUNNER — LƯỢT VỪA CHẠY ĐÃ KẾT THÚC');state.save(c.runnerProperties);}}finally{state.release();}}
 }
 function runIeltsPass(){return 0;}
 export function runShadowingPass(){return {finished:0,paidCalls:0};}
@@ -362,6 +367,8 @@ function shadowPass(){return 0;}
 if(isMain){
  const ieltsFirst=args.has('--ielts-only')||args.has('--scheduled')&&Math.floor(Date.now()/3600000)%4===3;
  let pass=0,visited=0;
+ if(masterSweepEnabled()&&!dry&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'scan');}catch(e){emit({event:'MASTER_SWEEP_CLUSTER_ERROR',account:cluster.email,error:safeError(e)});}}
+ if(masterSweepEnabled()&&!dry&&!scanOnly)for(const cluster of ordered){try{runCluster(cluster,0,'cache');}catch(e){emit({event:'MASTER_SWEEP_CACHE_ERROR',account:cluster.email,error:safeError(e)});}}
  do{visited=shadowPass();if(!dedicatedShadow&&(ieltsFirst||args.has('--drain')&&pass===0))visited+=runIeltsPass();if(!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only')){
   if(args.has('--drain')){
    for(const cluster of ordered){try{visited+=runCluster(cluster,pass,'ready');}catch(e){emit({event:'CLUSTER_ERROR',account:cluster.email,error:safeError(e)});}}
