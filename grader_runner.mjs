@@ -342,7 +342,7 @@ function runCluster(cluster,pass=0,phase='all'){
  const selected=option('--class');const attempted=new Set();
  if(c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
  c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
- const queued=authorizedWorkQueue(c);
+ const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job));
  for(const {job,row} of (phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'))){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
