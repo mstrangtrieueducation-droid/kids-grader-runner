@@ -1,3 +1,4 @@
+import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 import {addAutomaticAuthorizations,automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {receiptDate} from './master-policy.mjs';
 import {readyForMediaCheck,throughputQueue} from './runner-policies.mjs';
@@ -16,5 +17,5 @@ export function authorizeFairKidsWork(c,cluster,google){
  addAutomaticAuthorizations(session,selection.ordered,cluster.controlId,'Jobs',google.book(cluster.controlId).getSheetByName('Jobs').getSheetId(),{fairOrder:true,allJobs:jobs});
  c.runnerProperties.set('FLEET_WORK_AUTO_CURSOR',String(selection.nextCursor));return session;
 }
-export function authorizedWorkQueue(c){return c.batchQueue_(c.teacherApprovalJobs_).filter(({job})=>c.teacherApprovalSession_.approved.has(job.id));}
+export function authorizedWorkQueue(c){return c.batchQueue_(c.teacherApprovalJobs_).filter(({job})=>masterScopeAllowsJob(job)&&c.teacherApprovalSession_.approved.has(job.id));}
 export function authorizedPhaseQueue(items,phase,automatic=false){if(phase==='all')return items;return automatic&&phase==='prepare'?items.filter(x=>!readyForMediaCheck(x.job)):throughputQueue(items,phase);}
