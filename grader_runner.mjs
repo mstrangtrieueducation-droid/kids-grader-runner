@@ -6,6 +6,7 @@ import {prepareKidsMasterSweep,installMasterScoreProtection} from './master-kids
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
 import {installMasterKids} from './master-kids.mjs';
+import {installReturnedScorePolicy} from './returned-score-policy.mjs';
 import {MASTER_MODEL,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {nextDrainWait} from './runner-policies.mjs';
 import {extractStudentAudio,inspectAudio} from './student-audio.mjs';
@@ -154,6 +155,7 @@ export function buildContext(cluster){
  installLinkedDestinationBindings(c,{google,config});
  installTeacherApprovalGuards(c,{g:google,root,ffmpeg,emit,session:{finish:j=>c.teacherApprovalSession_?.finish(j)}});
  installMasterScoreProtection(c);
+ installReturnedScorePolicy(c);
  c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});

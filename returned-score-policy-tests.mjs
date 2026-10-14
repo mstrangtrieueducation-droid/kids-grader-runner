@@ -1,0 +1,4 @@
+import assert from 'node:assert/strict';import {installReturnedScorePolicy} from './returned-score-policy.mjs';
+const blocked=()=>{throw Error('GRADE_EVIDENCE_INVALID');},audio=()=>{throw Error('SYSTEM_AUDIO_INPUT_EMPTY');},occupied=()=>true;
+const c={validateGrade_:blocked,validateKidsRubricDraft_:blocked,normalizeKidsReview_:blocked,normalizeKidsErrorGroups_:blocked,normalizeKidsGrade_:g=>{g.band='0%';blocked();},audio,occupied};installReturnedScorePolicy(c);
+const g={band:'85%',rubricBand:'85%',sections:[{text:'Con bật rõ âm cuối nhé.'}],evidence:[{time:'',ipa:''}]};assert.equal(c.validateGrade_(g),g);assert.equal(c.normalizeKidsGrade_(g).band,'85%');assert.equal(c.occupied,occupied);assert.equal(c.audio,audio);assert.throws(c.audio,/SYSTEM_AUDIO_INPUT_EMPTY/);assert.equal(g.sections[0].text,'Con bật rõ âm cuối nhé.');console.log('Returned Kids score preserved; metadata checks removed; audio and score protection unchanged.');
