@@ -1,4 +1,4 @@
-import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice} from './grading-failure-policy.mjs';
+import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice,LEGACY_GENERIC_NOTICE} from './grading-failure-policy.mjs';
 import {MASTER_VERSION,MASTER_MODEL,MASTER_SYSTEM,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {savedFeedbackRich} from './saved-feedback.mjs';
 import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
@@ -85,7 +85,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   if(!j.rawId&&process.env.MODEL_GRADING_AVAILABLE==='false'){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;j.status=c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()?'SKIPPED_ALREADY_GRADED':'WAITING_MODEL_ACCESS';j.error=j.status==='WAITING_MODEL_ACCESS'?'MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT':'';j.nextAt=0;c.persist_(j,row);return;}
   j.receipt.time=receiptDate(j.receipt.time).toISOString();
   if(j.pendingMasterReading){rejectReading(j,row,{});return;}
-  if(j.pendingMasterFeedback){pending(j,row,j.pendingMasterFeedback.text,j.pendingMasterFeedback.terminal);return;}
+  if(j.pendingMasterFeedback){if(j.pendingMasterFeedback.text===LEGACY_GENERIC_NOTICE){holdSystemFailure(c,j,row,Error('LEGACY_TECHNICAL_NOTICE_NOT_AN_ASSESSMENT'));return;}pending(j,row,j.pendingMasterFeedback.text,j.pendingMasterFeedback.terminal);return;}
   if(!j.rawId&&generationSpent(j)){holdSystemFailure(c,j,row,Error('GENERATION_OUTCOME_UNCONFIRMED'));return;}
   if(j.rawId){const raw=c.readArtifact_(j.rawId),d=decodeSavedDraft(raw),failure=assessmentFailure(raw,d,j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){const notice=studentAssessmentNotice(d,j);if(notice)pending(j,row,notice,'COMPLETED_UNASSESSABLE');else holdSystemFailure(c,j,row,Error('ASSESSMENT_WITHOUT_REASON'));return;}
   }
