@@ -1,3 +1,4 @@
+import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice} from './grading-failure-policy.mjs';
 import {MASTER_VERSION,MASTER_MODEL,MASTER_SYSTEM,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {savedFeedbackRich} from './saved-feedback.mjs';
 import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
@@ -41,19 +42,20 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   cell.setRichTextValue(c.coloredFeedback_(cell,out,null));j.autoNotice=out;j.cell=cell.getA1Notation();j.status=terminal;j.error='';j.nextAt=0;delete j.pendingMasterFeedback;c.persist_(j,row);
  }
  function exception(j,row,e){
+  const provider=providerFailure(j,e);if(provider){if(provider.httpCode===402)process.env.MODEL_GRADING_AVAILABLE='false';holdSystemFailure(c,j,row,e,provider);return;}
+
   if(/^(?:STUDENT_|DESTINATION_(?:COLUMN|TAB|AMBIGUOUS))/.test(e.message)){
    const reason=/^STUDENT_/.test(e.message)?'Không tìm thấy tên khớp duy nhất sau khi dò cả họ tên tiếng Việt và tên tiếng Anh.':'Sheet thiếu hoặc chưa xác định được cột đúng của bài '+j.receipt.code+'.';
    const s=c.ensureMasterAssignmentTab_();if(!j.masterAssignmentLogged){s.appendRow([new Date().toISOString(),j.cls.className,j.receipt.student,j.receipt.code,reason,j.receipt.row,j.id,'CẦN CÔ GÁN']);j.masterAssignmentLogged=true;}
    j.status='NEEDS_ASSIGNMENT';j.error=reason;j.nextAt=0;c.persist_(j,row);emit({event:'MASTER_ASSIGNMENT_REQUIRED',id:j.id,reason});return;
   }
   if((/^GOOGLE_HTTP_|NETWORK|DRIVE_RANGE|MEDIA_|RUNNER_DISK/.test(e.message))&&(!j.masterGenerationReserved||j.pendingMasterFeedback||j.pendingMasterReading)){j.status='RETRY';j.error=e.message;j.nextAt=Date.now()+60000;c.persist_(j,row);return;}
-  const note=/AUDIO_NO_STREAM|PREFLIGHT_FILE|MEDIA_INVENTORY|INVALID_DRIVE|UNSUPPORTED_LINK/.test(e.message)?UNCLEAR_AUDIO:'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.';
-  try{pending(j,row,note,note===UNCLEAR_AUDIO?'COMPLETED_UNASSESSABLE':'COMPLETED_NEEDS_RESUBMISSION');}catch(delivery){j.status='RETRY';j.error=delivery.message;j.nextAt=Date.now()+60000;c.persist_(j,row);}
+  holdSystemFailure(c,j,row,e);
  }
  function routeSaved(j,row,g){
   const check=g.submissionCheck;if(check?.status!=='wrong_assignment'&&check?.category!=='wrong_assignment')return true;
   const actual=localLessonMatch(index,g.studentTranscript||check.observedTask||'');
-  if(!actual){pending(j,row,'Con gửi lại đúng phần bài được giao của buổi này nhé. Cô đợi bài của con.');return false;}
+  if(!actual){const notice=wrongAssignmentNotice(g,j);if(notice)pending(j,row,notice);else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EVIDENCE'));return false;}
   const route={...structuredClone(actual.route),code:actual.code,className:j.cls.className,sourceTab:j.receipt.sourceTab};
   const dst=c.destination_(j.cls,route,j.receipt.student).cell;
   if(c.hasFeedback_(dst.getDisplayValue())||dst.getFormula()||dst.getDataValidation()){pending(j,row,RESUBMIT_OLD);return false;}
@@ -84,21 +86,21 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   j.receipt.time=receiptDate(j.receipt.time).toISOString();
   if(j.pendingMasterReading){rejectReading(j,row,{});return;}
   if(j.pendingMasterFeedback){pending(j,row,j.pendingMasterFeedback.text,j.pendingMasterFeedback.terminal);return;}
-  if(!j.rawId&&generationSpent(j)){pending(j,row,'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.');return;}
-  if(j.rawId){const d=decodeSavedDraft(c.readArtifact_(j.rawId));if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){pending(j,row,UNCLEAR_AUDIO,'COMPLETED_UNASSESSABLE');return;}
+  if(!j.rawId&&generationSpent(j)){holdSystemFailure(c,j,row,Error('GENERATION_OUTCOME_UNCONFIRMED'));return;}
+  if(j.rawId){const raw=c.readArtifact_(j.rawId),d=decodeSavedDraft(raw),failure=assessmentFailure(raw,d,j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){const notice=studentAssessmentNotice(d,j);if(notice)pending(j,row,notice,'COMPLETED_UNASSESSABLE');else holdSystemFailure(c,j,row,Error('ASSESSMENT_WITHOUT_REASON'));return;}
   }
   if(!j.rawId&&j.snapshotId){const s=c.readArtifact_(j.snapshotId),fresh=c.guide_(j.route),scopeChanged=fresh.webPracticeScope&&(s.webPracticeScope?.version!==fresh.webPracticeScope.version||s.webPracticeScope?.totalItems!==fresh.webPracticeScope.totalItems);if(s.barem?.masterVersion!==MASTER_VERSION||scopeChanged){j.previousSnapshotId=j.snapshotId;j.snapshotId=c.saveArtifact_('master-local-input-'+j.id,fresh);j.sourceHash=c.hash_(fresh);j.media=(j.media||[]).filter(m=>!m.isReference);c.persist_(j,row);}}
   originalStep(j,row,deadline,options);
  }catch(e){c.handleError_(j,row,e);}finally{delete c.masterActiveRow;}};
  c.handleError_=(j,row,e)=>{try{
   if(/^SKIPPED_/.test(e.message)||e.message==='STALE_RECEIPT'){j.status=e.message==='STALE_RECEIPT'?'SKIPPED_OLD_SUBMISSION':e.message;j.error='';j.nextAt=0;c.persist_(j,row);return;}
-  if(j.rawId){const d=decodeSavedDraft(c.readArtifact_(j.rawId));if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){pending(j,row,UNCLEAR_AUDIO,'COMPLETED_UNASSESSABLE');return;}}
+  if(j.rawId){const raw=c.readArtifact_(j.rawId),d=decodeSavedDraft(raw),failure=assessmentFailure(raw,d,j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){const notice=studentAssessmentNotice(d,j);if(notice)pending(j,row,notice,'COMPLETED_UNASSESSABLE');else holdSystemFailure(c,j,row,Error('ASSESSMENT_WITHOUT_REASON'));return;}}
   if(j.rawId)return originalError(j,row,Error('FULL_FEEDBACK_READY'));
   if(e.httpCode===404&&/no longer available|not found|not supported/i.test(e.apiDetails?.message||'')){j.status='WAITING_MODEL_ACCESS';j.error='MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT';j.nextAt=0;c.persist_(j,row);return;}
   if(/PREFLIGHT_EXISTING|DESTINATION_FORMULA|DESTINATION_VALIDATION/.test(e.message)){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}
   return exception(j,row,e);
  }catch(delivery){j.status='RETRY';j.error=delivery.message;j.nextAt=Date.now()+60000;c.persist_(j,row);}};
  c.recoverContentRouting_=()=>{for(const {job:j,row}of c.loadJobs_())if(['NEEDS_REVIEW','BLOCKED','STALE','AUTOMATION_FAILED','GENERATING','NEEDS_ASSIGNMENT','NEEDS_RESUBMISSION'].includes(j.status)){
-  try{if(j.rawId){j.status='READY';j.nextAt=0;c.persist_(j,row);}else if(/^STUDENT_|^DESTINATION_/.test(j.error||'')||j.status==='NEEDS_ASSIGNMENT'){const dst=c.destination_(j.cls,j.route,j.receipt.student);j.status=c.hasFeedback_(dst.cell.getDisplayValue())?'SKIPPED_ALREADY_GRADED':'READY';j.error='';j.nextAt=0;c.persist_(j,row);}else if(j.generateRequests||j.masterGenerationReserved||/UNCERTAIN_GENERATION/.test(j.error||'')){pending(j,row,'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.');}else{j.status='READY';j.error='';j.nextAt=0;c.persist_(j,row);}}catch(e){exception(j,row,e);}
+  try{if(j.rawId){j.status='READY';j.nextAt=0;c.persist_(j,row);}else if(/^STUDENT_|^DESTINATION_/.test(j.error||'')||j.status==='NEEDS_ASSIGNMENT'){const dst=c.destination_(j.cls,j.route,j.receipt.student);j.status=c.hasFeedback_(dst.cell.getDisplayValue())?'SKIPPED_ALREADY_GRADED':'READY';j.error='';j.nextAt=0;c.persist_(j,row);}else if(j.generateRequests||j.masterGenerationReserved||/UNCERTAIN_GENERATION/.test(j.error||'')){holdSystemFailure(c,j,row,Error('GENERATION_OUTCOME_UNCONFIRMED'));}else{j.status='READY';j.error='';j.nextAt=0;c.persist_(j,row);}}catch(e){exception(j,row,e);}
   }return originalRecovery?.()||{repaired:0,reopened:0};};
 }

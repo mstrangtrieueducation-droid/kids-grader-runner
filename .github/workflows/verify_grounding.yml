@@ -22,4 +22,5 @@ jobs:
         run: |
           node hosted-bootstrap.mjs
           node screen-grounding-tests.mjs
+          node grading-failure-policy-tests.mjs
           node --input-type=module -e "import fs from 'node:fs';import {execFileSync} from 'node:child_process';for(const f of fs.readdirSync('.').filter(f=>f.endsWith('.mjs')))execFileSync(process.execPath,['--check',f],{stdio:'inherit'});"

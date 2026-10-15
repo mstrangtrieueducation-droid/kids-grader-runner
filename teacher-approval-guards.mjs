@@ -1,3 +1,4 @@
+import {assessmentFailure,holdSystemFailure,wrongAssignmentNotice} from './grading-failure-policy.mjs';
 import {SPEECH_CLASSIFICATION_INSTRUCTION,wrongLessonWithoutFeedback,WRONG_LESSON_NOTICE} from './student-speech-evidence.mjs';
 import {screenGroundingSchema,SCREEN_OUTPUT_INSTRUCTION,compactWebScope} from './screen-grounding.mjs';
 import fs from 'node:fs';import path from 'node:path';import {randomUUID} from 'node:crypto';
@@ -68,9 +69,9 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
  c.step_=(j,row,deadline,options)=>{
   if(MASTER_TERMINAL.has(j.status))return;
   if(!j.teacherApproval?.approved){if(!MASTER_TERMINAL.has(j.status)){j.status='WAITING_TEACHER_APPROVAL';j.nextAt=0;c.persist_(j,row);}return;}
-  try{const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(j.teacherApprovalOverwrite)c.approvalActiveOverwrite={before:cell.getDisplayValue()};if(knownInvalidPresentation(j,c.teacherApprovalJobs_)||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}const old=oldFile(j);if(old){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
+  try{if(j.rawId){const raw=c.readArtifact_(j.rawId),failure=assessmentFailure(raw,decodeSavedDraft(raw),j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}}const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(j.teacherApprovalOverwrite)c.approvalActiveOverwrite={before:cell.getDisplayValue()};if(knownInvalidPresentation(j,c.teacherApprovalJobs_)||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}const old=oldFile(j);if(old){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
    if(j.status==='SYSTEM_AUDIO_ERROR')return;
-   if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){notice(j,row,WRONG_LESSON_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
+   if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){const text=wrongAssignmentNotice(decodeSavedDraft(c.readArtifact_(j.rawId)),j);if(text)notice(j,row,text,'COMPLETED_NEEDS_RESUBMISSION');else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EVIDENCE'));return;}
   if(rejectIncomplete(j,row))return;
    if(!j.rawId&&!generationSpent(j)){retireReferenceInputs(c,j,row);if(c.bindPoolJob_&&process.env.GEMINI_API_KEY)c.bindPoolJob_(j,{keyHash:c.hash_(process.env.GEMINI_API_KEY),model:MASTER_MODEL});if(!(j.media||[]).some(m=>!m.isReference)&&c.kidsCostPreflight_){const files=c.kidsCostPreflight_(j);j.media=files.map(m=>({...m,isReference:false}));j.studentFileCount=j.media.length;c.persist_(j,row);}}
    originalStep(j,row,deadline,options);if(MASTER_TERMINAL.has(j.status)){session.finish(j);delete j.teacherApprovalOverwrite;c.persist_(j,row);}}
@@ -78,6 +79,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
  };
  c.handleError_=(j,row,e)=>{
   emit({event:'ADDITIVE_GUARD_ERROR',id:j.id,error:e.message});
+  if(j.rawId){const raw=c.readArtifact_(j.rawId),failure=assessmentFailure(raw,decodeSavedDraft(raw),j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}}
   const sourceFailure=systemSourceFailure(j,e);if(sourceFailure){j.sourceInputFailure={at:new Date().toISOString(),cause:e.message,providerCalls:0};e=Error(sourceFailure);}
   if(e.message.startsWith('SYSTEM_AUDIO_INPUT_')&&!j.rawId){j.status='SYSTEM_AUDIO_ERROR';j.error=e.message;j.nextAt=0;j.audioPayloadFailure={...j.audioPayloadFailure,at:new Date().toISOString(),error:e.message,providerGenerateRequests:j.physicalGenerateRequests||0};c.persist_(j,row);return;}
   if(e.message==='AUDIO_LOCAL_REPAIR_PENDING'&&!j.rawId){j.status='WAITING_MEDIA';j.error=e.message;j.nextAt=Date.now()+2000;c.persist_(j,row);return;}
@@ -86,7 +88,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
   if(['LOCAL_SILENT_AUDIO','AUDIO_NO_STREAM'].includes(e.message)){notice(j,row,SILENT_NOTICE,'COMPLETED_UNASSESSABLE');return;}
   if(e.message==='LOCAL_OLD_GRADED_FILE'){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
   if(e.message==='PRESENTATION_FORMAT_RESUBMISSION'||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}
-  if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){notice(j,row,WRONG_LESSON_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
+  if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){const text=wrongAssignmentNotice(decodeSavedDraft(c.readArtifact_(j.rawId)),j);if(text)notice(j,row,text,'COMPLETED_NEEDS_RESUBMISSION');else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EVIDENCE'));return;}
   if(rejectIncomplete(j,row))return;
   if(j.rawId&&noSpeech(decodeSavedDraft(c.readArtifact_(j.rawId)))&&!decodeSavedDraft(c.readArtifact_(j.rawId)).presentationReadingCheck?.confirmed){notice(j,row,SILENT_NOTICE,'COMPLETED_UNASSESSABLE');return;}
   originalError(j,row,e);
