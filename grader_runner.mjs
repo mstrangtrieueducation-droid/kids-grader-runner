@@ -1,3 +1,5 @@
+import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
+import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {installSubmissionAssignmentScope} from './submission-assignment-scope.mjs';
@@ -164,7 +166,7 @@ export function buildContext(cluster){
  installDashboardFeedback(c);
  installSubmissionAssignmentScope(c);
  installTimelyKidsQueue(c,cluster);
- c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
+ c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerScreenFrames||[]),...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
  c.flushMasterCheckpoint_=row=>google.books.get(cluster.controlId)?.ramBatch?.checkpointControl(cluster.controlId,row);
@@ -249,8 +251,9 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
  job.mediaDecision={...mediaDecision(job.route.kind),mode:['phonics','science','scienceK','critical','de'].includes(job.route.kind)?'audio_frame':'audio'};
  if(m.isReference||!m.mime.match(/^(audio|video)\//))throw Error('PREFLIGHT_FILE_MISSING_OR_INVALID');
  const audioFirst=(['audio','audio_frame'].includes(job.mediaDecision.mode)||m.mime.startsWith('audio/'))&&/^(audio|video)\//.test(m.mime);
+ const needsScreenFrame=!m.isReference&&m.mime.startsWith('video/');
  const needsFrame=job.mediaDecision.mode==='audio_frame'&&!m.isReference&&m.mime.startsWith('video/');
- const frameAvailable=()=>!needsFrame||m.visualExtractionFailed||!!(m.runnerPdfFrame?.path&&fs.existsSync(m.runnerPdfFrame.path))||m.runnerContextFrames?.some(f=>fs.existsSync(f.path));
+ const frameAvailable=()=>(!needsFrame||m.visualExtractionFailed||!!(m.runnerPdfFrame?.path&&fs.existsSync(m.runnerPdfFrame.path))||m.runnerContextFrames?.some(f=>fs.existsSync(f.path)))&&(!needsScreenFrame||screenFramesReady(m));
  const proxyVideo=!audioFirst&&!m.isReference&&m.mime.startsWith('video/');
  if(audioFirst&&!m.isReference)job.runnerAudioOnly=true;
  // Retire pre-policy video uploads for audio tasks; their payload is never sent.
@@ -287,6 +290,11 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
   }
   m.runnerDownloadBytes=offset;save();if(offset<m.size)return null;fs.renameSync(partial,original);
  }
+ if(needsScreenFrame&&!screenFramesReady(m)){
+  const duration=Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000;
+  m.runnerScreenFrames=extractScreenFrames({ffmpeg,input:original,output:path.join(cache,tag+'.scope.jpg'),durationSeconds:duration});
+  m.screenGroundingCapture={version:SCREEN_GROUNDING_VERSION,sourceId:m.id,modified:m.modified,status:m.runnerScreenFrames.length?'available':'unavailable'};save();
+ }
  if(needsFrame&&!frameAvailable()&&!m.visualExtractionFailed){
   const output=path.join(cache,tag+'.context.jpg'),duration=Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000;
   try{if(job.route.kind==='phonics')m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});else{m.runnerContextFrames=extractPresentationFrames({ffmpeg,input:original,output,durationSeconds:duration});if(!m.runnerContextFrames.length)m.visualExtractionFailed=true;}}catch{m.visualExtractionFailed=true;}save();
@@ -294,7 +302,7 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
  if(audioFirst){
  if(file===original){mediaCache.sweep(Math.min(m.size,256*1024*1024));const extracted=extractStudentAudio({ffmpeg,input:original,audio,flac,canonicalFormat:'mp3'});file=extracted.file;mime=extracted.mime;m.audioSelection=extracted.selection;}
   if(file===original){file=audio;mime='audio/mp4';}
-  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame&&!x.runnerContextFrames?.length);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4',sha256:createHash('sha256').update(fs.readFileSync(file)).digest('hex')};
+  job.runnerAudioOnly=job.media.filter(x=>!x.isReference).every(x=>!x.runnerPdfFrame&&!x.runnerContextFrames?.length&&!x.runnerScreenFrames?.length);m.runnerAudio={mime,bytes:fs.statSync(file).size,originalBytes:m.size,copy:mime==='audio/mp4',sha256:createHash('sha256').update(fs.readFileSync(file)).digest('hex')};
   mediaCache.dropOriginal(tag);
  }
  if(proxyVideo){

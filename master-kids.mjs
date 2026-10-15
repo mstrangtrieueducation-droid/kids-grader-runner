@@ -3,12 +3,13 @@ import {savedFeedbackRich} from './saved-feedback.mjs';
 import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
 import {PRESENTATION_RULE,confirmedScriptReading,readingResubmission,READING_RESUBMISSION_STATUS} from './presentation-resubmission.mjs';
 import {decodeSavedDraft} from './saved-draft.mjs';
+import {groundedWebReference} from './screen-grounding.mjs';
 export {decodeSavedDraft} from './saved-draft.mjs';
 export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  const index=routingIndex(catalog),originalGuide=c.guide_,originalStep=c.step_,originalError=c.handleError_,originalRecovery=c.recoverContentRouting_;
  c.ensureMasterAssignmentTab_=()=>{const b=c.SpreadsheetApp.openById(c.FLEET_CLUSTER.controlId);let s=b.getSheetByName(ASSIGNMENT_TAB);if(!s){s=b.insertSheet(ASSIGNMENT_TAB);s.appendRow(['Cập nhật','Lớp','Học sinh','Mã bài','Lý do','Dòng Form','Mã hồ sơ','Trạng thái']);}return s;};
  c.masterSnapshot_=j=>{try{return c.guide_(j.route);}catch{return j.snapshotId?c.readArtifact_(j.snapshotId):{kind:j.route?.kind,form:masterForm(j.route?.kind)};}};
- c.guide_=route=>{const entry=catalog.lookup('kids',route.code),s=originalGuide(route);return {...s,guide:entry.requirements.submissionText,form:masterForm(s.kind,entry),barem:{...s.barem,masterVersion:MASTER_VERSION},referenceMedia:[],referenceAssets:[]};};
+ c.guide_=route=>{const entry=catalog.lookup('kids',route.code),s=groundedWebReference(originalGuide(route),entry);return {...s,guide:entry.requirements.submissionText,form:masterForm(s.kind,entry),barem:{...s.barem,masterVersion:MASTER_VERSION},referenceMedia:[],referenceAssets:[]};};
  c.kidsSystemInstruction_=()=>MASTER_SYSTEM+'\n'+PRESENTATION_RULE;
  c.kidsEvidencePrompt_=s=>'BAREM TEXT LOCAL:\n'+s.reference+'\nYÊU CẦU BÀI NỘP:\n'+s.guide+'\nTiêu chí đúng thứ tự: '+s.form.join('; ');
  c.prompt_=c.kidsEvidencePrompt_;
@@ -86,7 +87,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   if(!j.rawId&&generationSpent(j)){pending(j,row,'Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.');return;}
   if(j.rawId){const d=decodeSavedDraft(c.readArtifact_(j.rawId));if(!routeSaved(j,row,d))return;if(confirmedScriptReading(d,j,c.masterSnapshot_(j))){rejectReading(j,row,d);return;}if(d.assessable===false&&!d.roseSections?.length&&!Object.values(d.sections||{}).some(s=>s.text)){pending(j,row,UNCLEAR_AUDIO,'COMPLETED_UNASSESSABLE');return;}
   }
-  if(!j.rawId&&j.snapshotId){const s=c.readArtifact_(j.snapshotId);if(s.barem?.masterVersion!==MASTER_VERSION){const fresh=c.guide_(j.route);j.previousSnapshotId=j.snapshotId;j.snapshotId=c.saveArtifact_('master-local-input-'+j.id,fresh);j.sourceHash=c.hash_(fresh);j.media=(j.media||[]).filter(m=>!m.isReference);c.persist_(j,row);}}
+  if(!j.rawId&&j.snapshotId){const s=c.readArtifact_(j.snapshotId),fresh=c.guide_(j.route),scopeChanged=fresh.webPracticeScope&&(s.webPracticeScope?.version!==fresh.webPracticeScope.version||s.webPracticeScope?.totalItems!==fresh.webPracticeScope.totalItems);if(s.barem?.masterVersion!==MASTER_VERSION||scopeChanged){j.previousSnapshotId=j.snapshotId;j.snapshotId=c.saveArtifact_('master-local-input-'+j.id,fresh);j.sourceHash=c.hash_(fresh);j.media=(j.media||[]).filter(m=>!m.isReference);c.persist_(j,row);}}
   originalStep(j,row,deadline,options);
  }catch(e){c.handleError_(j,row,e);}finally{delete c.masterActiveRow;}};
  c.handleError_=(j,row,e)=>{try{
