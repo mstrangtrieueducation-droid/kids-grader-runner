@@ -9,7 +9,7 @@ assert.equal(dispatchDecision({...base,lastDispatchAt:now-30000}).action,'wait')
 assert.equal(dispatchDecision({...base,due:0}).action,'wait');assert.equal(dispatchDecision({...base,due:0,runs:[]}).reason,'scan_for_new_submissions');
 const j={id:'one',status:'READY',nextAt:0,cls:{className:'KIDS 8',spreadsheetId:'class'},receipt:{time:'2026-10-14',student:'child'},route:{code:'lesson'}};
 process.env.MASTER_CROSS_CLASS_SWEEP='true';assert.equal(actionableCount('kids',[j],now),1);
-for(const x of [{...j,generateRequests:1},{...j,masterGenerationReserved:true},{...j,rawId:'paid-no-recall'},{...j,status:'COMPLETED_PRESENTATION_RESUBMISSION'},{...j,receipt:{time:'2026-08-31'}},{...j,nextAt:'2026-10-16T00:00:00Z'}])assert.equal(actionableCount('kids',[x],now),0);
+for(const x of [{...j,generateRequests:1},{...j,physicalGenerateRequests:1},{...j,failedAttempts:[{apiUsage:{paidRateEquivalentUsd:1}}]},{...j,masterGenerationReserved:true},{...j,rawId:'paid-no-recall'},{...j,status:'COMPLETED_PRESENTATION_RESUBMISSION'},{...j,receipt:{time:'2026-08-31'}},{...j,nextAt:'2026-10-16T00:00:00Z'}])assert.equal(actionableCount('kids',[x],now),0);
 assert.equal(actionableCount('kids',[{...j,status:'WAITING_TEACHER_APPROVAL',rawId:'saved',generateRequests:1}],now),1);
 const shadow={...j,source:{time:'2026-10-14',className:'IELTS 45'},receipt:undefined};assert.equal(actionableCount('shadowing',[shadow],now),1);
 for(const x of [{...shadow,generateRequests:1},{...shadow,recoveryHistory:[{previousRequests:1}]},{...shadow,status:'COMPLETED_UNASSESSABLE'},{...shadow,source:{time:'2026-10-14',className:'IELTS 40'}}])assert.equal(actionableCount('shadowing',[x],now),0);

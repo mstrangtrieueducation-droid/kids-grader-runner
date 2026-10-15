@@ -2,11 +2,11 @@ import {fileURLToPath} from 'node:url';
 import {sourceInMasterScope} from './master-submission-scope.mjs';
 import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 const OWNER='mstrangtrieueducation-droid',MINUTE=60000;
+const consumed=j=>!!(j.rawId||j.gradeId||j.usage||j.apiUsage||j.generateRequests||j.physicalGenerateRequests||j.approvedGenerateRequests||j.masterGenerationReserved||j.runnerGenerationStarted||j.generationReservation||j.singleCallPermanentlyConsumed||j.providerFailure||j.generationAttempt?.calls||['previousGradingAttempts','failedAttempts','recoveryHistory','teacherApprovedHistory'].some(k=>j[k]?.some(a=>consumed(a)||a.calls||a.previousRequests||a.oldRequests)));
 export function actionableCount(lane,jobs,now=Date.now()){
  const due=j=>{const next=Number(j.nextAt)||Date.parse(j.nextAt)||0,name=lane==='kids'?j.cls?.className:j.source?.className;return sourceInMasterScope(j.receipt||j.source)&&!/^IELTS (40|41|42|43|44)$/.test(name||'')&&next<=now;};
- if(lane==='kids')return jobs.filter(j=>due(j)&&(automaticEligible(j,jobs)||mayResumeSaved(j))).length;
- const spent=j=>!!(j.rawId||j.gradeId||j.usage||j.apiUsage||j.generateRequests||j.approvedGenerateRequests||j.masterGenerationReserved||j.runnerGenerationStarted||j.generationReservation||j.singleCallPermanentlyConsumed||j.providerFailure||j.generationAttempt?.calls||['previousGradingAttempts','failedAttempts','recoveryHistory','teacherApprovedHistory'].some(k=>j[k]?.some(a=>spent(a)||a.calls||a.previousRequests||a.oldRequests)));
- return jobs.filter(j=>due(j)&&['READY','RETRY','WAITING_MEDIA','PROCESSING','GRADED','QUEUED'].includes(j.status)&&(j.rawId||j.gradeId||!spent(j))).length;
+ if(lane==='kids')return jobs.filter(j=>due(j)&&(automaticEligible(j,jobs)&&!consumed(j)||mayResumeSaved(j))).length;
+ return jobs.filter(j=>due(j)&&['READY','RETRY','WAITING_MEDIA','PROCESSING','GRADED','QUEUED'].includes(j.status)&&(j.rawId||j.gradeId||!consumed(j))).length;
 }
 export function dispatchDecision({enabled,workflow,runs,due,lastDispatchAt=0,now=Date.now(),scanEveryMs=10*MINUTE}){
  if(!enabled||workflow.state!=='active')return {action:'stop',reason:'disabled'};
