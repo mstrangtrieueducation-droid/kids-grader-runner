@@ -42,7 +42,7 @@ export async function watchLane(env,{fetcher=fetch,sleep=ms=>new Promise(r=>setT
     if(!active){await api('/actions/workflows/'+workflow+'/dispatches','POST',{ref:info.default_branch,inputs:{mode:'grade'}});state.lastDispatchAt=now();emit({event:'CONTINUOUS_SUCCESSOR_REQUESTED',lane,reason:plan.reason,providerCalls:0});}
    }
    failures=0;
-  }catch(e){emit({event:'CONTINUOUS_CHECK_DEFERRED',lane,error:/^[A-Z0-9_]+$/.test(e.message)?e.message:'READ_CHECK_FAILED',providerCalls:0});if(++failures>=10)throw Error('CONTINUOUS_CONTROL_UNAVAILABLE');}
+  }catch(e){failures++;emit({event:'CONTINUOUS_CHECK_DEFERRED',lane,error:/^[A-Z0-9_]+$/.test(e.message)?e.message:'READ_CHECK_FAILED',consecutiveChecks:failures,providerCalls:0});}
   await sleep(30000);
  }
  // Only dispatcher jobs overlap during handover; grade writers never do.

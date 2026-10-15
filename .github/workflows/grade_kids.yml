@@ -8,8 +8,6 @@ on:
         type: choice
         options: [validate, audit, grade]
         default: grade
-  schedule:
-    - cron: '3,13,23,33,43,53 * * * *'
 permissions:
   contents: read
 concurrency:
