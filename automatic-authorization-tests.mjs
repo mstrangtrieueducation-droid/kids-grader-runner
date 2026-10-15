@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';import {automaticEligible,addAutomaticAuthorizations} from './automatic-authorization.mjs';
+import assert from 'node:assert/strict';import {automaticEligible,addAutomaticAuthorizations,mayResumeSaved} from './automatic-authorization.mjs';
 const student=(name,id,time='14/10/2026 10:00')=>({id,status:'READY',cls:{spreadsheetId:'fixture-class'},receipt:{student:name,time},route:{code:'fixture-task'}});
 const a=student('A','a'),b=student('B','b');
 assert.equal(automaticEligible(a,[{...b,status:'COMPLETED_PRESENTATION_RESUBMISSION'}]),true);
@@ -7,4 +7,15 @@ for(const patch of [{rawId:'frozen'},{generateRequests:1},{generationAttempt:{ca
 const session={approved:new Map(),finish:()=>{}};
 addAutomaticAuthorizations(session,[{job:a,row:2},{job:b,row:3}],'fixture-control','Jobs',1);
 assert.equal(session.approved.size,2);assert.equal(session.approved.get('a').automatic,true);
+const saved={...student('Saved','saved'),rawId:'immutable-paid-result',generateRequests:1,apiUsage:{paidRateEquivalentUsd:.01},generationReservation:{id:'keep-original'}};
+const before=structuredClone(saved),cachedSession={approved:new Map(),finish:()=>{}};
+assert.equal(automaticEligible(saved),false);
+assert.equal(mayResumeSaved(saved),true);
+addAutomaticAuthorizations(cachedSession,[{job:saved,row:4}],'fixture-control','Jobs',1);
+assert.equal(cachedSession.approved.get(saved.id).automatic,true);
+assert.deepEqual(saved,before);
+for(const patch of [{rawId:null},{status:'RETURNED'},{status:'COMPLETED_PRESENTATION_RESUBMISSION'},{technicalInputFailure:{}},{presentationResubmissionRequired:true}])assert.equal(mayResumeSaved({...saved,...patch}),false);
+const oldScope=process.env.MASTER_CROSS_CLASS_SWEEP;process.env.MASTER_CROSS_CLASS_SWEEP='true';
+assert.equal(mayResumeSaved({...saved,receipt:{...saved.receipt,time:'31/08/2026 23:59'}}),false);
+if(oldScope===undefined)delete process.env.MASTER_CROSS_CLASS_SWEEP;else process.env.MASTER_CROSS_CLASS_SWEEP=oldScope;
 console.log('PASS automatic new submissions, distinct students, rejected presentations, no paid replay; zero provider calls.');
