@@ -10,6 +10,8 @@ async function main(){
  runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');
  runTest('submission-assignment-scope-tests.mjs');
  runTest('kids-apple-input-recovery-tests.mjs');
+ runTest('timely-kids-queue-tests.mjs');
+ runTest('continuous-dispatcher-tests.mjs');
  if(mode==='validate')return;
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/'+required('RUNNER_DEFAULT_BRANCH')))throw Error('TRUSTED_REPOSITORY_AND_BRANCH_REQUIRED');
  if(mode==='grade'&&process.env.GRADING_ENABLED!=='true')throw Error('HANDOFF_NOT_ENABLED');

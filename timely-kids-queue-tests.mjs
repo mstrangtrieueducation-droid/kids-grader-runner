@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {timelyKidsQueue,installTimelyKidsQueue} from './timely-kids-queue.mjs';
+const now=Date.parse('2026-10-15T01:30:00Z'),item=(id,cls,time,extra={})=>({row:Number(id.replace(/\D/g,''))||1,job:{id,cls:{className:cls},receipt:{time},status:'READY',...extra}});
+const old=item('old1','A','2026-09-02'),ben=item('new1','B','2026-10-14T16:03:10Z'),newer=item('new2','A','2026-10-15T00:00:00Z');
+assert.equal(timelyKidsQueue([old,ben],['A','B'],{now})[0],ben);
+assert.equal(timelyKidsQueue([old,ben],['A','B'],{now,turn:3})[0],old);
+const cached=item('saved1','A','2026-09-02',{rawId:'raw',generateRequests:1}),uncertain=item('uncertain','A','2026-10-15',{status:'GENERATING',generateRequests:1});
+assert.deepEqual(timelyKidsQueue([old,ben,cached,uncertain],['A','B'],{now}).slice(0,2),[cached,uncertain]);
+process.env.AUTOMATIC_GRADING_AUTHORIZED='true';process.env.MASTER_CROSS_CLASS_SWEEP='true';
+const props=new Map(),served=[],rows=[old,ben,newer],c={runnerProperties:props,batchQueue_:x=>x,step_:j=>served.push(j.id)};
+installTimelyKidsQueue(c,{classes:['A','B']},{now:()=>now});
+for(let i=0;i<8;i++){const selected=c.batchQueue_(rows)[0];c.step_(selected.job);}
+assert.deepEqual(served.slice(0,4),['new2','new1','new2','old1']);assert.equal(served.filter(x=>x==='old1').length,2);
+const before=new Map(props);c.step_(cached.job);assert.deepEqual(props,before);
+assert.equal(c.batchQueue_(rows,'explicit')[0],old);
+delete process.env.AUTOMATIC_GRADING_AUTHORIZED;assert.equal(c.batchQueue_(rows)[0],old);
+console.log('Execution order prioritizes recent submissions, rotates classes after actual attempts, reserves one of four turns for backlog, and preserves saved/uncertain jobs and explicit/manual order; 0 provider calls.');

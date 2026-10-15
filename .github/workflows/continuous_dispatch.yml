@@ -1,0 +1,33 @@
+name: Continuous KIDS Queue Controller
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: kids-continuous-controller
+  cancel-in-progress: false
+jobs:
+  watch:
+    if: github.repository == 'mstrangtrieueducation-droid/kids-grader-runner' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.GRADING_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+      - name: Check scheduler safeguards
+        run: node continuous-dispatcher-tests.mjs
+      - name: Keep one grade writer moving and poll for new submissions
+        env:
+          GRADING_LANE: kids
+          GRADING_ENABLED: ${{ vars.GRADING_ENABLED }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          PRIVATE_BUNDLE_KEY: ${{ secrets.PRIVATE_BUNDLE_KEY }}
+        run: node continuous-dispatcher.mjs
