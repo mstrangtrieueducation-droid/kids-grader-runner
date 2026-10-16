@@ -4,6 +4,7 @@ import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {installSubmissionAssignmentScope} from './submission-assignment-scope.mjs';
 import {installKidsAppleInputRecovery} from './kids-apple-input-recovery.mjs';
+import {installKidsModelAccessRecovery} from './kids-model-access-recovery.mjs';
 import {installTimelyKidsQueue} from './timely-kids-queue.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
 import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
@@ -166,6 +167,7 @@ export function buildContext(cluster){
  installDashboardFeedback(c);
  installSubmissionAssignmentScope(c);
  installTimelyKidsQueue(c,cluster);
+ installKidsModelAccessRecovery(c,{emit});
  c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerScreenFrames||[]),...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
