@@ -4,6 +4,7 @@ import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
 import {authorizeEmptyDashboardReprocess} from './dashboard-reprocess.mjs';
 export function installMasterScoreProtection(c){const step=c.step_;c.step_=(j,row,...args)=>{if(masterSweepEnabled()){if(!masterScopeAllowsJob(j))return;try{const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';c.persist_(j,row);return;}}catch{/* The normal per-job handler records missing names and columns. */}}return step(j,row,...args);};}
 export function prepareKidsMasterSweep(c,cluster,google,{emit=()=>{}}={}){
+ c.recoverProviderRetries_?.();
  const tabs=c.masterSweepTabs_,catalog=c.guideCatalog_(),snapshots=new Map(),routes=new Map(),latest=new Map(),jobs=c.loadJobs_(),byReceipt=new Map();
  const receiptKey=s=>[c.norm_(s.className),s.sourceTab,s.row,c.norm_(s.student),c.norm_(s.code),s.links].join('|');
  authorizeEmptyDashboardReprocess(c,jobs,{emit});

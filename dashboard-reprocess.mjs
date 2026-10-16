@@ -14,7 +14,7 @@ export function dashboardReprocessPlan(job,text,childId){
 }
 export function authorizeEmptyDashboardReprocess(c,jobs,{emit=()=>{}}={}){
  const ids=new Set(jobs.map(x=>x.job.id)),added=[];
- for(const item of jobs){const j=item.job;if(j.dashboardReprocessAuth||j.supersededByDashboardRegrade||!sourceInMasterScope(j.receipt)||j.rawId||j.gradeId||!generationSpent(j))continue;
+ for(const item of jobs){const j=item.job;if(j.providerRetryOrigin||j.supersededByProviderRetry||jobs.some(x=>x.job.providerRetryOrigin?.parentId===j.id)||j.dashboardReprocessAuth||j.supersededByDashboardRegrade||!sourceInMasterScope(j.receipt)||j.rawId||j.gradeId||!generationSpent(j))continue;
   try{const dst=c.destination_(j.cls,j.route,j.receipt.student),cell=dst.cell;if(cell.getFormula()||cell.getDataValidation())continue;
    const id=c.hash_([DASHBOARD_REPROCESS_AUTH,j.id]);if(ids.has(id))continue;
    const child=dashboardReprocessPlan(j,cell.getDisplayValue(),id);if(!child)continue;
