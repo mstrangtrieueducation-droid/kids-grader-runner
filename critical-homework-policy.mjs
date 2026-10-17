@@ -3,6 +3,10 @@ import {sourceInMasterScope} from './master-submission-scope.mjs';
 import {generationSpent,normalizeName} from './master-policy.mjs';
 import {normalizeCode} from './master-barem.mjs';
 import {receiptOnlyCell} from './dashboard-feedback.mjs';
+import {decodeSavedDraft} from './saved-draft.mjs';
+import {presentationNotice,PRESENTATION_REASON} from './teacher-presentation-policy.mjs';
+import {confirmedScriptReading} from './presentation-resubmission.mjs';
+import {savedFeedbackRich} from './saved-feedback.mjs';
 
 export const CRITICAL_HOMEWORK_POLICY='critical-homework-authority-v1-20261017';
 export const CRITICAL_CORRECTION_AUTH='teacher-critical-rubric-regrade-20261017';
@@ -12,6 +16,7 @@ export function criticalPriorityWork(eligible,ordinary,isCorrection){const saved
 const nativeHash=text=>createHash('sha256').update(JSON.stringify(String(text))).digest('hex');
 const critical=j=>j?.route?.kind==='critical'&&/^CRITICAL-C[123]-L\d+$/.test(normalizeCode(j.route.code));
 const authAllowed=a=>a?.approved===true&&a.id===CRITICAL_CORRECTION_AUTH&&a.scope==='critical_proven_wrong_barem';
+export function criticalPresentationNoticeRepair(j,draft,currentText,snapshot={}){if(!j.criticalCorrection||!j.rawId||!j.autoNotice||currentText!==j.autoNotice||!j.autoNotice.includes(PRESENTATION_REASON)||!confirmedScriptReading(draft,j,snapshot))return null;const out=presentationNotice(j,draft,snapshot);return out.text!==j.autoNotice?out:null;}
 export function criticalManagedFeedback(actual,parent){
  if(parent.resultHash&&nativeHash(actual)===parent.resultHash||parent.autoNotice&&actual===parent.autoNotice)return true;
  // Receipt synchronization may wrap an entire saved notice. Accept only the
@@ -81,6 +86,7 @@ export function installCriticalHomeworkPolicy(c,catalog,{authorization,emit=()=>
   if(!critical(j))return step(j,row,...args);
   const active=c.activeCriticalCorrection_,activeJob=c.activeCriticalCorrectionJob_;
   try{
+   if(j.criticalCorrection&&j.rawId&&j.autoNotice){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell,draft=decodeSavedDraft(c.readArtifact_(j.rawId)),out=criticalPresentationNoticeRepair(j,draft,cell.getDisplayValue(),c.masterSnapshot_?.(j)||{});if(out){const guarded={...j,criticalCorrection:{...j.criticalCorrection,expectedTextHash:criticalTextHash(j.autoNotice)}};if(!c.criticalCorrectionMayReplace_(guarded,cell)||verifyReplacement&&!verifyReplacement(guarded,cell))throw Error('CRITICAL_CORRECTION_TARGET_CHANGED');const previous=j.autoNotice;c.activeCriticalCorrection_=guarded.criticalCorrection;c.activeCriticalCorrectionJob_=guarded;const backup=c.saveArtifact_('critical-presentation-notice-before-'+j.id,{rawId:j.rawId,text:previous,cell:cell.getA1Notation(),at:new Date().toISOString()});cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));j.autoNotice=out.text;j.status=out.status;j.error='';j.nextAt=0;j.criticalNoticeRepair={backupArtifactId:backup,rawId:j.rawId,at:new Date().toISOString(),providerCalls:0};c.persist_(j,row);emit({event:'CRITICAL_PRESENTATION_NOTICE_RECONCILED',id:j.id,providerCalls:0});return;}}
    if(j.criticalCorrection){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(!c.criticalCorrectionMayReplace_(j,cell)){if(j.autoNotice&&cell.getDisplayValue()===j.autoNotice&&j.rawId){j.status='RETURNED';j.error='';c.persist_(j,row);return;}j.status='NEEDS_REVIEW';j.error='CRITICAL_CORRECTION_TARGET_CHANGED';c.persist_(j,row);return;}c.activeCriticalCorrection_=j.criticalCorrection;c.activeCriticalCorrectionJob_=j;}
    if(!j.rawId&&!j.gradeId&&!generationSpent(j)&&j.snapshotId){const saved=c.readArtifact_(j.snapshotId),fresh=c.guide_(j.route);if(fresh.criticalHomework&&(saved.criticalHomework?.baremHash!==fresh.criticalHomework.baremHash||saved.barem?.sha256!==fresh.barem.sha256)){j.criticalSnapshotMigration={previousSnapshotId:j.snapshotId,previousSourceHash:j.sourceHash,at:new Date().toISOString()};j.snapshotId=c.saveArtifact_('critical-homework-source-'+j.id,fresh);j.sourceHash=c.hash_(fresh);c.persist_(j,row);}}
    return step(j,row,...args);
