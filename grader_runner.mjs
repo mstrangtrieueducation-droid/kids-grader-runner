@@ -1,5 +1,6 @@
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
 import {installKidsPreprocessing} from './automatic-preprocessing.mjs';
+import {installCriticalHomeworkPolicy} from './critical-homework-policy.mjs';
 import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
 import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
@@ -174,6 +175,7 @@ export function buildContext(cluster){
  installKidsModelAccessRecovery(c,{emit});
  installKidsProviderRetry(c,{emit});
  installKidsPreprocessing(c,{g:google,service:universalMedia,emit,isLatest:j=>{google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
+ installCriticalHomeworkPolicy(c,catalog,{authorization:config.kids?.criticalCorrectionAuthorization,emit,isLatest:j=>{const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
  c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerScreenFrames||[]),...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
@@ -366,8 +368,9 @@ function runCluster(cluster,pass=0,phase='all'){
  const selected=option('--class');const attempted=new Set();
  if(c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
  if(c.recoverUniversalPreprocessing_)emit({event:'PREPROCESSING_RECOVERY',...c.recoverUniversalPreprocessing_()});
+ if(c.recoverCriticalCorrections_)emit({event:'CRITICAL_CORRECTION_RECOVERY',...c.recoverCriticalCorrections_()});
  c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
- const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job));
+ const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
  for(const {job,row} of (phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'))){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
