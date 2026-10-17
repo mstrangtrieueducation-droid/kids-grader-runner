@@ -1,6 +1,6 @@
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
 import {installKidsPreprocessing} from './automatic-preprocessing.mjs';
-import {installCriticalHomeworkPolicy,verifyLiveCriticalTarget} from './critical-homework-policy.mjs';
+import {installCriticalHomeworkPolicy,verifyLiveCriticalTarget,criticalPriorityWork} from './critical-homework-policy.mjs';
 import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
 import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
@@ -371,7 +371,9 @@ function runCluster(cluster,pass=0,phase='all'){
  if(c.recoverCriticalCorrections_)emit({event:'CRITICAL_CORRECTION_RECOVERY',...c.recoverCriticalCorrections_()});
  c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
- for(const {job,row} of (phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'))){
+ const ordinaryWork=phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
+ const phaseWork=phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)):ordinaryWork;
+ for(const {job,row} of phaseWork){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
   if(option('--kind')&&job.route.kind!==option('--kind'))continue;

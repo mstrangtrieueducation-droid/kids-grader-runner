@@ -8,6 +8,7 @@ export const CRITICAL_HOMEWORK_POLICY='critical-homework-authority-v1-20261017';
 export const CRITICAL_CORRECTION_AUTH='teacher-critical-rubric-regrade-20261017';
 export const CRITICAL_CORRECTION_STATUS='SUPERSEDED_BY_AUTHORIZED_CRITICAL_CORRECTION';
 export const criticalTextHash=text=>createHash('sha256').update(String(text)).digest('hex');
+export function criticalPriorityWork(eligible,ordinary,isCorrection){const urgent=eligible.filter(x=>isCorrection(x.job)&&!x.job.rawId),ids=new Set(urgent.map(x=>x.job.id));return [...urgent,...ordinary.filter(x=>!ids.has(x.job.id))];}
 const nativeHash=text=>createHash('sha256').update(JSON.stringify(String(text))).digest('hex');
 const critical=j=>j?.route?.kind==='critical'&&/^CRITICAL-C[123]-L\d+$/.test(normalizeCode(j.route.code));
 const authAllowed=a=>a?.approved===true&&a.id===CRITICAL_CORRECTION_AUTH&&a.scope==='critical_proven_wrong_barem';
