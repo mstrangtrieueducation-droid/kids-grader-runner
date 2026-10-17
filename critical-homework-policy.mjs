@@ -11,6 +11,13 @@ export const criticalTextHash=text=>createHash('sha256').update(String(text)).di
 const nativeHash=text=>createHash('sha256').update(JSON.stringify(String(text))).digest('hex');
 const critical=j=>j?.route?.kind==='critical'&&/^CRITICAL-C[123]-L\d+$/.test(normalizeCode(j.route.code));
 const authAllowed=a=>a?.approved===true&&a.id===CRITICAL_CORRECTION_AUTH&&a.scope==='critical_proven_wrong_barem';
+export function criticalManagedFeedback(actual,parent){
+ if(parent.resultHash&&nativeHash(actual)===parent.resultHash||parent.autoNotice&&actual===parent.autoNotice)return true;
+ // Receipt synchronization may wrap an entire saved notice. Accept only the
+ // unchanged saved notice preceded by a stock dated receipt, never added prose.
+ const expected=parent.autoNotice;if(!expected||!String(actual).endsWith(expected))return false;
+ const prefix=String(actual).slice(0,-expected.length);return /^✅ ĐÃ NỘP(?: MUỘN)?\n\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}\n\n— NHẬN XÉT GV —\n$/.test(prefix);
+}
 
 export function validateCriticalHomework(entry){
  if(entry?.kind!=='critical'||entry.requirements?.contract?.mode!=='mindmap_presentation')return null;
@@ -25,7 +32,7 @@ export function criticalCorrectionPlan(parent,snapshot,entry,{authorization,curr
  if(!authAllowed(authorization)||!critical(parent)||!sourceInMasterScope(parent.receipt)||!isLatest||protectedCell||!parent.rawId||!snapshot?.barem||parent.criticalCorrection||parent.supersededByCriticalCorrection||parent.presentationResubmissionRequired||parent.technicalInputFailure||parent.status==='SKIPPED_OLD_SUBMISSION'||parent.status==='GENERATING')return null;
  const authority=validateCriticalHomework(entry),oldHash=snapshot.barem.sha256;
  if(!authority||normalizeCode(snapshot.barem.code)!==normalizeCode(entry.code)||normalizeCode(parent.receipt.code)!==normalizeCode(entry.code)||oldHash===entry.sha256||!entry.provenance.assignmentBinding.supersedesBaremHashes?.includes(oldHash))return null;
- const managed=!!parent.autoNotice&&String(currentText)===parent.autoNotice||!!parent.resultHash&&nativeHash(currentText)===parent.resultHash;
+ const managed=criticalManagedFeedback(String(currentText),parent);
  if(!managed&&!receiptOnlyCell(currentText))return null;
  // An explicit correction is a new record, never a reset of a paid record.
  // Old raw, usage, counters, reservations, and all archives remain in the parent.
