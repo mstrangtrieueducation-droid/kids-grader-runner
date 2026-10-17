@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {sourceInMasterScope} from './master-submission-scope.mjs';
-import {generationSpent,normalizeName} from './master-policy.mjs';
+import {generationSpent,normalizeName,MASTER_TERMINAL} from './master-policy.mjs';
 import {normalizeCode} from './master-barem.mjs';
 import {receiptOnlyCell} from './dashboard-feedback.mjs';
 import {decodeSavedDraft} from './saved-draft.mjs';
@@ -63,15 +63,18 @@ export function installCriticalHomeworkPolicy(c,catalog,{authorization,emit=()=>
  const latest=j=>isLatest?isLatest(j):false;
  function identity(j){const p=j.criticalCorrection;if(!critical(j)||!p||p.version!==CRITICAL_HOMEWORK_POLICY||p.authorization!==authorization?.id||!authAllowed(authorization)||!sourceInMasterScope(j.receipt)||p.sourceFingerprint!==criticalTextHash(JSON.stringify(j.receipt))||p.targetSpreadsheetId!==j.cls?.spreadsheetId)return false;const e=catalog.lookup('kids',j.route.code);return validateCriticalHomework(e)&&e.sha256===p.baremHash&&e.provenance.assignmentBinding.supersedesBaremHashes?.includes(p.oldBaremHash);}
  c.criticalCorrectionMayReplace_=(j,cell)=>!!identity(j)&&latest(j)&&!cell.getFormula()&&!cell.getDataValidation()&&criticalTextHash(cell.getDisplayValue())===j.criticalCorrection.expectedTextHash;
- c.isPendingCriticalCorrection_=j=>!!identity(j)&&!['RETURNED','SKIPPED_ALREADY_GRADED','SKIPPED_OLD_SUBMISSION'].includes(j.status);
+ c.isPendingCriticalCorrection_=j=>!!identity(j)&&!MASTER_TERMINAL.has(j.status);
  c.hasFeedback_=text=>c.activeCriticalCorrection_&&criticalTextHash(text)===c.activeCriticalCorrection_.expectedTextHash?false:hasFeedback(text);
  const destination=c.destination_;c.destination_=(...args)=>{const dst=destination(...args),active=c.activeCriticalCorrectionJob_;if(active&&args[0]?.spreadsheetId===active.cls.spreadsheetId&&normalizeCode(args[1]?.code)===normalizeCode(active.route.code)&&normalizeName(args[2])===normalizeName(active.receipt.student)){const write=dst.cell.setRichTextValue?.bind(dst.cell);if(write)dst.cell.setRichTextValue=rich=>{if(verifyReplacement&&!verifyReplacement(active,dst.cell))throw Error('CRITICAL_CORRECTION_TARGET_CHANGED');return write(rich);};}return dst;};
  if(batchQueue)c.batchQueue_=items=>batchQueue(items).sort((a,b)=>Number(!!b.job.criticalCorrection)-Number(!!a.job.criticalCorrection));
  function repairNotice(j,row){
   if(!j.criticalCorrection||!j.rawId||!j.autoNotice)return false;
-  const cell=c.destination_(j.cls,j.route,j.receipt.student).cell,draft=decodeSavedDraft(c.readArtifact_(j.rawId)),out=criticalPresentationNoticeRepair(j,draft,cell.getDisplayValue(),c.masterSnapshot_?.(j)||{});if(!out)return false;
+  const cell=c.destination_(j.cls,j.route,j.receipt.student).cell,draft=decodeSavedDraft(c.readArtifact_(j.rawId)),snapshot=c.masterSnapshot_?.(j)||{};let out=criticalPresentationNoticeRepair(j,draft,cell.getDisplayValue(),snapshot);
+  const alreadyRepaired=j.criticalNoticeRepair?.rawId===j.rawId&&cell.getDisplayValue()===j.autoNotice&&confirmedScriptReading(draft,j,snapshot)&&presentationNotice(j,draft,snapshot).text===j.autoNotice;
+  if(!out&&(!alreadyRepaired||j.presentationResubmissionRequired&&MASTER_TERMINAL.has(j.status)))return false;
+  out ||= presentationNotice(j,draft,snapshot);
   const guarded={...j,criticalCorrection:{...j.criticalCorrection,expectedTextHash:criticalTextHash(j.autoNotice)}};if(!c.criticalCorrectionMayReplace_(guarded,cell)||verifyReplacement&&!verifyReplacement(guarded,cell))throw Error('CRITICAL_CORRECTION_TARGET_CHANGED');
-  const active=c.activeCriticalCorrection_,activeJob=c.activeCriticalCorrectionJob_;try{c.activeCriticalCorrection_=guarded.criticalCorrection;c.activeCriticalCorrectionJob_=guarded;const backup=c.saveArtifact_('critical-presentation-notice-before-'+j.id,{rawId:j.rawId,text:j.autoNotice,cell:cell.getA1Notation(),at:new Date().toISOString()});cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));j.autoNotice=out.text;j.status=out.status;j.error='';j.nextAt=0;j.criticalNoticeRepair={backupArtifactId:backup,rawId:j.rawId,at:new Date().toISOString(),providerCalls:0};c.persist_(j,row);emit({event:'CRITICAL_PRESENTATION_NOTICE_RECONCILED',id:j.id,providerCalls:0});return true;}finally{c.activeCriticalCorrection_=active;c.activeCriticalCorrectionJob_=activeJob;}
+  const active=c.activeCriticalCorrection_,activeJob=c.activeCriticalCorrectionJob_;try{c.activeCriticalCorrection_=guarded.criticalCorrection;c.activeCriticalCorrectionJob_=guarded;let backup=j.criticalNoticeRepair?.backupArtifactId;if(out.text!==j.autoNotice){backup=c.saveArtifact_('critical-presentation-notice-before-'+j.id,{rawId:j.rawId,text:j.autoNotice,cell:cell.getA1Notation(),at:new Date().toISOString()});cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));}j.autoNotice=out.text;j.status=out.status;j.error='';j.nextAt=0;j.presentationResubmissionRequired ||= {invalidFileIds:(j.media||[]).filter(m=>!m.isReference).map(m=>m.id),reason:'CONFIRMED_WRONG_PRESENTATION_FORMAT',at:new Date().toISOString()};if(j.teacherApproval)j.teacherApproval.approved=false;j.criticalNoticeRepair={backupArtifactId:backup,rawId:j.rawId,at:new Date().toISOString(),providerCalls:0};c.persist_(j,row);emit({event:'CRITICAL_PRESENTATION_NOTICE_RECONCILED',id:j.id,providerCalls:0});return true;}finally{c.activeCriticalCorrection_=active;c.activeCriticalCorrectionJob_=activeJob;}
  }
  c.recoverCriticalCorrections_=()=>{
   const result={queued:0,preserved:0,providerCalls:0};if(process.env.RUNNER_HOST!=='github'||process.env.AUTOMATIC_GRADING_AUTHORIZED!=='true'||!authAllowed(authorization))return result;
