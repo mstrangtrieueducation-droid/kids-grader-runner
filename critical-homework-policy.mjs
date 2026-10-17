@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {sourceInMasterScope} from './master-submission-scope.mjs';
-import {generationSpent} from './master-policy.mjs';
+import {generationSpent,normalizeName} from './master-policy.mjs';
 import {normalizeCode} from './master-barem.mjs';
 import {receiptOnlyCell} from './dashboard-feedback.mjs';
 
@@ -32,7 +32,16 @@ export function criticalCorrectionPlan(parent,snapshot,entry,{authorization,curr
  return {id:childId,status:'WAITING_INPUT',route:{...structuredClone(entry.route),code:parent.receipt.code,className:parent.cls.className,sourceTab:parent.receipt.sourceTab},receipt:structuredClone(parent.receipt),cls:structuredClone(parent.cls),media:[],generateRequests:0,attempts:0,nextAt:0,error:'',autoManaged:true,regradeParentId:parent.id,criticalCorrection:{version:CRITICAL_HOMEWORK_POLICY,authorization:authorization.id,parentId:parent.id,rootId:parent.id,oldBaremHash:oldHash,baremHash:entry.sha256,sourceFingerprint:criticalTextHash(JSON.stringify(parent.receipt)),expectedTextHash:criticalTextHash(currentText),targetSpreadsheetId:parent.cls.spreadsheetId,requestedAt:new Date().toISOString()},masterSweep:{version:'master-cross-class-20261014',baseline:'EMPTY',mode:'AUTHORIZED_CRITICAL_BAREM_CORRECTION',at:new Date().toISOString()}};
 }
 
-export function installCriticalHomeworkPolicy(c,catalog,{authorization,emit=()=>{},isLatest}={}){
+// Read the live class cell, headers and pupil row independently of a RAM batch.
+// A teacher edit/row or column insertion during generation must not be overwritten.
+export function verifyLiveCriticalTarget(c,google,j,cell){
+ const sheet=cell.sheet,name=sheet.getName().replaceAll("'","''"),ranges=["'"+name+"'!1:4","'"+name+"'!B"+cell.r+':C'+cell.r,"'"+name+"'!"+cell.getA1Notation()],data=google.api('https://sheets.googleapis.com/v4/spreadsheets/'+sheet.book.id+'?'+ranges.map(r=>'ranges='+encodeURIComponent(r)).join('&')+'&includeGridData=true&fields=sheets(properties(sheetId),merges,data(startRow,startColumn,rowData(values(formattedValue,userEnteredValue,dataValidation))))'),s=data.sheets.find(x=>x.properties.sheetId===sheet.getSheetId());if(!s)return false;
+ const rows=[];for(const block of s.data||[])for(const [i,r]of (block.rowData||[]).entries()){const row=rows[(block.startRow||0)+i] ||= [];for(const [k,v]of (r.values||[]).entries())row[(block.startColumn||0)+k]=v;}
+ const headers=Array.from({length:4},(_,i)=>(rows[i]||[]).map(v=>v?.formattedValue||''));for(const m of s.merges||[]){if(m.startRowIndex>=4)continue;for(let i=m.startRowIndex;i<Math.min(4,m.endRowIndex);i++)for(let k=m.startColumnIndex;k<m.endColumnIndex;k++)headers[i][k]=rows[m.startRowIndex]?.[m.startColumnIndex]?.formattedValue||'';}
+ const target=rows[cell.r-1]?.[cell.c-1],names=rows[cell.r-1]||[];return !!target&&!target.userEnteredValue?.formulaValue&&!target.dataValidation&&[names[1]?.formattedValue,names[2]?.formattedValue].some(n=>normalizeName(n)===normalizeName(j.receipt.student))&&c.autoColumns_(headers,j.route)===cell.c&&criticalTextHash(target.formattedValue||'')===j.criticalCorrection.expectedTextHash;
+}
+
+export function installCriticalHomeworkPolicy(c,catalog,{authorization,emit=()=>{},isLatest,verifyReplacement}={}){
  const guide=c.guide_,prompt=c.kidsEvidencePrompt_,system=c.kidsSystemInstruction_,step=c.step_,generate=c.generate_,hasFeedback=c.hasFeedback_,batchQueue=c.batchQueue_;
  const instruction='CRITICAL — THẨM QUYỀN ĐỀ BÀI: yêu cầu HOMEWORK của đúng trang nộp bài và phần MINDMAP/PRESENTATION của slide gắn ngay trên trang đó là chuẩn chấm. Không thay bằng chủ đề lý thuyết ở buổi trước, tiêu đề Vocabulary & Revision, số Lesson nội bộ cũ trong slide, hoặc nhận xét/lịch sử chấm trước. Câu hỏi gợi ý là nhánh triển khai mindmap, không tự thêm bài hỏi đáp/video thứ hai. Chấp nhận ví dụ đúng thuộc chủ đề rộng, mindmap cá nhân, cách diễn đạt tương đương; không bắt thuộc nguyên văn hoặc nói đủ mọi ví dụ trên slide. Chỉ kết luận wrong_assignment khi nội dung thực sự không thuộc phạm vi HOMEWORK đã nạp; không phạt học sinh vì các tài liệu nguồn của giáo viên mâu thuẫn.';
  c.guide_=route=>{const s=guide(route);if(route.kind!=='critical')return s;const entry=catalog.lookup('kids',route.code),authority=validateCriticalHomework(entry);if(!authority)return s;return {...s,form:s.form.map((label,i)=>i===0?'Nội dung thuyết trình theo mindmap':label),criticalHomework:authority};};
@@ -43,6 +52,7 @@ export function installCriticalHomeworkPolicy(c,catalog,{authorization,emit=()=>
  c.criticalCorrectionMayReplace_=(j,cell)=>!!identity(j)&&latest(j)&&!cell.getFormula()&&!cell.getDataValidation()&&criticalTextHash(cell.getDisplayValue())===j.criticalCorrection.expectedTextHash;
  c.isPendingCriticalCorrection_=j=>!!identity(j)&&!['RETURNED','SKIPPED_ALREADY_GRADED','SKIPPED_OLD_SUBMISSION'].includes(j.status);
  c.hasFeedback_=text=>c.activeCriticalCorrection_&&criticalTextHash(text)===c.activeCriticalCorrection_.expectedTextHash?false:hasFeedback(text);
+ const destination=c.destination_;c.destination_=(...args)=>{const dst=destination(...args),active=c.activeCriticalCorrectionJob_;if(active&&args[0]?.spreadsheetId===active.cls.spreadsheetId&&normalizeCode(args[1]?.code)===normalizeCode(active.route.code)&&normalizeName(args[2])===normalizeName(active.receipt.student)){const write=dst.cell.setRichTextValue?.bind(dst.cell);if(write)dst.cell.setRichTextValue=rich=>{if(verifyReplacement&&!verifyReplacement(active,dst.cell))throw Error('CRITICAL_CORRECTION_TARGET_CHANGED');return write(rich);};}return dst;};
  if(batchQueue)c.batchQueue_=items=>batchQueue(items).sort((a,b)=>Number(!!b.job.criticalCorrection)-Number(!!a.job.criticalCorrection));
  c.recoverCriticalCorrections_=()=>{
   const result={queued:0,preserved:0,providerCalls:0};if(process.env.RUNNER_HOST!=='github'||process.env.AUTOMATIC_GRADING_AUTHORIZED!=='true'||!authAllowed(authorization))return result;
@@ -58,15 +68,15 @@ export function installCriticalHomeworkPolicy(c,catalog,{authorization,emit=()=>
    }catch(e){emit({event:'CRITICAL_CORRECTION_PRESERVED',id:j.id,error:e.message,providerCalls:0});}
   }return result;
  };
- c.generate_=(j,parts,snapshot)=>{if(critical(j)&&!j.rawId){const entry=catalog.lookup('kids',j.route.code),authority=validateCriticalHomework(entry);if(authority&&(snapshot?.criticalHomework?.baremHash!==entry.sha256||snapshot.barem?.sha256!==entry.sha256))throw Error('CRITICAL_HOMEWORK_SNAPSHOT_STALE');if(j.criticalCorrection&&!c.criticalCorrectionMayReplace_(j,c.destination_(j.cls,j.route,j.receipt.student).cell))throw Error('CRITICAL_CORRECTION_TARGET_CHANGED');}return generate(j,parts,snapshot);};
+ c.generate_=(j,parts,snapshot)=>{if(critical(j)&&!j.rawId){const entry=catalog.lookup('kids',j.route.code),authority=validateCriticalHomework(entry);if(authority&&(snapshot?.criticalHomework?.baremHash!==entry.sha256||snapshot.barem?.sha256!==entry.sha256))throw Error('CRITICAL_HOMEWORK_SNAPSHOT_STALE');if(j.criticalCorrection){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(!c.criticalCorrectionMayReplace_(j,cell)||verifyReplacement&&!verifyReplacement(j,cell))throw Error('CRITICAL_CORRECTION_TARGET_CHANGED');}}return generate(j,parts,snapshot);};
  c.step_=(j,row,...args)=>{
   if(!critical(j))return step(j,row,...args);
-  const active=c.activeCriticalCorrection_;
+  const active=c.activeCriticalCorrection_,activeJob=c.activeCriticalCorrectionJob_;
   try{
-   if(j.criticalCorrection){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(!c.criticalCorrectionMayReplace_(j,cell)){if(j.autoNotice&&cell.getDisplayValue()===j.autoNotice&&j.rawId){j.status='RETURNED';j.error='';c.persist_(j,row);return;}j.status='NEEDS_REVIEW';j.error='CRITICAL_CORRECTION_TARGET_CHANGED';c.persist_(j,row);return;}c.activeCriticalCorrection_=j.criticalCorrection;}
+   if(j.criticalCorrection){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(!c.criticalCorrectionMayReplace_(j,cell)){if(j.autoNotice&&cell.getDisplayValue()===j.autoNotice&&j.rawId){j.status='RETURNED';j.error='';c.persist_(j,row);return;}j.status='NEEDS_REVIEW';j.error='CRITICAL_CORRECTION_TARGET_CHANGED';c.persist_(j,row);return;}c.activeCriticalCorrection_=j.criticalCorrection;c.activeCriticalCorrectionJob_=j;}
    if(!j.rawId&&!j.gradeId&&!generationSpent(j)&&j.snapshotId){const saved=c.readArtifact_(j.snapshotId),fresh=c.guide_(j.route);if(fresh.criticalHomework&&(saved.criticalHomework?.baremHash!==fresh.criticalHomework.baremHash||saved.barem?.sha256!==fresh.barem.sha256)){j.criticalSnapshotMigration={previousSnapshotId:j.snapshotId,previousSourceHash:j.sourceHash,at:new Date().toISOString()};j.snapshotId=c.saveArtifact_('critical-homework-source-'+j.id,fresh);j.sourceHash=c.hash_(fresh);c.persist_(j,row);}}
    return step(j,row,...args);
-  }finally{c.activeCriticalCorrection_=active;}
+  }finally{c.activeCriticalCorrection_=active;c.activeCriticalCorrectionJob_=activeJob;}
  };
  emit({event:'CRITICAL_HOMEWORK_POLICY_INSTALLED',version:CRITICAL_HOMEWORK_POLICY,correctionAuthorized:authAllowed(authorization),providerCalls:0});
 }

@@ -1,6 +1,6 @@
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
 import {installKidsPreprocessing} from './automatic-preprocessing.mjs';
-import {installCriticalHomeworkPolicy} from './critical-homework-policy.mjs';
+import {installCriticalHomeworkPolicy,verifyLiveCriticalTarget} from './critical-homework-policy.mjs';
 import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
 import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
@@ -175,7 +175,7 @@ export function buildContext(cluster){
  installKidsModelAccessRecovery(c,{emit});
  installKidsProviderRetry(c,{emit});
  installKidsPreprocessing(c,{g:google,service:universalMedia,emit,isLatest:j=>{google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
- installCriticalHomeworkPolicy(c,catalog,{authorization:config.kids?.criticalCorrectionAuthorization,emit,isLatest:j=>{const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
+ installCriticalHomeworkPolicy(c,catalog,{authorization:config.kids?.criticalCorrectionAuthorization,emit,verifyReplacement:(j,cell)=>verifyLiveCriticalTarget(c,google,j,cell),isLatest:j=>{const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
  c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerScreenFrames||[]),...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
