@@ -2,6 +2,7 @@ import {receiptDate,generationSpent} from './master-policy.mjs';
 import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 const pending=new Set(['QUEUED','READY','WAITING_MEDIA','WAITING_INPUT','WAITING_TEACHER_APPROVAL','RETRY']);
 export function automaticEligible(j,all=[]){
+ if(j.preprocessRetry&&Number(j.nextAt)>Date.now())return false;
  if(j.providerRetryOrigin&&Number(j.nextAt)>Date.now())return false;
  if(!masterScopeAllowsJob(j)||!pending.has(j.status)||j.rawId||j.gradeId||generationSpent(j)||j.approvedGenerateRequests||j.generationAttempt?.calls||j.apiUsage||j.usage||j.technicalInputFailure||j.presentationResubmissionRequired)return false;
  const key=x=>[x.cls?.spreadsheetId||x.source?.className,x.receipt?.student||x.source?.name,x.route?.code||x.source?.code].join('|');

@@ -13,7 +13,7 @@ export function providerRetryFailure(j){
  const last=j.technicalFailures?.at(-1),http=Number(j.providerFailure?.http||j.systemGradingFailure?.httpCode||last?.httpCode||String(j.error||'').match(/(?:HTTP_|HTTP:)(\d{3})/)?.[1]||(j.error==='PROVIDER_QUOTA_REJECTED'?429:0));
  if([429,500,502,503,504].includes(http))return {kind:'HTTP_'+http,http,outcomeUnknown:http!==429};
  const error=[j.error,j.systemGradingFailure?.cause,last?.code].filter(Boolean).join('|');
- if(/NETWORK_OUTCOME_UNKNOWN|UNCERTAIN_GENERATION(?:_OR_VERIFICATION)?|MEDIA_TRANSFER_RETRY/.test(error))return {kind:'NETWORK_NO_RESPONSE',outcomeUnknown:true};
+ if(/NETWORK_OUTCOME_UNKNOWN|UNCERTAIN_GENERATION(?:_OR_VERIFICATION)?|NETWORK_RETRY|MEDIA_TRANSFER_RETRY/.test(error))return {kind:'NETWORK_NO_RESPONSE',outcomeUnknown:true};
  return null;
 }
 export function providerRetryCandidate(j){
@@ -34,7 +34,7 @@ export function planProviderRetries(jobs,{lane,isLatest,emptyTarget,now=Date.now
   if(related.some(j=>j!==parent&&!/^(SKIPPED_|SUPERSEDED_|FAILED_|NEEDS_REVIEW|SYSTEM_|WAITING_PROVIDER_QUOTA|PENDING_RETRY)/.test(j.status||'')&&!providerRetryFailure(j)))continue;
   if(!isLatest(parent))continue;
   try{if(!emptyTarget(parent))continue;}catch{continue;}
-  const depth=Number(parent.providerRetryOrigin?.depth||0)+1,failure=providerRetryFailure(parent),delay=Math.max(depth===1?60000:120000,Number(parent.providerFailure?.retryMs||parent.apiError?.retryMs||parent.apiError?.retryAfter||0));
+  const depth=Number(parent.providerRetryOrigin?.depth||0)+1,failure=providerRetryFailure(parent),delay=Math.max(failure.http===429?(depth===1?60000:120000):(depth%3===0?600000:5000),Number(parent.providerFailure?.retryMs||parent.apiError?.retryMs||parent.apiError?.retryAfter||0));
   const failedAt=Date.parse(parent.providerRetry?.failedAt||parent.updatedAt||parent.lastAttemptAt||parent.masterGenerationStartedAt||'');
   const nextAt=Math.max(now,Number.isFinite(failedAt)?failedAt+delay:now+delay);
   const origin={authorization:PROVIDER_RETRY_AUTH,parentId:parent.id,rootId:parent.providerRetryOrigin?.rootId||parent.id,depth,previousFailure:failure,createdAt:new Date(now).toISOString(),priorRequestCount:Number(parent.generateRequests||parent.approvedGenerateRequests||0)};

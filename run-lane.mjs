@@ -12,6 +12,7 @@ async function main(){
  runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
  runTest('continuous-dispatcher-tests.mjs');
+ runTest('universal-media-tests.mjs');
  runTest('provider-retry-policy-tests.mjs');
  runTest('kids-provider-retry-tests.mjs');
  runTest('screen-grounding-tests.mjs');

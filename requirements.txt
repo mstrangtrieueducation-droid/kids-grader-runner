@@ -1,1 +1,1 @@
-# Node.js 24 and system ffmpeg; no Python packages required.
+yt-dlp[default]==2026.8.19
