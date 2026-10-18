@@ -19,7 +19,7 @@ async function main(){
  runTest('grading-failure-policy-tests.mjs');
  runTest('kids-model-access-recovery-tests.mjs');
  runTest('critical-homework-policy-tests.mjs');
- runTest('feedback-alignment-tests.mjs');
+ runTest('feedback-alignment-tests.mjs');runTest('feedback-contrast-tests.mjs');
  if(mode==='validate')return;
  if(process.env.GITHUB_ACTIONS==='true'&&(process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/'+required('RUNNER_DEFAULT_BRANCH')))throw Error('TRUSTED_REPOSITORY_AND_BRANCH_REQUIRED');
  if(mode==='grade'&&process.env.GRADING_ENABLED!=='true')throw Error('HANDOFF_NOT_ENABLED');
