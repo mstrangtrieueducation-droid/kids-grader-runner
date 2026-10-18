@@ -1,6 +1,7 @@
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
 import {installKidsPreprocessing} from './automatic-preprocessing.mjs';
 import {installCriticalHomeworkPolicy,verifyLiveCriticalTarget,criticalPriorityWork} from './critical-homework-policy.mjs';
+import {installFeedbackAlignment} from './feedback-alignment.mjs';
 import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
 import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
@@ -43,7 +44,7 @@ const config=JSON.parse(process.env.RUNNER_CONFIG||fs.readFileSync(path.join(roo
 config.kids={...config.kids,model:MASTER_MODEL,routing:'teacher-master-v1-20261014'};
 const sa=JSON.parse(process.env.GOOGLE_CREDENTIALS||fs.readFileSync(path.join(root,'..','tracker-fast-pilot-20260924','private','google-service-account.json'),'utf8'));
 const key=(process.env.GEMINI_API_KEY||fs.readFileSync(path.join(root,'private','gemini-key.txt'),'utf8')).trim();if(!key)throw Error('GEMINI_KEY_MISSING');
-export const runnerGoogle=new Google(sa);const google=runnerGoogle,args=new Set(process.argv.slice(2)),dry=args.has('--audit'),scanOnly=args.has('--scan-only');
+export const runnerGoogle=new Google(sa);installFeedbackAlignment(runnerGoogle);const google=runnerGoogle,args=new Set(process.argv.slice(2)),dry=args.has('--audit'),scanOnly=args.has('--scan-only');
 const option=name=>process.argv.find(x=>x.startsWith(name+'='))?.slice(name.length+1);
 const poolWorker=args.has('--pool-worker'),poolSlot=Number(option('--pool-slot')||0),poolCount=Number(option('--pool-count')||5);
 const lanes=workerLanes(poolCount,!!config.shadowing?.enabled),dedicatedShadow=poolWorker&&!lanes.kidsSlots.includes(poolSlot),kidsSlot=lanes.kidsSlots.indexOf(poolSlot),kidsCount=lanes.kidsSlots.length;
