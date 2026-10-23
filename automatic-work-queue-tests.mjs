@@ -1,4 +1,4 @@
-import {sourceRepairQueue} from './automatic-work-queue.mjs';
+import {sourceRepairQueue,deferFleetMaintenance} from './automatic-work-queue.mjs';
 import assert from 'node:assert/strict';
 import {fairAutomaticCandidates,authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue} from './automatic-work-queue.mjs';
 import {acceptTeacherApprovals} from './teacher-approval-guards.mjs';
@@ -22,5 +22,14 @@ console.log('Fair classes, waiting-state authorization, preparation fairness, pa
 // New YouTube work uses the same priority entry, without a historic repair marker or pupil-specific ID.
 const nativePreviousScope=process.env.MASTER_CROSS_CLASS_SWEEP;process.env.MASTER_CROSS_CLASS_SWEEP='true';
 const nativeCandidate={id:'native-new',cls:{spreadsheetId:'fixture',className:'KIDS 1'},route:{code:'SCIENCE-G1-1'},receipt:{student:'Fixture',time:'2026-10-23T00:00:00Z',links:'https://youtu.be/AbCdEfGhIjK'},status:'READY'};assert.equal(sourceRepairQueue([{job:nativeCandidate}]).length,1);assert.equal(sourceRepairQueue([{job:{...nativeCandidate,generateRequests:1}}]).length,0);assert.equal(sourceRepairQueue([{job:{...nativeCandidate,previousGradingAttempts:[{rawId:'old'}]}}]).length,0);assert.equal(sourceRepairQueue([{job:{...nativeCandidate,receipt:{...nativeCandidate.receipt,time:'2026-08-01T00:00:00Z'}}}]).length,0);
+
+const driveCandidate={...nativeCandidate,id:'drive-queued',receipt:{...nativeCandidate.receipt,links:'https://drive.google.com/file/d/abcdefghijklmnopqr/view'}};
+assert.equal(deferFleetMaintenance([{job:driveCandidate}]),true);
+assert.equal(deferFleetMaintenance([{job:{...driveCandidate,status:'RETURNED',rawId:'saved'}}]),false);
+assert.equal(deferFleetMaintenance([{job:{...driveCandidate,status:'RETRY',rawId:'saved',generateRequests:1}}]),true);
+assert.equal(deferFleetMaintenance([{job:{...driveCandidate,nextAt:Date.now()+60000}}]),false);
+assert.equal(deferFleetMaintenance([{job:{...driveCandidate,generateRequests:1}}]),false);
+assert.equal(deferFleetMaintenance([{job:{...driveCandidate,receipt:{...driveCandidate.receipt,time:'2026-08-01T00:00:00Z'}}}]),false);
+assert.equal(deferFleetMaintenance([{job:{...driveCandidate,status:'COMPLETED_PRESENTATION_RESUBMISSION'}}]),false);
 
 if(nativePreviousScope===undefined)delete process.env.MASTER_CROSS_CLASS_SWEEP;else process.env.MASTER_CROSS_CLASS_SWEEP=nativePreviousScope;

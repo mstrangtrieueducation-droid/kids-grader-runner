@@ -8,7 +8,7 @@ import {installFeedbackAlignment} from './feedback-alignment.mjs';
 import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
 import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
-import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue,sourceRepairQueue} from './automatic-work-queue.mjs';
+import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue,sourceRepairQueue,deferFleetMaintenance} from './automatic-work-queue.mjs';
 import {installSubmissionAssignmentScope} from './submission-assignment-scope.mjs';
 import {installKidsAppleInputRecovery} from './kids-apple-input-recovery.mjs';
 import {installKidsModelAccessRecovery} from './kids-model-access-recovery.mjs';
@@ -365,7 +365,7 @@ function runCluster(cluster,pass=0,phase='all'){
  if(process.env.RUNNER_SHEET_BATCH==='1')replaySheetBatches(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});
  if(process.env.RUNNER_SHEET_BATCH==='1'){c.ensureMasterAssignmentTab_?.();ramBatch=beginSheetBatch(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});}
  if(phase==='repair'){google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));if(!args.has('--skip-scan')){google.preloadSource(vm.runInContext('KG.classroom',c),2);google.preloadSource(vm.runInContext('KG.practice',c),2);}}
- else if(!preparedClusters.has(cluster.controlId)){google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));if(!poolWorker){emit({event:'DEDUPLICATION',account:cluster.email,...deduplicate(c)});
+ else if(!preparedClusters.has(cluster.controlId)){google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));const submittedWorkWaiting=deferFleetMaintenance(c.loadJobs_());if(submittedWorkWaiting)emit({event:'FLEET_MAINTENANCE_DEFERRED',reason:'SUBMITTED_WORK_BEFORE_HISTORICAL_CLEANUP',providerCalls:0});if(!poolWorker&&!submittedWorkWaiting){emit({event:'DEDUPLICATION',account:cluster.email,...deduplicate(c)});
  let repair;do{repair=c.repairKidsCostQueue_();emit({event:'REPAIR',...repair});}while(repair.reopened&&Date.now()<until);
  emit({event:'SNAPSHOT_MIGRATION',...migrateSnapshots(c)});emit({event:'FEEDBACK_COLOR_RECONCILIATION',...reconcileFeedbackColors(c,{deadline:Math.min(until-90000,Date.now()+20000)})});}
  // Newest submissions only are queued by the original, validated multi-class scanner.
