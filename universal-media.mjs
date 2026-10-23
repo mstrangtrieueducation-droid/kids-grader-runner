@@ -150,7 +150,14 @@ export function createMediaService({g,root,key=process.env.GEMINI_API_KEY,ffmpeg
   const out=path.join(dir,tag+'.original');if(fs.existsSync(out)&&fs.statSync(out).size===m.size)return out;
   const partial=out+'.part';let offset=fs.existsSync(partial)?fs.statSync(partial).size:0;if(offset>m.size){fs.unlinkSync(partial);offset=0;}
   while(offset<m.size){if(sheetTruthEnabled()&&Date.now()>=downloadDeadline)throw Error('TRANSIENT_MEDIA_DOWNLOAD_TIMEOUT');const end=Math.min(m.size-1,offset+8*1024*1024-1),range='bytes '+offset+'-'+end+'/'+m.size;
-   const response=downloadWithRetry({url:'https://www.googleapis.com/drive/v3/files/'+m.id+'?alt=media&supportsAllDrives=true',headers:{Authorization:'Bearer '+g.token(),Range:'bytes='+offset+'-'+end,'Accept-Encoding':'identity'},outputFile:partial,append:offset>0,expectedContentRange:range,timeoutMs:sheetTruthEnabled()?Math.max(1,downloadDeadline-Date.now()):120000},download,sheetTruthEnabled()?{retries:0}:{});if([401,403,404,410].includes(response.getResponseCode())){const e=Error('SOURCE_HTTP_'+response.getResponseCode());e.httpCode=response.getResponseCode();throw e;}if(response.getResponseCode()!==206||response.getAllHeaders()['content-range']!==range)throw Error('TRANSIENT_MEDIA_SOURCE_DOWNLOAD_FAILED');
+   let response;try{response=downloadWithRetry({url:'https://www.googleapis.com/drive/v3/files/'+m.id+'?alt=media&supportsAllDrives=true',headers:{Authorization:'Bearer '+g.token(),Range:'bytes='+offset+'-'+end,'Accept-Encoding':'identity'},outputFile:partial,append:offset>0,expectedContentRange:range,timeoutMs:sheetTruthEnabled()?Math.max(1,downloadDeadline-Date.now()):120000},download,sheetTruthEnabled()?{retries:0}:{});}catch(error){
+    // The bridge validates Content-Range before appending. An interrupted body
+    // can still have made durable progress; resume those bytes on the next
+    // unpaid preparation turn instead of imposing a five-minute source hold.
+    const bytes=fs.existsSync(partial)?fs.statSync(partial).size:offset;
+    if(sheetTruthEnabled()&&error.message==='NETWORK_OUTCOME_UNKNOWN'&&bytes>offset&&bytes<=end+1)throw Error('TRANSIENT_MEDIA_DOWNLOAD_TIMEOUT');
+    throw error;
+   }if([401,403,404,410].includes(response.getResponseCode())){const e=Error('SOURCE_HTTP_'+response.getResponseCode());e.httpCode=response.getResponseCode();throw e;}if(response.getResponseCode()!==206||response.getAllHeaders()['content-range']!==range)throw Error('TRANSIENT_MEDIA_SOURCE_DOWNLOAD_FAILED');
    offset=fs.statSync(partial).size;if(offset!==end+1)throw Error('TRANSIENT_MEDIA_DOWNLOAD_SIZE');
   }fs.renameSync(partial,out);return out;
  }
