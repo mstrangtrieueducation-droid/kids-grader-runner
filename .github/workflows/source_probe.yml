@@ -36,7 +36,7 @@ jobs:
         run: node source-probe-tests.mjs
       - name: Download selected YouTube sources without AI or Sheet writes
         env:
-          GEMINI_API_KEY: ${{ inputs.client == 'native_tokens' && secrets.GEMINI_API_KEY || '' }}
+          GEMINI_API_KEY: ${{ inputs.client == 'native_tokens' && secrets.GEMINI_KEY_KIDS || '' }}
           PROBE_CLIENT: ${{ inputs.client }}
           PROBE_CLUSTER: ${{ inputs.cluster }}
           PROBE_JOB_IDS: ${{ inputs.job_ids }}
