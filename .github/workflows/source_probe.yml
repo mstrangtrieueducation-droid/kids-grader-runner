@@ -8,7 +8,7 @@ on:
         required: true
       client:
         type: choice
-        options: ['default', 'android_vr', 'web_embedded', 'android_vr_no_webpage', 'native_tokens']
+        options: ['default', 'android_vr', 'web_embedded', 'android_vr_no_webpage', 'native_tokens', 'native_adapter']
         default: 'default'
       job_ids:
         type: string
@@ -36,7 +36,7 @@ jobs:
         run: node source-probe-tests.mjs
       - name: Download selected YouTube sources without AI or Sheet writes
         env:
-          GEMINI_API_KEY: ${{ inputs.client == 'native_tokens' && secrets.GEMINI_KEY_KIDS || '' }}
+          GEMINI_API_KEY: ${{ (inputs.client == 'native_tokens' || inputs.client == 'native_adapter') && secrets.GEMINI_KEY_KIDS || '' }}
           PROBE_CLIENT: ${{ inputs.client }}
           PROBE_CLUSTER: ${{ inputs.cluster }}
           PROBE_JOB_IDS: ${{ inputs.job_ids }}
