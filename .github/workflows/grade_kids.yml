@@ -48,6 +48,7 @@ jobs:
           node master-compact-output-tests.mjs
           node completed-lease-owner-tests.mjs
           node sheet-truth-tests.mjs
+          node sheet-truth-form-time-tests.mjs
       - name: Install official media tools
         if: env.MODE != 'validate'
         run: |
