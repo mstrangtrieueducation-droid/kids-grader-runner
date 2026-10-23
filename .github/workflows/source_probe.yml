@@ -1,0 +1,40 @@
+name: Read-only source download diagnostic
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        type: choice
+        options: ['1', '2', '3']
+        required: true
+      job_ids:
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: kids-source-readonly-probe
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.repository == 'mstrangtrieueducation-droid/kids-grader-runner' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+      - name: Install the production media tools
+        run: python3 -m pip install --quiet --timeout 30 --retries 2 -r requirements.txt
+      - name: Validate privacy and read-only probe contract
+        run: node source-probe-tests.mjs
+      - name: Download selected YouTube sources without AI or Sheet writes
+        env:
+          PROBE_CLUSTER: ${{ inputs.cluster }}
+          PROBE_JOB_IDS: ${{ inputs.job_ids }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          PRIVATE_BUNDLE_KEY: ${{ secrets.PRIVATE_BUNDLE_KEY }}
+          SHEET_TRUTH_SYNC: 'true'
+        run: node source-download-probe.mjs
