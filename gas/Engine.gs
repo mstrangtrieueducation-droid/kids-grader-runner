@@ -25,7 +25,7 @@ function writeGrade_(job, grade) {
   require_(!cell.getFormula()&&!cell.getDataValidation(), 'DESTINATION_PROTECTED');
   // Keep the tracker-owned late/attempt count and timestamps; only fill feedback.
   const markerAt=before.indexOf(KG.marker),prefix=markerAt>=0?before.slice(0,markerAt):'✅ ĐÃ NỘP\n'+Utilities.formatDate(new Date(job.receipt.time),KG.timezone,'dd/MM/yyyy HH:mm')+'\n\n';
-  const text=prefix+KG.marker+'\n'+feedbackText_(grade);
+  const text=(typeof teacherListeningPrefix_==='function'?teacherListeningPrefix_(before,prefix):prefix)+KG.marker+'\n'+feedbackText_(grade);
   // Recheck immediately before writing; external Apps Script writers should use the same marker-preservation rule.
   require_(cell.getDisplayValue()===before, 'DESTINATION_CHANGED');
   job.backupId=saveArtifact_('before-'+job.id+'-'+Date.now(),{spreadsheetId:job.cls.spreadsheetId,sheet:job.cls.sheetName,cell:cell.getA1Notation(),value:cell.getValue(),note:cell.getNote(),output:text});
@@ -45,7 +45,7 @@ function writeRecordingNotice_(job,issue) {
   const reading=(issue.checks||[]).some(x=>x.textUseStatus==='visible_reading');
   const guidance=issue.contract?.parentGuidance||'Con thực hiện lại đúng phần hướng dẫn quay và nộp bài trên web.';
   const message=kidsResubmissionMessage_(issue,reading,guidance);
-  const text=prefix+KG.marker+'\n'+message,start=text.indexOf(message);
+  const text=(typeof teacherListeningPrefix_==='function'?teacherListeningPrefix_(before,prefix):prefix)+KG.marker+'\n'+message,start=text.indexOf(message);
   job.noticeBackupId=saveArtifact_('before-recording-notice-'+job.id,{value:before,note:cell.getNote(),cell:cell.getA1Notation()});
   const rich=coloredFeedback_(cell,text,null).copy().setTextStyle(start,text.length,SpreadsheetApp.newTextStyle().setForegroundColor('#C2185B').build()).build();
   require_(cell.getDisplayValue()===before,'DESTINATION_CHANGED');cell.setRichTextValue(rich);SpreadsheetApp.flush();
