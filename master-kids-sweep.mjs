@@ -3,7 +3,9 @@ import {createMasterSweep} from './master-cross-class-sweep.mjs';
 import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
 import {authorizeEmptyDashboardReprocess} from './dashboard-reprocess.mjs';
 export function installMasterScoreProtection(c){const step=c.step_;c.step_=(j,row,...args)=>{if(masterSweepEnabled()){if(!masterScopeAllowsJob(j))return;try{const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';c.persist_(j,row);return;}}catch{/* The normal per-job handler records missing names and columns. */}}return step(j,row,...args);};}
-export function prepareKidsMasterSweep(c,cluster,google,{emit=()=>{}}={}){
+const hostedSweeps=new WeakMap();
+export function hostedKidsSweep(context,create){if(!hostedSweeps.has(context))hostedSweeps.set(context,create());return hostedSweeps.get(context);}
+export function prepareKidsMasterSweep(c,cluster,google,{emit=()=>{}}={}){return hostedKidsSweep(c,()=>{
  c.recoverProviderRetries_?.();
  const tabs=c.masterSweepTabs_,catalog=c.guideCatalog_(),snapshots=new Map(),routes=new Map(),latest=new Map(),jobs=c.loadJobs_(),byReceipt=new Map();
  const receiptKey=s=>[c.norm_(s.className),s.sourceTab,s.row,c.norm_(s.student),c.norm_(s.code),s.links].join('|');
@@ -20,5 +22,5 @@ export function prepareKidsMasterSweep(c,cluster,google,{emit=()=>{}}={}){
   resolve:(s,j)=>{const cls=clsFor(s);if(!snapshots.has(cls.spreadsheetId))snapshots.set(cls.spreadsheetId,c.targetSnapshot_(cls));const snapshot=snapshots.get(cls.spreadsheetId),route=j?.rawId&&j.contentRouting?j.route:routeFor(s),dst=c.autoTarget_(snapshot,route,s.student);return {...dst,cell:snapshot.sheet.getRange(dst.row,dst.column)};},hasFeedback:text=>c.hasFeedback_(text),readyStatus:'READY',
   enqueue:(s,cls)=>{const route=routeFor(s),job={id:c.autoReceiptId_(cls,route,s),status:'WAITING_INPUT',cls,route,receipt:s,attempts:0,nextAt:0,autoManaged:true,media:[],error:''},row=c.persist_(job);const item={job,row};jobs.push(item);byReceipt.set(receiptKey(s),item);return item;},
   save:(j,row)=>c.persist_(j,row),allJobs:jobs,keepOccupiedJob:j=>!!c.isPendingCriticalCorrection_?.(j),isApproved:j=>{const a=c.teacherApprovalSession_?.approved.get(j.id);return !!a&&!a.automatic;},emit});
- sweep.scan();return sweep;
+ sweep.scan();return sweep;});
 }
