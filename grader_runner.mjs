@@ -1,3 +1,4 @@
+import {settleSheetTruth} from './sheet-truth-sync.mjs';
 import {installSubmissionSourceGate} from './submission-source-kids.mjs';
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
 import {installCompactKids} from './master-compact-output.mjs';
@@ -355,10 +356,12 @@ function runCluster(cluster,pass=0,phase='all'){
  if(option('--class')&&!cluster.classes.some(x=>x.className===option('--class')))return 0;
  let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
  if(dry){const metadata=google.book(cluster.controlId);const counts=c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{});emit({event:'AUDIT',account:cluster.email,counts,controlTitle:metadata.meta.properties.title});return 0;}
- const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);if(!poolWorker)state.acquire(until+60000);for(const [k,v] of Object.entries(state.initial))c.runnerProperties.set(k,v);
+ const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);
  let ramBatch;
  let masterSweep;
  try{
+ if(!poolWorker)state.acquire(until+60000);for(const [k,v]of Object.entries(state.initial))c.runnerProperties.set(k,v);
+ c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);
  if(process.env.RUNNER_SHEET_BATCH==='1')replaySheetBatches(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});
  if(process.env.RUNNER_SHEET_BATCH==='1'){c.ensureMasterAssignmentTab_?.();ramBatch=beginSheetBatch(google,cluster,path.join(root,'private','sheet-batch-journal'),{emit});}
  if(!preparedClusters.has(cluster.controlId)){google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));if(!poolWorker){emit({event:'DEDUPLICATION',account:cluster.email,...deduplicate(c)});
@@ -376,7 +379,7 @@ function runCluster(cluster,pass=0,phase='all'){
  if(c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
  if(c.recoverUniversalPreprocessing_)emit({event:'PREPROCESSING_RECOVERY',...c.recoverUniversalPreprocessing_()});
  if(c.recoverCriticalCorrections_)emit({event:'CRITICAL_CORRECTION_RECOVERY',...c.recoverCriticalCorrections_()});
- c.teacherApprovalSession_=approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
+ c.teacherApprovalSession_ ||= approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
  const ordinaryWork=phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
  const phaseWork=phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)):ordinaryWork;
@@ -392,6 +395,7 @@ function runCluster(cluster,pass=0,phase='all'){
   emit({event:'JOB_STARTED',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status});
   const jobStarted=Date.now(),metricBefore={...google.metrics};
   try{c.preparePoolRetry_(job,row);c.step_(job,row,Math.min(until,Date.now()+20*60000),{});}catch(e){try{c.handleError_(job,row,e);}catch(handlerError){job.status='RETRY';job.error=e.message;job.handlerError=handlerError.message;job.nextAt=Date.now()+300000;try{c.persist_(job,row);}catch(persistError){emit({event:'JOB_STATE_WRITE_ERROR',id:job.id,error:safeError(persistError)});}}}
+  settleSheetTruth({job,resolve:()=>c.destination_(job.cls,job.route,job.receipt.student).cell,save:()=>c.persist_(job,row),emit});if(attempted.size%10===0)ramBatch?.flush();
   emit({event:'JOB',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status,error:job.error||'',cell:job.cell||'',phase,elapsedMs:Date.now()-jobStarted,sheetCalls:google.metrics.sheetCalls-metricBefore.sheetCalls,sheetMs:google.metrics.sheetMs-metricBefore.sheetMs,audio:job.media?.filter(m=>!m.isReference).map(m=>m.runnerAudio||null)});outcomes.push({id:job.id,status:job.status,className:job.cls.className});if(MASTER_TERMINAL.has(job.status)){finished++;if(!ramBatch)updateProgress(c,cluster,'RUNNER — ĐANG CHẤM BÙ / TỰ ĐỘNG',{student:job.receipt.student,className:job.cls.className,code:job.route.code,cell:job.cell,status:job.status});}
  }
  emit({event:'CLUSTER_COMPLETE',account:cluster.email,counts:c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{})});
