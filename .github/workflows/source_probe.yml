@@ -8,7 +8,7 @@ on:
         required: true
       client:
         type: choice
-        options: ['default', 'android_vr', 'web_embedded']
+        options: ['default', 'android_vr', 'web_embedded', 'android_vr_no_webpage']
         default: 'default'
       job_ids:
         type: string
