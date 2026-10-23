@@ -1,3 +1,4 @@
+import {hasRequest,hasSavedResult} from './universal-media.mjs';
 import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 import {addAutomaticAuthorizations,automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {receiptDate} from './master-policy.mjs';
@@ -19,3 +20,7 @@ export function authorizeFairKidsWork(c,cluster,google){
 }
 export function authorizedWorkQueue(c){return c.batchQueue_(c.teacherApprovalJobs_).filter(({job})=>masterScopeAllowsJob(job)&&c.teacherApprovalSession_.approved.has(job.id));}
 export function authorizedPhaseQueue(items,phase,automatic=false){if(phase==='all')return items;return automatic&&phase==='prepare'?items.filter(x=>!readyForMediaCheck(x.job)):throughputQueue(items,phase);}
+
+// Only already verified, uncalled system input corrections may bypass the fleet discovery pass.
+// The normal per-job pipeline still rechecks the actual Form, target and media.
+export function sourceRepairQueue(items){return items.filter(({job:j})=>j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'&&!hasRequest(j)&&!hasSavedResult(j)&&automaticEligible(j,items.map(x=>x.job))&&!(Number(j.nextAt)>Date.now()));}
