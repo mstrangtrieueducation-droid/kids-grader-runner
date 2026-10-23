@@ -1,4 +1,5 @@
 import {assertNativeEvidence,refreshNativeIntake} from './native-youtube.mjs';
+import {legacyMediaIdentity,nativeMetadataRepairEligible,NATIVE_METADATA_COMPAT} from './native-metadata-compat.mjs';
 import {sourceInMasterScope} from './master-submission-scope.mjs';
 import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {hasSavedResult,hasRequest,preprocessingRecoverable,retryPreparation,isTransient,EMPTY_LINK_NOTICE,YOUTUBE_NOTICE,PREPROCESS_VERSION,universalValidatedRequest} from './universal-media.mjs';
@@ -12,6 +13,15 @@ export function installKidsPreprocessing(c,{g,service,isLatest,emit=()=>{}}){
   const mime=/^(audio|video)\//.test(m.mimeType)?m.mimeType:/\.(?:mp4|mov|m4a|mp3|wav|aac|ogg|flac|webm)$/i.test(m.name||'')?'audio/unknown':null;
   if(!mime)throw Error('UNSUPPORTED_MEDIA');return {id,mime,size:Number(m.size),modified:m.modifiedTime};
  };
+ const sourceCheck=c.currentSource_;if(sourceCheck)c.currentSource_=(...args)=>{
+  const metadata=c.fileMeta_;c.fileMeta_=(...a)=>legacyMediaIdentity(metadata(...a));
+  try{return sourceCheck(...args);}finally{c.fileMeta_=metadata;}
+ };
+ c.recoverNativeMetadata_=()=>{let recovered=0;for(const {job:j,row}of c.loadJobs_()){
+  if(!nativeMetadataRepairEligible(j)||c.currentRoster_&&!c.currentRoster_(j.receipt,{fresh:true})||!isLatest(j))continue;
+  const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(cell.getFormula()||cell.getDataValidation()||c.hasFeedback_(cell.getDisplayValue()))continue;
+  j.nativeMetadataRecovery={version:NATIVE_METADATA_COMPAT,previousStatus:j.status,previousError:j.error,cause:j.systemGradingFailure.cause,at:new Date().toISOString(),providerCalls:0};j.status='READY';j.error='';j.nextAt=0;c.persist_(j,row);recovered++;
+ }return {recovered,providerCalls:0};};
  function notice(j,row,text){
   if(!sourceInMasterScope(j.receipt)||hasSavedResult(j)||hasRequest(j)||!isLatest(j))return false;
   const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;

@@ -376,6 +376,7 @@ function runCluster(cluster,pass=0,phase='all'){
  }
  if(phase!=='repair'&&masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});}
  else if(phase!=='repair'&&!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
+ if(phase==='repair'&&c.recoverNativeMetadata_)emit({event:'NATIVE_METADATA_RECOVERY',...c.recoverNativeMetadata_()});
  if(scanOnly||phase==='scan')return 0;
  const submittedWorkBeforeRecovery=deferFleetMaintenance(c.loadJobs_());
  if(phase!=='repair'&&!submittedWorkBeforeRecovery&&!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}

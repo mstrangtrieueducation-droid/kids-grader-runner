@@ -1,4 +1,5 @@
 import {hasRequest,hasSavedResult} from './universal-media.mjs';
+import {nativeMetadataRepairEligible} from './native-metadata-compat.mjs';
 import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 import {addAutomaticAuthorizations,automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {receiptDate} from './master-policy.mjs';
@@ -23,7 +24,7 @@ export function authorizedPhaseQueue(items,phase,automatic=false){if(phase==='al
 
 // Uncalled YouTube inputs and verified source corrections may precede fleet discovery.
 // Every normal per-job Form, target, authorization and media check remains mandatory.
-export function sourceRepairQueue(items){return items.filter(({job:j})=>(j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'||/https:\/\/(?:youtu\.be|(?:www\.)?youtube\.com)\//i.test(j.receipt?.links||''))&&!hasRequest(j)&&!hasSavedResult(j)&&automaticEligible(j,items.map(x=>x.job))&&!(Number(j.nextAt)>Date.now())).sort((a,b)=>Number(!!b.job.sheetTruth?.youtubeNoticeRepair)-Number(!!a.job.sheetTruth?.youtubeNoticeRepair));}
+export function sourceRepairQueue(items){return items.filter(({job:j})=>nativeMetadataRepairEligible(j)||(j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'||/https:\/\/(?:youtu\.be|(?:www\.)?youtube\.com)\//i.test(j.receipt?.links||''))&&!hasRequest(j)&&!hasSavedResult(j)&&automaticEligible(j,items.map(x=>x.job))&&!(Number(j.nextAt)>Date.now())).sort((a,b)=>Number(!!b.job.sheetTruth?.youtubeNoticeRepair)-Number(!!a.job.sheetTruth?.youtubeNoticeRepair));}
 
 // Historical queue cleanup must not consume the run before submitted work is graded.
 // Fresh Form discovery and all per-job source/target/paid-result checks still run.
