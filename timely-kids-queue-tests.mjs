@@ -13,5 +13,8 @@ for(let i=0;i<8;i++){const selected=c.batchQueue_(rows)[0];c.step_(selected.job)
 assert.deepEqual(served.slice(0,4),['new2','new1','new2','old1']);assert.equal(served.filter(x=>x==='old1').length,2);
 const before=new Map(props);c.step_(cached.job);assert.deepEqual(props,before);
 assert.equal(c.batchQueue_(rows,'explicit')[0],old);
+assert.deepEqual(timelyKidsQueue([old,ben,cached,uncertain],['A','B'],{now,turn:3,priorityJobId:ben.job.id}),[cached,uncertain,ben,old]);
+assert.deepEqual(timelyKidsQueue([old,ben],['A','B'],{now,turn:3,priorityJobId:'absent'}),[old,ben]);
+process.env.KIDS_PRIORITY_JOB_ID=old.job.id;assert.equal(c.batchQueue_(rows)[0],old);delete process.env.KIDS_PRIORITY_JOB_ID;
 delete process.env.AUTOMATIC_GRADING_AUTHORIZED;assert.equal(c.batchQueue_(rows)[0],old);
 console.log('Execution order prioritizes recent submissions, rotates classes after actual attempts, reserves one of four turns for backlog, and preserves saved/uncertain jobs and explicit/manual order; 0 provider calls.');

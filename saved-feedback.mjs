@@ -1,4 +1,5 @@
 import {returnedPercent as percentBand} from './returned-score-policy.mjs';
+import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {publicText,receiptDate} from './master-policy.mjs';
 import {applyCompletionPolicy} from './content-completion-policy.mjs';
 import {pedagogicSection} from './pedagogical-language.mjs';
@@ -35,12 +36,12 @@ export function savedSections(g,snapshot={}){
 export function savedFeedback(g,j,before='',snapshot={}){
  g=applyCompletionPolicy(g,j);
  const sections=savedSections(g,snapshot);if(!sections.length)throw Error('SAVED_FEEDBACK_EMPTY');
- const marker='— NHẬN XÉT GV —',prefix=before.includes(marker)?before.slice(0,before.indexOf(marker)):'';
+ const marker='— NHẬN XÉT GV —';
  let date=receiptDate(j.receipt?.time);
  const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date).replace(',','');
  const current=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i),raw=String(g.rubricBand||g.band||'').match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=Number((raw||current)?.[1]?.replace(',','.')??NaN),score=percentBand(value);
  const heading=j.route?.kind==='ielts_speaking'?'IELTS Speaking: Band ước tính '+g.band+'.\n':(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&(score<75||g.forceAttention)?'⚠️ Cần theo dõi\n':'');
- const text=(prefix.includes('ĐÃ NỘP')?prefix:'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+heading+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
+ const text=teacherFeedbackPrefix(before,'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+heading+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
  return {text,sections,score,version:SAVED_FEEDBACK_VERSION};
 }
 export function savedFeedbackRich(c,cell,text,sections){

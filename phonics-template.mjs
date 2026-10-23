@@ -1,4 +1,5 @@
 import {returnedPercent as percentBand} from './returned-score-policy.mjs';
+import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {publicText,receiptDate} from './master-policy.mjs';
 import {approvedPhonicsSections} from './approved-phonics-sections.mjs';
 export const PHONICS_VERSION='hugo-phonics-v5';
@@ -92,7 +93,7 @@ export function phonicsText(g,j,before='',snapshot=null,sourceText=before){
  const sections=phonicsSections(g,{before:sourceText,snapshot}),raw=g.rubricBand||g.band||'',m=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i)||String(raw).match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=m?Number(m[1].replace(',','.')):NaN,score=percentBand(value);
  let date=receiptDate(j.receipt?.time);
  const stamp=new Intl.DateTimeFormat('vi-VN',{timeZone:'Asia/Bangkok',dateStyle:'short',timeStyle:'short'}).format(date);
- const marker='— NHẬN XÉT GV —',prefix=before.includes(marker)&&before.slice(0,before.indexOf(marker)).includes('ĐÃ NỘP')?before.slice(0,before.indexOf(marker)):'✅ ĐÃ NỘP '+stamp+'\n';
+ const marker='— NHẬN XÉT GV —',prefix=teacherFeedbackPrefix(before,'✅ ĐÃ NỘP '+stamp+'\n');
  return prefix+marker+'\n'+(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&score<=75?'⚠️ Cần theo dõi\n':'')+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
 }
 export function phonicsRich(c,cell,text){

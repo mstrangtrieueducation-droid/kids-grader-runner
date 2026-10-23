@@ -9,11 +9,12 @@ function roundRobin(items,classes,cursor,newest){
  const buckets=names.slice(start).concat(names.slice(0,start)).map(name=>items.filter(x=>x.job.cls.className===name).sort((a,b)=>(newest?stamp(b.job)-stamp(a.job):stamp(a.job)-stamp(b.job))||a.row-b.row));
  const out=[];while(buckets.some(x=>x.length))for(const b of buckets)if(b.length)out.push(b.shift());return out;
 }
-export function timelyKidsQueue(items,classes,{now=Date.now(),turn=0,recentCursor=0,backlogCursor=0}={}){
+export function timelyKidsQueue(items,classes,{now=Date.now(),turn=0,recentCursor=0,backlogCursor=0,priorityJobId=''}={}){
  const protectedWork=items.filter(x=>saved(x.job)),unpaid=items.filter(x=>!saved(x.job));
  const recent=roundRobin(unpaid.filter(x=>stamp(x.job)>=now-DAY),classes,recentCursor,true);
  const older=roundRobin(unpaid.filter(x=>stamp(x.job)<now-DAY),classes,backlogCursor,false),out=[...protectedWork];
  while(recent.length||older.length){const oldTurn=turn++%4===3;out.push((oldTurn?older.length?older:recent:recent.length?recent:older).shift());}
+ if(priorityJobId){const at=out.findIndex(x=>x.job.id===priorityJobId&&!saved(x.job)&&!generationSpent(x.job));if(at>=protectedWork.length){const [priority]=out.splice(at,1);out.splice(protectedWork.length,0,priority);}}
  return out;
 }
 export function installTimelyKidsQueue(c,cluster,{now=Date.now}={}){
@@ -22,7 +23,7 @@ export function installTimelyKidsQueue(c,cluster,{now=Date.now}={}){
  const automatic=()=>process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'&&process.env.MASTER_CROSS_CLASS_SWEEP==='true';
  c.batchQueue_=(items,preferred)=>{
   const result=queue(items,preferred);if(!automatic()||preferred)return result;
-  return timelyKidsQueue(result,names,{now:now(),turn:number('FLEET_WORK_TIMELY_TURN'),recentCursor:number('FLEET_WORK_RECENT_CLASS'),backlogCursor:number('FLEET_WORK_BACKLOG_CLASS')});
+  return timelyKidsQueue(result,names,{now:now(),turn:number('FLEET_WORK_TIMELY_TURN'),recentCursor:number('FLEET_WORK_RECENT_CLASS'),backlogCursor:number('FLEET_WORK_BACKLOG_CLASS'),priorityJobId:process.env.KIDS_PRIORITY_JOB_ID||''});
  };
  c.step_=(job,...args)=>{
   const count=automatic()&&!saved(job)&&!generationSpent(job),recent=stamp(job)>=now()-DAY;

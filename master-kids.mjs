@@ -1,4 +1,5 @@
 import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice,LEGACY_GENERIC_NOTICE} from './grading-failure-policy.mjs';
+import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {MASTER_VERSION,MASTER_MODEL,MASTER_SYSTEM,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {savedFeedbackRich} from './saved-feedback.mjs';
 import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
@@ -36,9 +37,9 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  function pending(j,row,text,terminal='COMPLETED_NEEDS_RESUBMISSION'){
   const dst=c.destination_(j.cls,j.route,j.receipt.student),cell=dst.cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';c.persist_(j,row);return;}
   j.pendingMasterFeedback={text,terminal};c.persist_(j,row);
-  const before=cell.getDisplayValue(),marker='— NHẬN XÉT GV —',prefix=before.includes(marker)?before.slice(0,before.indexOf(marker)):'';
+  const before=cell.getDisplayValue(),marker='— NHẬN XÉT GV —';
   const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(receiptDate(j.receipt.time)).replace(',','');
-  const out=(prefix.includes('ĐÃ NỘP')?prefix:'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+text;
+  const out=teacherFeedbackPrefix(before,'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+text;
   cell.setRichTextValue(c.coloredFeedback_(cell,out,null));j.autoNotice=out;j.cell=cell.getA1Notation();j.status=terminal;j.error='';j.nextAt=0;delete j.pendingMasterFeedback;c.persist_(j,row);
  }
  function exception(j,row,e){
