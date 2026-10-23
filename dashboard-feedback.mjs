@@ -3,6 +3,10 @@ export function emptyTeacherBody(value){const text=String(value??'').normalize('
 export function receiptOnlyCell(value){
  let text=String(value??'').normalize('NFC').replace(/[\u200B-\u200D\uFEFF]/g,'').trim();
  if(!text)return true;
+ // The tracker-owned listening quiz is separate from the teacher's video grade.
+ // Only recognize its exact score block when the teacher body is still empty;
+ // the original cell/prefix is NEVER changed by this occupancy classifier.
+ if(emptyTeacherBody(text))text=text.replace(/(?:^|\n)[\t ]*🎧[\t ]*ĐIỂM NGHE[^\r\n]*\r?\n(?:[\t ]*(?:Lần[\t ]+\d+[\t ]*:[\t ]*)?Điểm[\t ]+\d+[\t ]*\/[\t ]*\d+[\t ]*\([\t ]*\d+(?:[.,]\d+)?[\t ]*%[\t ]*\)[\t ]*(?:\r?\n|$))+/giu,'\n');
  if(/\d+(?:[.,]\d+)?\s*%/.test(text))return false; // preserve an existing mark
  text=text.replace(/—\s*NHẬN XÉT GV\s*—/giu,'');
  text=text.replace(/\[?\d{1,2}\/\d{1,2}\/\d{4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?\]?/g,'');
