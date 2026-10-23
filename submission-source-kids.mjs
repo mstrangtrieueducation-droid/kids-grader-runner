@@ -12,7 +12,7 @@ export function installSubmissionSourceGate(c,{g,service,sourceId,isLatest,publi
   c.persist_(j,row);
   // Publication failure must not discard acknowledgement or permit paid work.
   try{publish(g,sourceId,j.receipt,result);delete j.sourceStatusWriteError;}catch{j.sourceStatusWriteError=true;}
-  if(result.state!=='valid'){j.status='WAITING_INPUT';j.error='SOURCE_INPUT_'+result.state.toUpperCase();j.nextAt=Date.now()+300000;c.persist_(j,row);return;}
+  if(result.state!=='valid'){j.status=result.reason==='DOWNLOAD_IN_PROGRESS'?'WAITING_MEDIA':'WAITING_INPUT';j.error='SOURCE_INPUT_'+result.state.toUpperCase();j.nextAt=Date.now()+(result.retryAfterMs||300000);c.persist_(j,row);return;}
   c.persist_(j,row);return step(j,row,...args);
  };
  c.generate_=(j,...args)=>{
