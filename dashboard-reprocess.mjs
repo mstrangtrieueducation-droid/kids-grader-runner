@@ -1,9 +1,9 @@
 import {sourceInMasterScope} from './master-submission-scope.mjs';
 import {generationSpent} from './master-policy.mjs';
-import {emptyTeacherBody} from './dashboard-feedback.mjs';
+import {emptyTeacherBody,receiptOnlyCell,auxiliaryListeningOnly} from './dashboard-feedback.mjs';
 export const DASHBOARD_REPROCESS_AUTH='teacher-dashboard-empty-feedback-20261014';
 export function dashboardReprocessPlan(job,text,childId){
- if(!sourceInMasterScope(job.receipt)||job.rawId||job.gradeId||!generationSpent(job)||job.dashboardReprocessAuth||!emptyTeacherBody(text)||!/ĐÃ NỘP/iu.test(text)||/\d+(?:[.,]\d+)?\s*%/.test(text))return null;
+ if(!sourceInMasterScope(job.receipt)||job.rawId||job.gradeId||!generationSpent(job)||job.dashboardReprocessAuth||!(emptyTeacherBody(text)||auxiliaryListeningOnly(text))||!receiptOnlyCell(text)||!/ĐÃ NỘP/iu.test(text))return null;
  if([...(job.previousGradingAttempts||[]),...(job.failedAttempts||[])].some(x=>x.rawId||x.gradeId))return null; // recover archived paid output before considering another request
  // A new explicitly authorized attempt; original reservations and history remain
  // in the parent record. Never turn a paid result into a new unpaid result.
