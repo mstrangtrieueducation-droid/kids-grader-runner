@@ -1,3 +1,4 @@
+import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
 import {settleSheetTruth} from './sheet-truth-sync.mjs';
 import {installSubmissionSourceGate} from './submission-source-kids.mjs';
@@ -185,6 +186,7 @@ export function buildContext(cluster){
  installKidsPreprocessing(c,{g:google,service:universalMedia,emit,isLatest:j=>{google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
  installCriticalHomeworkPolicy(c,catalog,{authorization:config.kids?.criticalCorrectionAuthorization,emit,verifyReplacement:(j,cell)=>verifyLiveCriticalTarget(c,google,j,cell),isLatest:j=>{const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
  installSubmissionSourceGate(c,{g:google,service:universalMedia,sourceId:vm.runInContext('KG.source',c),isLatest:j=>{const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
+ installSourceAccessNotices(c,{g:google,isLatest:j=>{const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
  c.masterGenerationParts_=(j,parts)=>{j.masterVisualFileIndexes=j.media.filter(m=>!m.isReference).flatMap((m,i)=>[...(m.runnerScreenFrames||[]),...(m.runnerContextFrames||[]),...(m.runnerPdfFrame?[m.runnerPdfFrame]:[])].some(f=>f.path&&fs.existsSync(f.path))||m.nativeYouTube?[i]:[]);return parts.flatMap((p,i)=>[{text:'TỆP BÀI NỘP '+(i+1)+' (fileIndex '+i+'): chưa xác nhận có tiếng học sinh; kiểm tra giọng thực sự nghe được.'},p]).concat(phonicsFrameParts(j));};
  c.recordMasterGeneration_=()=>{paidCalls++;};
  c.recordMasterUsage_=j=>emit({event:'API_USAGE',jobId:j.id,usage:j.apiUsage});
@@ -356,7 +358,7 @@ function updateProgress(c,cluster,label,lastJob=null){
 function runCluster(cluster,pass=0,phase='all'){
  if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;
  if(option('--class')&&!cluster.classes.some(x=>x.className===option('--class')))return 0;
- let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}if(phase==='repair'&&!sourceRepairQueue(c.loadJobs_()).length)return 0;if(phase==='cache'&&hasHostedKidsCache(c)===false){emit({event:'CACHE_PHASE_EMPTY',providerCalls:0});return 0;}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
+ let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}if(phase==='repair'&&!sourceRepairQueue(c.loadJobs_()).length&&!c.hasUnavailableSources_?.())return 0;if(phase==='cache'&&hasHostedKidsCache(c)===false){emit({event:'CACHE_PHASE_EMPTY',providerCalls:0});return 0;}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
  if(dry){const metadata=google.book(cluster.controlId);const counts=c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{});emit({event:'AUDIT',account:cluster.email,counts,controlTitle:metadata.meta.properties.title});return 0;}
  const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);
  let ramBatch;
@@ -377,6 +379,7 @@ function runCluster(cluster,pass=0,phase='all'){
  if(phase!=='repair'&&masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});}
  else if(phase!=='repair'&&!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
  if(phase==='repair'&&c.recoverNativeMetadata_)emit({event:'NATIVE_METADATA_RECOVERY',...c.recoverNativeMetadata_()});
+ if(phase==='repair'&&c.reconcileUnavailableSources_)emit({event:'SOURCE_ACCESS_NOTICES',...c.reconcileUnavailableSources_({deadline:Math.min(until-90000,Date.now()+90000),limit:6})});
  if(scanOnly||phase==='scan')return 0;
  const submittedWorkBeforeRecovery=deferFleetMaintenance(c.loadJobs_());
  if(phase!=='repair'&&!submittedWorkBeforeRecovery&&!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}

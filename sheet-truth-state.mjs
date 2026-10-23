@@ -17,7 +17,7 @@ export function mayReopenNotice(source,text,jobs=[],approved=false){
  const previous=held.length?Math.max(...held):receiptTimeFromCell(text);return previous>0&&sourceTime(source)>previous;
 }
 export function sourceInputReason(j){
- const s=j.sourceIntake;if(s?.state==='missing')return 'Bài nộp chưa đính kèm link video/file. Vui lòng nộp lại kèm tệp hoặc link bài.';
+ const s=j.sourceIntake;if(s?.reason==='DRIVE_LINK_UNAVAILABLE'||s?.reason==='DRIVE_ACCESS_DENIED')return 'Link video/file hoặc thư mục hiện không truy cập được. Vui lòng mở quyền “Bất kỳ ai có đường liên kết” hoặc nộp lại link video/file mở được để cô nhận xét.';if(s?.state==='missing')return 'Bài nộp chưa đính kèm link video/file. Vui lòng nộp lại kèm tệp hoặc link bài.';
  if(s?.state==='access')return 'Không truy cập được tệp (quyền xem bị từ chối). Vui lòng bật quyền bất kỳ ai có link đều xem được rồi nộp lại.';
  if(s?.state==='invalid')return s.reason==='EMPTY_OR_REMOVED_FILE'?'Tệp bài nộp rỗng hoặc đã bị xóa. Vui lòng tải lại tệp đầy đủ.':s.reason==='UNSUPPORTED_FILE_FORMAT'?'Tệp đính kèm không chứa định dạng bài được giao. Vui lòng kiểm tra và nộp lại đúng tệp.':'Link bài nộp không hợp lệ hoặc tệp không còn tồn tại. Vui lòng kiểm tra và nộp lại link đúng.';
  const e=String(j.error||j.internalDiagnostic||'');
