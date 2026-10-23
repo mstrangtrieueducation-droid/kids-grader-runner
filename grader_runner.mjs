@@ -377,11 +377,12 @@ function runCluster(cluster,pass=0,phase='all'){
  if(phase!=='repair'&&masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});}
  else if(phase!=='repair'&&!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
  if(scanOnly||phase==='scan')return 0;
- if(phase!=='repair'&&!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}
+ const submittedWorkBeforeRecovery=deferFleetMaintenance(c.loadJobs_());
+ if(phase!=='repair'&&!submittedWorkBeforeRecovery&&!recoveredClusters.has(cluster.controlId)){if(c.recoverContentRouting_)emit({event:'FAULT_QUEUE_RECOVERY',...c.recoverContentRouting_()});recoveredClusters.add(cluster.controlId);}
  const selected=option('--class');const attempted=new Set();
- if(phase!=='repair'&&c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
- if(phase!=='repair'&&c.recoverUniversalPreprocessing_)emit({event:'PREPROCESSING_RECOVERY',...c.recoverUniversalPreprocessing_()});
- if(phase!=='repair'&&c.recoverCriticalCorrections_)emit({event:'CRITICAL_CORRECTION_RECOVERY',...c.recoverCriticalCorrections_()});
+ if(phase!=='repair'&&!submittedWorkBeforeRecovery&&c.recoverLinkedDestinations_)emit({event:'LINKED_DESTINATION_RECOVERY',...c.recoverLinkedDestinations_()});
+ if(phase!=='repair'&&!submittedWorkBeforeRecovery&&c.recoverUniversalPreprocessing_)emit({event:'PREPROCESSING_RECOVERY',...c.recoverUniversalPreprocessing_()});
+ if(phase!=='repair'&&!submittedWorkBeforeRecovery&&c.recoverCriticalCorrections_)emit({event:'CRITICAL_CORRECTION_RECOVERY',...c.recoverCriticalCorrections_()});
  c.teacherApprovalSession_ ||= approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
  const ordinaryWork=phase==='repair'?sourceRepairQueue(queued):phase==='cache'?queued.filter(x=>x.job.rawId||x.job.gradeId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
