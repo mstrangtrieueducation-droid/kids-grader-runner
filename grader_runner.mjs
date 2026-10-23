@@ -1,3 +1,4 @@
+import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
 import {settleSheetTruth} from './sheet-truth-sync.mjs';
 import {installSubmissionSourceGate} from './submission-source-kids.mjs';
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
@@ -194,6 +195,7 @@ export function buildContext(cluster){
   const data=entries.map(({job,row})=>{const json=JSON.stringify(job);if(!Number.isInteger(row)||row<2||json.length>=45000)throw Error('RECOVERY_ROW_INVALID');return {range:"'Jobs'!A"+row+':F'+row,values:[[job.id,job.status,new Date().toISOString(),'',job.attempts||0,json]]};});
   google.api('https://sheets.googleapis.com/v4/spreadsheets/'+cluster.controlId+'/values:batchUpdate','POST',{valueInputOption:'RAW',data});google.book(cluster.controlId).invalidateSheet(name);
  };
+ c.currentRoster_=createCurrentRosterCheck(google,cluster.classes);const rosterStep=c.step_,rosterGenerate=c.generate_,rosterError=c.handleError_;c.step_=(j,row,...a)=>c.currentRoster_(j.receipt,{fresh:true})?rosterStep(j,row,...a):markNotCurrent(j,()=>c.persist_(j,row));c.generate_=(j,...a)=>{if(!c.currentRoster_(j.receipt,{fresh:true}))throw Error('SKIPPED_NOT_IN_CURRENT_ROSTER');return rosterGenerate(j,...a);};c.handleError_=(j,row,e)=>e.message==='SKIPPED_NOT_IN_CURRENT_ROSTER'?markNotCurrent(j,()=>c.persist_(j,row)):rosterError(j,row,e);
  c.runnerProperties=props;return c;
 }
 export function initializeParallelCluster(cluster,deadline,scan=false,initial={}){
