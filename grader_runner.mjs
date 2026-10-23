@@ -16,7 +16,7 @@ import {installKidsProviderRetry} from './kids-provider-retry.mjs';
 import {installTimelyKidsQueue} from './timely-kids-queue.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
 import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
-import {prepareKidsMasterSweep,installMasterScoreProtection} from './master-kids-sweep.mjs';
+import {prepareKidsMasterSweep,installMasterScoreProtection,hasHostedKidsCache} from './master-kids-sweep.mjs';
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
 import {installMasterKids} from './master-kids.mjs';
@@ -354,7 +354,7 @@ function updateProgress(c,cluster,label,lastJob=null){
 function runCluster(cluster,pass=0,phase='all'){
  if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;
  if(option('--class')&&!cluster.classes.some(x=>x.className===option('--class')))return 0;
- let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
+ let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}if(phase==='cache'&&hasHostedKidsCache(c)===false){emit({event:'CACHE_PHASE_EMPTY',providerCalls:0});return 0;}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
  if(dry){const metadata=google.book(cluster.controlId);const counts=c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{});emit({event:'AUDIT',account:cluster.email,counts,controlTitle:metadata.meta.properties.title});return 0;}
  const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);
  let ramBatch;
@@ -381,8 +381,8 @@ function runCluster(cluster,pass=0,phase='all'){
  if(c.recoverCriticalCorrections_)emit({event:'CRITICAL_CORRECTION_RECOVERY',...c.recoverCriticalCorrections_()});
  c.teacherApprovalSession_ ||= approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
- const ordinaryWork=phase==='cache'?queued.filter(x=>x.job.rawId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
- const phaseWork=phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)):ordinaryWork;
+ const ordinaryWork=phase==='cache'?queued.filter(x=>x.job.rawId||x.job.gradeId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
+ const phaseWork=phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)||j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'):ordinaryWork;
  for(const {job,row} of phaseWork){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
