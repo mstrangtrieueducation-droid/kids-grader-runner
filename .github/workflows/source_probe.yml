@@ -6,6 +6,10 @@ on:
         type: choice
         options: ['1', '2', '3']
         required: true
+      client:
+        type: choice
+        options: ['default', 'android_vr', 'web_embedded']
+        default: 'default'
       job_ids:
         type: string
         required: true
@@ -32,6 +36,7 @@ jobs:
         run: node source-probe-tests.mjs
       - name: Download selected YouTube sources without AI or Sheet writes
         env:
+          PROBE_CLIENT: ${{ inputs.client }}
           PROBE_CLUSTER: ${{ inputs.cluster }}
           PROBE_JOB_IDS: ${{ inputs.job_ids }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
