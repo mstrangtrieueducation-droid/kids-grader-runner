@@ -1,5 +1,7 @@
+import {expandKidsCompact} from './master-compact-output.mjs';
 // Recover the original paid response locally. Never request another generation.
 export function decodeSavedDraft(raw){
+ const compact=expandKidsCompact(raw);if(compact)return compact;
  if(typeof raw?.assessable==='boolean'&&(raw.sections||raw.roseSections))return raw;
  const text=(raw?.candidates?.[0]?.content?.parts||[]).filter(p=>!p.thought&&p.text).map(p=>p.text).join('');
  for(const candidate of [text,text.replace(/^\s*```(?:json)?\s*|\s*```\s*$/g,'').replace(/,\s*([}\]])/g,'$1')])try{return JSON.parse(candidate);}catch{}

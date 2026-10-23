@@ -1,5 +1,6 @@
 import {installSubmissionSourceGate} from './submission-source-kids.mjs';
 import {createMediaService,firstUniversalPart,downloadWithRetry} from './universal-media.mjs';
+import {installCompactKids} from './master-compact-output.mjs';
 import {installKidsPreprocessing} from './automatic-preprocessing.mjs';
 import {installCriticalHomeworkPolicy,verifyLiveCriticalTarget,criticalPriorityWork} from './critical-homework-policy.mjs';
 import {installFeedbackAlignment} from './feedback-alignment.mjs';
@@ -170,6 +171,9 @@ export function buildContext(cluster){
  installKidsAppleInputRecovery(c,{g:google,root,ffmpeg,emit});
  installTeacherApprovalGuards(c,{g:google,root,ffmpeg,emit,session:{finish:j=>c.teacherApprovalSession_?.finish(j)}});
  installMasterScoreProtection(c);
+ installCompactKids(c);
+ // No fixed inter-student delay; provider backoff remains durable.
+ c.throttle_=()=>{};
  installReturnedScorePolicy(c);
  installDashboardFeedback(c);
  installSubmissionAssignmentScope(c);
