@@ -30,6 +30,7 @@ jobs:
       RUNNER_GITHUB_TOKEN: ${{ github.token }}
       GOOGLE_SHEETS_INTERVAL_MS: '6000'
       SHEET_TRUTH_SYNC: 'true'
+      NATIVE_YOUTUBE_INPUT: 'true'
       GOOGLE_RATE_GATE_FILE: .runtime/google-rate.json
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09

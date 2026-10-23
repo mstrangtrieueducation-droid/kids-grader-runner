@@ -42,7 +42,8 @@ function kidsCostPreflight_(job){
  const previous=job.costPreflight?.files||[];
  const files=ids.map(id=>{
   let meta;try{meta=fileMeta_(id);}catch(_){throw Error('PREFLIGHT_FILE_MISSING_OR_INVALID');}
-  if(!meta.mime.startsWith('video/'))return {...meta,durationSeconds:null};
+  if(meta.nativeYouTube||!meta.mime.startsWith('video/'))return {...meta,durationSeconds:null};
+
   const old=previous.find(f=>f.id===id&&f.modified===meta.modified&&f.size===meta.size&&Number.isFinite(f.durationSeconds));
   if(old)return old;
   const url='https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?supportsAllDrives=true&fields=id,size,trashed,videoMediaMetadata(durationMillis)';

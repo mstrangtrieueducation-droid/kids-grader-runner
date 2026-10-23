@@ -1,3 +1,4 @@
+import {isNativeYouTubePart,validateNativeYouTubePart} from './native-youtube.mjs';
 import {assessmentFailure,holdSystemFailure,wrongAssignmentNotice} from './grading-failure-policy.mjs';
 import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {SPEECH_CLASSIFICATION_INSTRUCTION,wrongLessonWithoutFeedback,WRONG_LESSON_NOTICE} from './student-speech-evidence.mjs';
@@ -35,6 +36,7 @@ export function acceptTeacherApprovals(jobs,session,controlId,tab,save){
 }
 export function auditPreparedPart({g,c,job,m,part,root,ffmpeg}){
  if(m.isReference||!part||m.localSilence)return;
+ if(isNativeYouTubePart(part)){validateNativeYouTubePart(m,part);return;}
  const cache=path.join(root,'private','cache'),tag=m.id+'-'+c.hash_(m.modified).slice(0,10);let file=m.universalAudio?.fullFile||['.mp3','.m4a','.flac'].map(ext=>path.join(cache,tag+ext)).find(p=>fs.existsSync(p));
  const auditDir=path.join(root,'private','silence-audit');fs.mkdirSync(auditDir,{recursive:true});
  if(!file&&part.inlineData?.mimeType?.startsWith('audio/')){file=path.join(auditDir,m.id+'.audio');fs.writeFileSync(file,Buffer.from(part.inlineData.data,'base64'));}
