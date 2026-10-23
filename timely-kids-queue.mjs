@@ -1,3 +1,4 @@
+import {prioritizeKids} from './priority-kids-drain.mjs';
 import {receiptDate,generationSpent} from './master-policy.mjs';
 const DAY=24*60*60*1000;
 const stamp=j=>receiptDate(j.receipt?.time,new Date(0)).getTime();
@@ -23,7 +24,7 @@ export function installTimelyKidsQueue(c,cluster,{now=Date.now}={}){
  const automatic=()=>process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'&&process.env.MASTER_CROSS_CLASS_SWEEP==='true';
  c.batchQueue_=(items,preferred)=>{
   const result=queue(items,preferred);if(!automatic()||preferred)return result;
-  return timelyKidsQueue(result,names,{now:now(),turn:number('FLEET_WORK_TIMELY_TURN'),recentCursor:number('FLEET_WORK_RECENT_CLASS'),backlogCursor:number('FLEET_WORK_BACKLOG_CLASS'),priorityJobId:process.env.KIDS_PRIORITY_JOB_ID||''});
+  return prioritizeKids(timelyKidsQueue(result,names,{now:now(),turn:number('FLEET_WORK_TIMELY_TURN'),recentCursor:number('FLEET_WORK_RECENT_CLASS'),backlogCursor:number('FLEET_WORK_BACKLOG_CLASS'),priorityJobId:process.env.KIDS_PRIORITY_JOB_ID||''}));
  };
  c.step_=(job,...args)=>{
   const count=automatic()&&!saved(job)&&!generationSpent(job),recent=stamp(job)>=now()-DAY;

@@ -23,6 +23,8 @@ jobs:
       MODE: ${{ inputs.mode || 'grade' }}
       GRADING_ENABLED: ${{ vars.GRADING_ENABLED }}
       KIDS_PRIORITY_JOB_ID: ${{ vars.KIDS_PRIORITY_JOB_ID || '' }}
+      KIDS_PRIORITY_JOB_IDS: ${{ vars.KIDS_PRIORITY_JOB_IDS || '' }}
+      KIDS_PRIORITY_CLASSES: ${{ vars.KIDS_PRIORITY_CLASSES || '' }}
       RUNNER_API_LIMIT: ${{ vars.RUNNER_API_LIMIT || '16' }}
       RUNNER_VERIFY_NEW_MODEL: ${{ vars.RUNNER_VERIFY_NEW_MODEL || 'false' }}
       MODEL_GRADING_AVAILABLE: ${{ vars.MODEL_GRADING_AVAILABLE || 'true' }}
