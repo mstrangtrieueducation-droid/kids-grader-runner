@@ -1,5 +1,6 @@
 import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice,LEGACY_GENERIC_NOTICE} from './grading-failure-policy.mjs';
 import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
+import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {MASTER_VERSION,MASTER_MODEL,MASTER_SYSTEM,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {savedFeedbackRich} from './saved-feedback.mjs';
 import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
@@ -33,7 +34,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   const ids=c.driveIds_(j.receipt.links);if(!ids.length||ids.length>8)throw Error('MEDIA_INVENTORY_INVALID');
   const files=ids.map(id=>c.fileMeta_(id));j.costPreflight={policy:MASTER_VERSION,checkedAt:new Date().toISOString(),files};return files;
  };
- function rejectReading(j,row,g){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}const out=j.pendingMasterReading||readingResubmission(g,j);j.pendingMasterReading=out;c.persist_(j,row);cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));j.autoNotice=out.text;j.cell=cell.getA1Notation();j.status=READING_RESUBMISSION_STATUS;j.manualReviewRequired=false;j.error='';j.nextAt=0;delete j.pendingMasterReading;c.persist_(j,row);}
+ function rejectReading(j,row,g){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';j.nextAt=0;c.persist_(j,row);return;}const out=j.pendingMasterReading||readingResubmission(g,j);out.text=mergeTeacherMessage(cell.getDisplayValue(),out.text);j.pendingMasterReading=out;c.persist_(j,row);cell.setRichTextValue(savedFeedbackRich(c,cell,out.text,out.sections));j.autoNotice=out.text;j.cell=cell.getA1Notation();j.status=READING_RESUBMISSION_STATUS;j.manualReviewRequired=false;j.error='';j.nextAt=0;delete j.pendingMasterReading;c.persist_(j,row);}
  function pending(j,row,text,terminal='COMPLETED_NEEDS_RESUBMISSION'){
   const dst=c.destination_(j.cls,j.route,j.receipt.student),cell=dst.cell;if(c.hasFeedback_(cell.getDisplayValue())||cell.getFormula()||cell.getDataValidation()){j.status='SKIPPED_ALREADY_GRADED';j.error='';c.persist_(j,row);return;}
   j.pendingMasterFeedback={text,terminal};c.persist_(j,row);

@@ -1,4 +1,5 @@
 import {sourceInMasterScope} from './master-submission-scope.mjs';
+import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {hasSavedResult,hasRequest,preprocessingRecoverable,retryPreparation,isTransient,EMPTY_LINK_NOTICE,YOUTUBE_NOTICE,PREPROCESS_VERSION,universalValidatedRequest} from './universal-media.mjs';
 
 export function installKidsPreprocessing(c,{g,service,isLatest,emit=()=>{}}){
@@ -13,6 +14,7 @@ export function installKidsPreprocessing(c,{g,service,isLatest,emit=()=>{}}){
   if(!sourceInMasterScope(j.receipt)||hasSavedResult(j)||hasRequest(j)||!isLatest(j))return false;
   const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;
   if(cell.getFormula()||cell.getDataValidation()||c.hasFeedback_(cell.getDisplayValue()))return false;
+  text=mergeTeacherMessage(cell.getDisplayValue(),text);
   j.pendingInputNotice={version:PREPROCESS_VERSION,text};c.persist_(j,row);
   cell.setRichTextValue(c.coloredFeedback_(cell,text,null));j.autoNotice=text;j.cell=cell.getA1Notation();j.status='COMPLETED_NEEDS_RESUBMISSION';j.error='';j.nextAt=0;j.inputNoticeVersion=PREPROCESS_VERSION;delete j.pendingInputNotice;c.teacherApprovalSession_?.finish(j);c.persist_(j,row);return true;
  }

@@ -1,4 +1,5 @@
 import {decodeSavedDraft} from './saved-draft.mjs';
+import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {phonicsSequenceColumn} from './phonics-destination-repair.mjs';
 import {isPhonics,PHONICS_VERSION,PHONICS_LABELS,PHONICS_PROMPT,phonicsText,phonicsRich,sectionsFromText} from './phonics-template.mjs';
 import {networkRetry} from './kids-fault-tolerance.mjs';
@@ -73,6 +74,7 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
  function feedback(j,row,message,route=j.route,status='NEEDS_RESUBMISSION'){
   const dst=destination(j,route),cell=dst.cell,before=cell.getDisplayValue();
   if(occupied(cell)){stop(j,row,'SKIPPED_ALREADY_GRADED');return;}
+  message=mergeTeacherMessage(before,message);
   if(process.env.RUNNER_SHEET_BATCH!=='1')j.noticeBackupId=c.saveArtifact_('single-pass-before-'+j.id,{value:cell.getValue(),note:cell.getNote(),cell:cell.getA1Notation(),output:message,rawId:j.rawId});
   refresh(j);if(occupied(cell)||cell.getDisplayValue()!==before)throw Error('DESTINATION_CHANGED');
   const sections=!isPhonics(j)&&status==='RETURNED'&&j.rawId?(j.pendingFeedbackRender?.sections||savedSections(draft(j),j.snapshotId?c.readArtifact_(j.snapshotId):{})):null;
