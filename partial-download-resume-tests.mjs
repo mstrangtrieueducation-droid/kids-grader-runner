@@ -1,5 +1,5 @@
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';
-import {createMediaService} from './universal-media.mjs';import {sourceFailure} from './submission-source-policy.mjs';
+import {createMediaService,reusePreparedDownload} from './universal-media.mjs';import {sourceFailure} from './submission-source-policy.mjs';
 const previous=process.env.SHEET_TRUTH_SYNC;process.env.SHEET_TRUTH_SYNC='true';
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'synthetic-download-resume-')),m={id:'synthetic_media_fixture',mime:'video/mp4',size:64000,modified:'2026-10-01T00:00:00Z'};let calls=0,savedPath;
 const g={fileMeta:()=>({}),api:()=>({}),token:()=> 'synthetic_token'};
@@ -11,6 +11,10 @@ try{
  assert.throws(()=>service.verifyDownload(m),{message:'TRANSIENT_MEDIA_DOWNLOAD_TIMEOUT'});assert.equal(fs.statSync(savedPath).size,24000);
  const pending=sourceFailure(Error('TRANSIENT_MEDIA_DOWNLOAD_TIMEOUT'));assert.equal(pending.retryAfterMs,2000);assert.equal(pending.aiEligible,false);
  assert.deepEqual(service.verifyDownload(m),{complete:true,bytes:64000});assert.equal(calls,2);assert.deepEqual(service.verifyDownload(m),{complete:true,bytes:64000});assert.equal(calls,2);
+ const destination=path.join(root,'validated-original');reusePreparedDownload(service,m,destination);assert.equal(fs.statSync(destination).size,m.size);assert.equal(calls,2,'frame/audio path must not fetch the student file a second time');
+ assert.equal(reusePreparedDownload({localFile:()=>{throw Error('MUST_NOT_DOWNLOAD');}},m,destination),destination);
+ const copied=path.join(root,'copy-fallback');reusePreparedDownload(service,m,copied,{link:()=>{throw Object.assign(Error('CROSS_DEVICE'),{code:'EXDEV'});}});assert.equal(fs.statSync(copied).size,m.size);assert.equal(calls,2);
+ assert.throws(()=>reusePreparedDownload({localFile:()=>copied},{...m,size:m.size+1},path.join(root,'mismatch')),{message:'TRANSIENT_MEDIA_DOWNLOAD_SIZE'});assert(!fs.existsSync(path.join(root,'mismatch')));
  // No progress is not a fast continuation. Never infer access failure or send AI.
  const failed=createMediaService({g:{...g,universalTransientInstalled:false},root:path.join(root,'no-progress'),download:()=>{throw Error('NETWORK_OUTCOME_UNKNOWN');}});
  assert.throws(()=>failed.verifyDownload(m),{message:'NETWORK_OUTCOME_UNKNOWN'});assert.equal(sourceFailure(Error('NETWORK_OUTCOME_UNKNOWN')).reason,'SOURCE_CHECK_RETRY');

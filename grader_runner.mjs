@@ -1,4 +1,5 @@
 import {priorityCandidates,priorityClusters,isPriorityJob} from './priority-kids-drain.mjs';
+import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
 import {settleSheetTruth} from './sheet-truth-sync.mjs';
@@ -302,6 +303,9 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
   return null;
  }
  if(m.id.startsWith('yt_')&&!fs.existsSync(original)){fs.copyFileSync(universalMedia.localFile(m),original);}
+ // Source inspection already downloaded and validated this exact student file.
+ // Reuse those bytes for frames/audio instead of downloading a second copy.
+ if(!m.isReference&&file===original&&!fs.existsSync(original)){reusePreparedDownload(universalMedia,m,original);m.runnerDownloadBytes=Number(m.size);save();}
  if(file===original&&!fs.existsSync(original)){
   const partial=original+'.part',sliceUntil=Math.min(deadline-45000,Date.now()+60000);let offset=fs.existsSync(partial)?fs.statSync(partial).size:0;
   if(offset>m.size){fs.unlinkSync(partial);offset=0;}

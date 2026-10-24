@@ -13,6 +13,12 @@ import {validatedAudioRequest,validateAudioPart} from './audio-payload-guard.mjs
 export const PREPROCESS_VERSION='teacher-universal-preprocess-20261017';
 export const MAX_PART_BYTES=5*1024*1024;
 export const EMPTY_LINK_NOTICE='❌ CẦN NỘP LẠI — Bài nộp chưa đính kèm link video/file. Con kiểm tra và nộp lại link nhé!';
+export function reusePreparedDownload(service,media,destination,{link=fs.linkSync,copy=fs.copyFileSync}={}){
+ if(fs.existsSync(destination)&&fs.statSync(destination).size===Number(media.size))return destination;
+ const source=service.localFile(media);if(!fs.existsSync(source)||fs.statSync(source).size!==Number(media.size))throw Error('TRANSIENT_MEDIA_DOWNLOAD_SIZE');
+ try{link(source,destination);}catch(error){if(!['EXDEV','EPERM','EOPNOTSUPP','ENOSYS'].includes(error.code))throw error;copy(source,destination);}
+ if(fs.statSync(destination).size!==Number(media.size))throw Error('TRANSIENT_MEDIA_DOWNLOAD_SIZE');return destination;
+}
 export const YOUTUBE_NOTICE='❌ CẦN NỘP LẠI — Link YouTube của con ở chế độ riêng tư hoặc chưa mở quyền xem. Con mở công khai/bất kỳ ai có link đều xem được để cô nhận xét nhé!';
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const transient=/HTTP[_ ](?:500|502|503|504)|NETWORK_OUTCOME_UNKNOWN|CONNECTION_TIMEOUT|ETIMEDOUT|ECONNRESET|TRANSIENT_MEDIA/;
