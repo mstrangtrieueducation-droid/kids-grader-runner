@@ -1,4 +1,5 @@
 import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait,existingKidsCandidates} from './priority-kids-drain.mjs';
+import {savedDeliveryCandidates,reconcileSavedDelivery} from './saved-delivery-repair.mjs';
 import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
@@ -363,7 +364,7 @@ function updateProgress(c,cluster,label,lastJob=null){
 function runCluster(cluster,pass=0,phase='all'){
  if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;
  if(option('--class')&&!cluster.classes.some(x=>x.className===option('--class')))return 0;
- let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}if(phase==='repair'&&!sourceRepairQueue(c.loadJobs_()).length&&!c.hasUnavailableSources_?.())return 0;if(phase==='priority'&&!priorityCandidates(c.loadJobs_()).length)return 0;if(phase==='existing'&&!existingKidsCandidates(c.loadJobs_(),{classes:cluster.classes}).length)return 0;if(phase==='cache'&&hasHostedKidsCache(c)===false){emit({event:'CACHE_PHASE_EMPTY',providerCalls:0});return 0;}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
+ let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}if(phase==='repair'&&!sourceRepairQueue(c.loadJobs_()).length&&!c.hasUnavailableSources_?.())return 0;if(phase==='priority'&&!priorityCandidates(c.loadJobs_()).length)return 0;if(phase==='existing'&&!existingKidsCandidates(c.loadJobs_(),{classes:cluster.classes}).length&&(c.savedDeliveryChecked_||!savedDeliveryCandidates(c.loadJobs_()).length))return 0;if(phase==='cache'&&hasHostedKidsCache(c)===false){emit({event:'CACHE_PHASE_EMPTY',providerCalls:0});return 0;}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
  if(dry){const metadata=google.book(cluster.controlId);const counts=c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{});emit({event:'AUDIT',account:cluster.email,counts,controlTitle:metadata.meta.properties.title});return 0;}
  const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);
  let ramBatch;
@@ -384,6 +385,7 @@ function runCluster(cluster,pass=0,phase='all'){
  if(phase!=='repair'&&phase!=='priority'&&phase!=='existing'&&masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});}
  else if(phase!=='repair'&&phase!=='priority'&&phase!=='existing'&&!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
  if((phase==='repair'||phase==='priority'||phase==='existing')&&c.recoverNativeMetadata_)emit({event:'NATIVE_METADATA_RECOVERY',...c.recoverNativeMetadata_()});
+ if(phase==='existing'&&!c.savedDeliveryChecked_){emit({event:'SAVED_DELIVERY_RECOVERY',...reconcileSavedDelivery(c,c.loadJobs_(),{deadline:until})});c.savedDeliveryChecked_=true;}
  if((phase==='repair'||phase==='priority'||phase==='existing')&&c.reconcileUnavailableSources_)emit({event:'SOURCE_ACCESS_NOTICES',...c.reconcileUnavailableSources_({deadline:Math.min(until-90000,Date.now()+90000),limit:6})});
  if(scanOnly||phase==='scan')return 0;
  const submittedWorkBeforeRecovery=deferFleetMaintenance(c.loadJobs_());
