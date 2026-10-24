@@ -1,5 +1,6 @@
 import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait,existingKidsCandidates} from './priority-kids-drain.mjs';
 import {savedDeliveryCandidates,reconcileSavedDelivery,savedDeliveryWork} from './saved-delivery-repair.mjs';
+import {prepareKidsDrain,existingSliceEnded} from './kids-intake-order.mjs';
 import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
@@ -383,7 +384,7 @@ function runCluster(cluster,pass=0,phase='all',savedOnly=false){
  if(!args.has('--skip-scan')){google.preloadSource(vm.runInContext('KG.classroom',c),2);google.preloadSource(vm.runInContext('KG.practice',c),2);}
  preparedClusters.add(cluster.controlId);
  }
- if(phase!=='repair'&&phase!=='priority'&&phase!=='existing'&&masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});}
+ if(phase!=='repair'&&phase!=='priority'&&phase!=='existing'&&masterSweepEnabled()&&!args.has('--skip-scan')){c.masterSweepTabs_=vm.runInContext('KIDS21_AUTO.tabs',c);masterSweep=prepareKidsMasterSweep(c,cluster,google,{emit});if(phase==='scan')c.savedDeliveryChecked_=true;}
  else if(phase!=='repair'&&phase!=='priority'&&phase!=='existing'&&!args.has('--skip-scan')&&(scanOnly||Date.now()-(lastScans.get(cluster.controlId)||0)>10*60000)){try{const fleetScanSlice=process.env.AUTOMATIC_GRADING_AUTHORIZED==='true'?60000:10000;c.scanFleetSlice_(Math.min(until-90000,Date.now()+(scanOnly?15*60000:fleetScanSlice)));lastScans.set(cluster.controlId,Date.now());emit({event:'SCAN_COMPLETE',account:cluster.email});}catch(e){emit({event:'SCAN_ERROR',account:cluster.email,error:safeError(e)});}}
  if((phase==='repair'||phase==='priority'||phase==='existing')&&c.recoverNativeMetadata_)emit({event:'NATIVE_METADATA_RECOVERY',...c.recoverNativeMetadata_()});
  if(phase==='existing'&&!c.savedDeliveryChecked_){emit({event:'SAVED_DELIVERY_RECOVERY',...reconcileSavedDelivery(c,c.loadJobs_(),{deadline:until})});c.savedDeliveryChecked_=true;}
@@ -399,7 +400,9 @@ function runCluster(cluster,pass=0,phase='all',savedOnly=false){
  const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
  const ordinaryWork=phase==='existing'?existingKidsCandidates(queued,{classes:cluster.classes}):phase==='priority'?priorityCandidates(queued):phase==='repair'?sourceRepairQueue(queued):phase==='cache'?queued.filter(x=>x.job.rawId||x.job.gradeId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
  const phaseWork=savedOnly?savedDeliveryWork(ordinaryWork):phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)||j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'):ordinaryWork;
+ const sliceStartedAt=Date.now();
  for(const {job,row} of phaseWork){
+  if(existingSliceEnded({phase,savedOnly,attempted:attempted.size,startedAt:sliceStartedAt}))break;
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='priority'?20:phase==='repair'?2:phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
   if(option('--kind')&&job.route.kind!==option('--kind'))continue;
@@ -424,9 +427,9 @@ function shadowPass(){return 0;}
 if(isMain){
  const ieltsFirst=args.has('--ielts-only')||args.has('--scheduled')&&Math.floor(Date.now()/3600000)%4===3;
  let pass=0,visited=0;
- // Restore missing class delivery from saved results across every cluster before
- // any paid queue can consume this writer's budget. No source is generated here.
- if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'existing',true);}catch(e){emit({event:'SAVED_DELIVERY_PASS_ERROR',error:safeError(e)});}}
+ // Discover current Form submissions and restore saved class feedback before
+ // paid queues can consume the writer budget. Reuse the canonical native sweep.
+ if(masterSweepEnabled()&&!dry&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))prepareKidsDrain(ordered,{canContinue:()=>Date.now()<until-90000&&finished<maxJobs&&paidCalls<maxApiCalls,scan:cluster=>{try{runCluster(cluster,0,'scan');}catch(e){emit({event:'MASTER_SWEEP_CLUSTER_ERROR',account:cluster.email,error:safeError(e)});}},cache:cluster=>{if(scanOnly)return;try{runCluster(cluster,0,'cache');}catch(e){emit({event:'MASTER_SWEEP_CACHE_ERROR',account:cluster.email,error:safeError(e)});}}});
  // Drain teacher-selected existing jobs before unrelated fleet discovery.
  if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only')){
   let priorityVisited,priorityWait;do{priorityVisited=0;priorityWait=0;for(const cluster of priorityClusters(ordered)){try{priorityVisited+=runCluster(cluster,0,'priority');}catch(e){emit({event:'PRIORITY_DRAIN_ERROR',error:safeError(e)});}}
@@ -435,8 +438,6 @@ if(isMain){
  }
  if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only')){let existingVisited;do{existingVisited=0;for(const cluster of ordered){try{existingVisited+=runCluster(cluster,0,'existing');}catch(e){emit({event:'EXISTING_WORK_ERROR',error:safeError(e)});}}}while(existingVisited&&Date.now()<until-90000&&finished<maxJobs&&paidCalls<maxApiCalls);}
  if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'repair');}catch(e){emit({event:'SOURCE_REPAIR_PASS_ERROR',error:safeError(e)});}}
- if(masterSweepEnabled()&&!dry&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'scan');}catch(e){emit({event:'MASTER_SWEEP_CLUSTER_ERROR',account:cluster.email,error:safeError(e)});}}
- if(masterSweepEnabled()&&!dry&&!scanOnly)for(const cluster of ordered){try{runCluster(cluster,0,'cache');}catch(e){emit({event:'MASTER_SWEEP_CACHE_ERROR',account:cluster.email,error:safeError(e)});}}
  do{visited=shadowPass();if(!dedicatedShadow&&(ieltsFirst||args.has('--drain')&&pass===0))visited+=runIeltsPass();if(!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only')){
   if(args.has('--drain')){
    for(const cluster of ordered){try{visited+=runCluster(cluster,pass,'ready');}catch(e){emit({event:'CLUSTER_ERROR',account:cluster.email,error:safeError(e)});}}
