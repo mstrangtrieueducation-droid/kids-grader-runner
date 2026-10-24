@@ -10,6 +10,10 @@ export function priorityDrainWait(items,{now=Date.now(),deadline=Infinity,policy
  const future=priorityCandidates(items,{now,policy,includeFuture:true}).map(x=>Number(x.job.nextAt)).filter(at=>at>now&&at<deadline-90000);
  return future.length?Math.min(5000,Math.min(...future)-now):0;
 }
+export function existingKidsCandidates(items,{classes=[],now=Date.now()}={}){
+ const names=classes.filter(c=>typeof c==='string'||c.enabled!==false).map(c=>String(typeof c==='string'?c:c.className).toUpperCase());
+ return priorityCandidates(items,{now,policy:{classes:new Set(names),ids:new Set()}});
+}
 export function prioritizeKids(items,policy=priorityPolicy()){
  const saved=x=>!!(x.job.rawId||x.job.gradeId||x.job.status==='GENERATING');
  return [...items.filter(saved),...items.filter(x=>!saved(x)&&policy.ids.has(x.job.id)),...items.filter(x=>!saved(x)&&!policy.ids.has(x.job.id)&&isPriorityJob(x.job,policy)),...items.filter(x=>!saved(x)&&!isPriorityJob(x.job,policy))];
