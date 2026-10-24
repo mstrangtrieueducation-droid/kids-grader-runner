@@ -1,5 +1,5 @@
 import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait,existingKidsCandidates} from './priority-kids-drain.mjs';
-import {savedDeliveryCandidates,reconcileSavedDelivery} from './saved-delivery-repair.mjs';
+import {savedDeliveryCandidates,reconcileSavedDelivery,savedDeliveryWork} from './saved-delivery-repair.mjs';
 import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
@@ -361,10 +361,11 @@ function updateProgress(c,cluster,label,lastJob=null){
  ['Trigger',process.env.RUNNER_HOST==='local'?'Windows Task Scheduler; chạy trên máy cô':'Apps Script đã dừng; runner dùng Service Account trên GitHub'],['Tiến độ quét',c.runnerProperties.get('FLEET_SCAN_CURSOR')||'Tiếp tục từ checkpoint'],['Đã trả',counts.RETURNED||0],['Chờ xử lý',pending],['Cần kiểm tra',(counts.NEEDS_REVIEW||0)+(counts.BLOCKED||0)+(counts.STALE||0)],
  ['Batch gần nhất',JSON.stringify(lastJob||{counts})],['Cập nhật',new Date().toLocaleString('vi-VN',{timeZone:'Asia/Bangkok'})],['Thời gian đã dùng','Không dùng hạn mức trigger Apps Script'],['Tiếp tục sau',args.has('--drain')?'Tự nối lượt chấm bù ngay nếu còn bài hợp lệ':'Lượt chạy mỗi giờ kế tiếp'],['Ưu tiên','Video sẵn sàng; lỗi tên/cột/file tách khỏi luồng chấm'],['Bài cần kiểm tra','Không tự gọi lại Gemini cho bài chưa rõ hoặc phản hồi thiếu căn cứ'],['Hạn mức API','Kids: '+(config.kids?.model||MASTER_MODEL)+'; key dự án trả phí đã được cô xác nhận']]);
 }
-function runCluster(cluster,pass=0,phase='all'){
+function runCluster(cluster,pass=0,phase='all',savedOnly=false){
  if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls)return 0;
  if(option('--class')&&!cluster.classes.some(x=>x.className===option('--class')))return 0;
  let c=contexts.get(cluster.controlId);if(!c){c=buildContext(cluster);contexts.set(cluster.controlId,c);}if(phase==='repair'&&!sourceRepairQueue(c.loadJobs_()).length&&!c.hasUnavailableSources_?.())return 0;if(phase==='priority'&&!priorityCandidates(c.loadJobs_()).length)return 0;if(phase==='existing'&&!existingKidsCandidates(c.loadJobs_(),{classes:cluster.classes}).length&&(c.savedDeliveryChecked_||!savedDeliveryCandidates(c.loadJobs_()).length))return 0;if(phase==='cache'&&hasHostedKidsCache(c)===false){emit({event:'CACHE_PHASE_EMPTY',providerCalls:0});return 0;}emit({event:'CLUSTER_STARTED',account:cluster.email,phase});
+ if(savedOnly&&!savedDeliveryCandidates(c.loadJobs_()).length)return 0;
  if(dry){const metadata=google.book(cluster.controlId);const counts=c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{});emit({event:'AUDIT',account:cluster.email,counts,controlTitle:metadata.meta.properties.title});return 0;}
  const state=poolWorker?{initial:poolState.states[cluster.controlId]||{},save:()=>{},release:()=>{}}:stateStore(google,cluster.controlId);
  let ramBatch;
@@ -397,7 +398,7 @@ function runCluster(cluster,pass=0,phase='all'){
  c.teacherApprovalSession_ ||= approvalSession(google,config.clusters[0].controlId);c.teacherApprovalJobs_=c.loadJobs_();if(process.env.AUTOMATIC_GRADING_AUTHORIZED==='true')authorizeFairKidsWork(c,cluster,google);acceptTeacherApprovals(c.teacherApprovalJobs_,c.teacherApprovalSession_,cluster.controlId,'Jobs',c.persist_);
  const queued=authorizedWorkQueue(c).filter(x=>!masterSweep||masterSweep.allowsJob(x.job)||c.isPendingCriticalCorrection_?.(x.job));
  const ordinaryWork=phase==='existing'?existingKidsCandidates(queued,{classes:cluster.classes}):phase==='priority'?priorityCandidates(queued):phase==='repair'?sourceRepairQueue(queued):phase==='cache'?queued.filter(x=>x.job.rawId||x.job.gradeId):authorizedPhaseQueue(queued,phase,process.env.AUTOMATIC_GRADING_AUTHORIZED==='true');
- const phaseWork=phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)||j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'):ordinaryWork;
+ const phaseWork=savedOnly?savedDeliveryWork(ordinaryWork):phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)||j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'):ordinaryWork;
  for(const {job,row} of phaseWork){
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='priority'?20:phase==='repair'?2:phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
@@ -410,7 +411,7 @@ function runCluster(cluster,pass=0,phase='all'){
   emit({event:'JOB_STARTED',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status});
   const jobStarted=Date.now(),metricBefore={...google.metrics};
   try{c.preparePoolRetry_(job,row);c.step_(job,row,Math.min(until,Date.now()+20*60000),{});}catch(e){try{c.handleError_(job,row,e);}catch(handlerError){job.status='RETRY';job.error=e.message;job.handlerError=handlerError.message;job.nextAt=Date.now()+300000;try{c.persist_(job,row);}catch(persistError){emit({event:'JOB_STATE_WRITE_ERROR',id:job.id,error:safeError(persistError)});}}}
-  settleSheetTruth({job,resolve:()=>c.destination_(job.cls,job.route,job.receipt.student).cell,save:()=>c.persist_(job,row),emit});if(attempted.size%10===0)ramBatch?.flush();
+  settleSheetTruth({job,resolve:()=>c.destination_(job.cls,job.route,job.receipt.student).cell,save:()=>c.persist_(job,row),emit});if(attempted.size%10===0||savedOnly&&MASTER_TERMINAL.has(job.status))ramBatch?.flush();
   emit({event:'JOB',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status,error:job.error||'',cell:job.cell||'',phase,elapsedMs:Date.now()-jobStarted,sheetCalls:google.metrics.sheetCalls-metricBefore.sheetCalls,sheetMs:google.metrics.sheetMs-metricBefore.sheetMs,audio:job.media?.filter(m=>!m.isReference).map(m=>m.runnerAudio||null)});outcomes.push({id:job.id,status:job.status,className:job.cls.className});if(MASTER_TERMINAL.has(job.status)){finished++;if(!ramBatch)updateProgress(c,cluster,'RUNNER — ĐANG CHẤM BÙ / TỰ ĐỘNG',{student:job.receipt.student,className:job.cls.className,code:job.route.code,cell:job.cell,status:job.status});}
  }
  emit({event:'CLUSTER_COMPLETE',account:cluster.email,counts:c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{})});
@@ -423,6 +424,9 @@ function shadowPass(){return 0;}
 if(isMain){
  const ieltsFirst=args.has('--ielts-only')||args.has('--scheduled')&&Math.floor(Date.now()/3600000)%4===3;
  let pass=0,visited=0;
+ // Restore missing class delivery from saved results across every cluster before
+ // any paid queue can consume this writer's budget. No source is generated here.
+ if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'existing',true);}catch(e){emit({event:'SAVED_DELIVERY_PASS_ERROR',error:safeError(e)});}}
  // Drain teacher-selected existing jobs before unrelated fleet discovery.
  if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only')){
   let priorityVisited,priorityWait;do{priorityVisited=0;priorityWait=0;for(const cluster of priorityClusters(ordered)){try{priorityVisited+=runCluster(cluster,0,'priority');}catch(e){emit({event:'PRIORITY_DRAIN_ERROR',error:safeError(e)});}}
