@@ -1,4 +1,4 @@
-import {priorityCandidates,priorityClusters,isPriorityJob} from './priority-kids-drain.mjs';
+import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait} from './priority-kids-drain.mjs';
 import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
@@ -423,7 +423,9 @@ if(isMain){
  let pass=0,visited=0;
  // Drain teacher-selected existing jobs before unrelated fleet discovery.
  if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only')){
-  let priorityVisited;do{priorityVisited=0;for(const cluster of priorityClusters(ordered)){try{priorityVisited+=runCluster(cluster,0,'priority');}catch(e){emit({event:'PRIORITY_DRAIN_ERROR',error:safeError(e)});}}}while(priorityVisited&&Date.now()<until-90000&&finished<maxJobs&&paidCalls<maxApiCalls);
+  let priorityVisited,priorityWait;do{priorityVisited=0;priorityWait=0;for(const cluster of priorityClusters(ordered)){try{priorityVisited+=runCluster(cluster,0,'priority');}catch(e){emit({event:'PRIORITY_DRAIN_ERROR',error:safeError(e)});}}
+   if(!priorityVisited&&Date.now()<until-90000&&finished<maxJobs&&paidCalls<maxApiCalls){priorityWait=priorityDrainWait([...contexts.values()].flatMap(c=>c.loadJobs_()),{deadline:until});if(priorityWait)pause(priorityWait);}
+  }while((priorityVisited||priorityWait)&&Date.now()<until-90000&&finished<maxJobs&&paidCalls<maxApiCalls);
  }
  if(masterSweepEnabled()&&args.has('--drain')&&!dry&&!scanOnly&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'repair');}catch(e){emit({event:'SOURCE_REPAIR_PASS_ERROR',error:safeError(e)});}}
  if(masterSweepEnabled()&&!dry&&!dedicatedShadow&&!args.has('--ielts-only')&&!args.has('--shadowing-only'))for(const cluster of ordered){try{runCluster(cluster,0,'scan');}catch(e){emit({event:'MASTER_SWEEP_CLUSTER_ERROR',account:cluster.email,error:safeError(e)});}}

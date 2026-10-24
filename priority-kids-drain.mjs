@@ -6,6 +6,10 @@ export function isPriorityJob(j,policy=priorityPolicy()){return policy.ids.has(j
 export function priorityCandidates(items,{now=Date.now(),policy=priorityPolicy(),includeFuture=false}={}){
  const all=items.map(x=>x.job);return items.filter(({job:j})=>isPriorityJob(j,policy)&&j.rosterEligibility?.state!=='NOT_IN_CURRENT_ROSTER'&&(includeFuture||!(Number(j.nextAt)>now))&&(automaticEligible(j,all)||mayResumeSaved(j)||nativeMetadataRepairEligible(j)));
 }
+export function priorityDrainWait(items,{now=Date.now(),deadline=Infinity,policy=priorityPolicy()}={}){
+ const future=priorityCandidates(items,{now,policy,includeFuture:true}).map(x=>Number(x.job.nextAt)).filter(at=>at>now&&at<deadline-90000);
+ return future.length?Math.min(5000,Math.min(...future)-now):0;
+}
 export function prioritizeKids(items,policy=priorityPolicy()){
  const saved=x=>!!(x.job.rawId||x.job.gradeId||x.job.status==='GENERATING');
  return [...items.filter(saved),...items.filter(x=>!saved(x)&&policy.ids.has(x.job.id)),...items.filter(x=>!saved(x)&&!policy.ids.has(x.job.id)&&isPriorityJob(x.job,policy)),...items.filter(x=>!saved(x)&&!isPriorityJob(x.job,policy))];
