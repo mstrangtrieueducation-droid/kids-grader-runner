@@ -1,6 +1,6 @@
 import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait,existingKidsCandidates} from './priority-kids-drain.mjs';
 import {savedDeliveryCandidates,reconcileSavedDelivery,savedDeliveryWork} from './saved-delivery-repair.mjs';
-import {prepareKidsDrain,existingSliceEnded} from './kids-intake-order.mjs';
+import {prepareKidsDrain,existingSliceEnded,savedPassTracker} from './kids-intake-order.mjs';
 import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
@@ -64,6 +64,7 @@ const ffmpeg=process.env.FFMPEG_PATH||(process.platform==='win32'?path.join(root
 const universalMedia=createMediaService({g:google,root,ffmpeg});
 const emit=x=>console.log(JSON.stringify({...x,at:new Date().toISOString()}));
 let finished=0,paidCalls=0;const outcomes=[];
+const savedPass=savedPassTracker();
 const recoveredClusters=new Set(),preparedClusters=new Set(),contexts=new Map(),lastScans=new Map(),referenceUploads=new Map();
 let referenceStoreLoaded=false;
 function referenceStore(){
@@ -402,6 +403,7 @@ function runCluster(cluster,pass=0,phase='all',savedOnly=false){
  const phaseWork=savedOnly?savedDeliveryWork(ordinaryWork):phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)||j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'):ordinaryWork;
  const sliceStartedAt=Date.now();
  for(const {job,row} of phaseWork){
+  if(!savedPass.allows(job))continue;
   if(existingSliceEnded({phase,savedOnly,attempted:attempted.size,startedAt:sliceStartedAt}))break;
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='priority'?20:phase==='repair'?2:phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
@@ -411,6 +413,7 @@ function runCluster(cluster,pass=0,phase='all',savedOnly=false){
   if(attempted.has(job.id))continue;attempted.add(job.id);
   if(job.status==='GENERATING'&&!job.rawId){job.status='NEEDS_REVIEW';job.error='UNCERTAIN_GENERATION';c.persist_(job,row);continue;}
   if(!['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED'].includes(job.status))continue;
+  savedPass.record(job);
   emit({event:'JOB_STARTED',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status});
   const jobStarted=Date.now(),metricBefore={...google.metrics};
   try{c.preparePoolRetry_(job,row);c.step_(job,row,Math.min(until,Date.now()+20*60000),{});}catch(e){try{c.handleError_(job,row,e);}catch(handlerError){job.status='RETRY';job.error=e.message;job.handlerError=handlerError.message;job.nextAt=Date.now()+300000;try{c.persist_(job,row);}catch(persistError){emit({event:'JOB_STATE_WRITE_ERROR',id:job.id,error:safeError(persistError)});}}}

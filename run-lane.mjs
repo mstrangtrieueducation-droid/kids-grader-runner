@@ -8,7 +8,7 @@ async function main(){
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');
  const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","new-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs","automatic-work-queue-tests.mjs","linked-destination-binding-tests.mjs","retired-reference-inputs-tests.mjs","source-input-guards-tests.mjs"];runTest('automatic-authorization-tests.mjs');runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  runTest('master-cross-class-sweep-tests.mjs');runTest('master-first-snapshot-tests.mjs');runTest('student-speech-evidence-tests.mjs');runTest('master-submission-scope-tests.mjs');runTest('saved-speaking-consistency-tests.mjs');
- runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');runTest('saved-delivery-repair-tests.mjs');runTest('kids-intake-order-tests.mjs');
+ runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');runTest('saved-delivery-repair-tests.mjs');runTest('kids-intake-order-tests.mjs');runTest('batch-artifact-index-tests.mjs');
  runTest('submission-assignment-scope-tests.mjs');
  runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
@@ -44,6 +44,7 @@ async function main(){
  if(lane==='kids'){
   // The child stops new work at40min. Allow final raw/usage/Sheet checkpoints to finish without a 45min hard kill.
   const result=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--drain','--max-minutes=40',...(process.env.RUNNER_VERIFY_NEW_MODEL==='true'?['--new-only']:[])],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:70*60000,maxBuffer:20*1024*1024});
+  const phases=(result.stdout||'').split('\n').flatMap(line=>{try{const e=JSON.parse(line);return ['CLUSTER_STARTED','CLUSTER_COMPLETE','JOB_STARTED','JOB','MASTER_SWEEP_SCANNED','MASTER_SWEEP_REPORT','RUN_COMPLETE'].includes(e.event)?[{event:e.event,...(['scan','cache','existing','priority','ready','prepare','repair'].includes(e.phase)?{phase:e.phase}:{}),...(Number.isFinite(e.elapsedMs)?{elapsedMs:e.elapsedMs}:{}),...(Number.isFinite(e.finished)?{finished:e.finished}:{}),...(Number.isFinite(e.paidCalls)?{paidCalls:e.paidCalls}:{})}]:[];}catch{return [];}});console.log(JSON.stringify({event:'KIDS_CHILD_PROGRESS',events:phases.slice(-12),jobsStarted:phases.filter(e=>e.event==='JOB_STARTED').length}));
   if(result.status!==0){fs.writeFileSync(path.join(root,'private','run-failure.txt'),result.stdout+'\n'+result.stderr);console.error(JSON.stringify({event:'KIDS_CHILD_DIAGNOSTIC',exitCode:result.status,signal:result.signal||null,transportCode:result.error?.code||null,softWorkMinutes:40,checkpointGraceMinutes:30}));throw Error('KIDS_RUN_FAILED');}
   const counter=JSON.parse(fs.readFileSync(path.join(root,'private/last-run.json'),'utf8'));finished=counter.finished;requests=counter.paidCalls;
  }else{

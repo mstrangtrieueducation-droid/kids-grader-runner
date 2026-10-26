@@ -1,4 +1,5 @@
 import {sheetTruthEnabled} from './sheet-truth-state.mjs';
+import {batchSheetRange,batchSheetWidth} from './batch-artifact-index.mjs';
 import {cellEvidence,guardClassRequests,expectedBindings} from './sheet-truth-write-guard.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,11 +31,11 @@ export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{}}={}){
  function load(id){
   if(active.has(id))return active.get(id).book;
   const names=id===cluster.controlId?(g.books.get(id)?.sheets||[]).map(s=>s.getName()).filter(n=>['Jobs','RunnerArtifacts','Audit','Automation','RunnerReferences','[CẦN_CÔ_GÁN_CỘT_HOẶC_TÊN]'].includes(n)):cluster.classes.filter(c=>c.spreadsheetId===id).map(c=>c.sheetName).filter(Boolean);
-  const scopedRanges=names.map(n=>'&ranges='+encodeURIComponent("'"+n.replaceAll("'","''")+"'")).join('');
+  const scopedRanges=names.map(n=>'&ranges='+encodeURIComponent(batchSheetRange(n,{control:id===cluster.controlId}))).join('');
   const data=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+'?includeGridData=true'+scopedRanges+'&fields=spreadsheetId,properties(title),sheets(properties,merges,data(rowData(values(effectiveValue,userEnteredValue,formattedValue,hyperlink,textFormatRuns,userEnteredFormat,dataValidation,note))))');
   const book=g.books.get(id)||Object.assign(Object.create(Book.prototype),{g,id,cache:new Map()});
   if(!book.sheets){book.meta=data;book.sheets=data.sheets.map(s=>new Sheet(book,s));g.books.set(id,book);}
-  book.cache.clear();for(const s of data.sheets){if(!s.data?.length)continue;const sheet=book.getSheetByName(s.properties.title);if(!sheet)throw Error('BATCH_SHEET_METADATA_CHANGED');book.cache.set(sheet.getName()+'|master',gridMaster(s.data?.[0]?.rowData||[],s.properties.gridProperties.columnCount));}
+  book.cache.clear();for(const s of data.sheets){if(!s.data?.length)continue;const sheet=book.getSheetByName(s.properties.title);if(!sheet)throw Error('BATCH_SHEET_METADATA_CHANGED');book.cache.set(sheet.getName()+'|master',gridMaster(s.data?.[0]?.rowData||[],batchSheetWidth(sheet.getName(),s.properties.gridProperties.columnCount,{control:id===cluster.controlId})));}
   const item={book,requests:[],expected:new Map(),clear:book.cache.clear,invalidate:book.invalidateSheet};active.set(id,item);
   // The batch owns a single snapshot. All legacy cache invalidations stay in RAM.
   book.cache.clear=()=>{};book.invalidateSheet=()=>{};book.ramBatch=session;
@@ -48,7 +49,7 @@ export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{}}={}){
   for(const [dimension,key,end]of [['ROWS','rowCount',u.range.endRowIndex],['COLUMNS','columnCount',u.range.endColumnIndex]])if(end>gp[key]){item.requests.push({appendDimension:{sheetId:sheet.getSheetId(),dimension,length:end-gp[key]}});gp[key]=end;}
   const master=book.cache.get(sheet.getName()+'|master'),cells=master.cells;
   for(let ri=0;ri<(u.rows||[]).length;ri++){const row=u.range.startRowIndex+ri;cells[row] ||= {values:[]};for(let ci=0;ci<(u.rows[ri].values||[]).length;ci++){const column=u.range.startColumnIndex+ci,v=u.rows[ri].values[ci],old=cells[row].values[column]||{};if(sheetTruthEnabled()&&cluster.classes.some(c=>c.spreadsheetId===book.id)&&u.fields.includes('userEnteredValue')){const key=[sheet.getSheetId(),row,column].join('|');if(!item.expected.has(key))item.expected.set(key,{key,sheetId:sheet.getSheetId(),title:sheet.getName(),row,col:column,before:clone(cellEvidence(old)),...expectedBindings(sheet,master,row,column)});}if(u.fields.includes('userEnteredValue')){old.userEnteredValue=clone(v.userEnteredValue);old.effectiveValue=clone(v.userEnteredValue);old.formattedValue=String(v.userEnteredValue?.stringValue??v.userEnteredValue?.numberValue??v.userEnteredValue?.boolValue??'');delete old.textFormatRuns;}if(u.fields.includes('textFormatRuns'))old.textFormatRuns=clone(v.textFormatRuns||[]);if(v.userEnteredFormat)old.userEnteredFormat={...old.userEnteredFormat,...v.userEnteredFormat};cells[row].values[column]=old;}}
-  book.cache.set(sheet.getName()+'|master',gridMaster(cells,gp.columnCount));item.requests.push(clone(request));writeJournal();
+  book.cache.set(sheet.getName()+'|master',gridMaster(cells,batchSheetWidth(sheet.getName(),gp.columnCount,{control:book.id===cluster.controlId})));item.requests.push(clone(request));writeJournal();
  }
  function flush(){
   writeJournal();for(const item of [...active.values()].sort((a,b)=>(a.book.id===cluster.controlId?1:0)-(b.book.id===cluster.controlId?1:0))){if(!item.requests.length)continue;if(sheetTruthEnabled()&&cluster.classes.some(c=>c.spreadsheetId===item.book.id)){const plan=guardClassRequests(g,item.book.id,item.requests,[...item.expected.values()]);item.requests=plan.requests;for(const e of plan.conflicts){const sheet=item.book.sheets.find(s=>s.getSheetId()===e.sheetId),master=item.book.cache.get(sheet.getName()+'|master');master.cells[e.row] ||= {values:[]};master.cells[e.row].values[e.col]=clone(e.current);item.book.cache.set(sheet.getName()+'|master',gridMaster(master.cells,sheet.meta.properties.gridProperties.columnCount));}if(plan.conflicts.length)emit({event:'SHEET_TRUTH_TEACHER_EDITS_PROTECTED',cells:plan.conflicts.length,providerCalls:0});}if(item.requests.length)g.api('https://sheets.googleapis.com/v4/spreadsheets/'+item.book.id+':batchUpdate','POST',{requests:item.requests});emit({event:'SHEET_BATCH_WRITTEN',spreadsheetId:item.book.id,mutations:item.requests.length,requests:1});item.requests=[];item.expected.clear();writeJournal();}
