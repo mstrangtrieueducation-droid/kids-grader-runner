@@ -28,3 +28,12 @@ export function readNativeQueue(g,controlId){
  for(let start=2;start<=last;start+=400){const end=Math.min(last,start+399),rows=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+controlId+'/values/'+encodeURIComponent("'Jobs'!F"+start+':F'+end)).values||[];rows.forEach((r,i)=>{if(r[0])entries.push({row:start+i,job:JSON.parse(r[0])});});}
  return entries;
 }
+
+// Freeze the receipt identity, not an A1 address that changes after column insertion.
+// The native resolver retains its unique student/assignment and destination guards.
+export function resolveFrozenTarget(c,job,target){
+ if(!matchesTarget(job,target))throw Error('CAMPAIGN_JOB_BINDING_INVALID');
+ const cell=c.destination_(job.cls,job.route,job.receipt.student).cell;
+ if(cell.sheet.getSheetId()!==target.sheetId)throw Error('CAMPAIGN_TARGET_SHEET_CHANGED');
+ return {cell,target:{...target,cell:cell.getA1Notation()}};
+}

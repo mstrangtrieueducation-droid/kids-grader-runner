@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';
-import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue} from './frozen-backlog-policy.mjs';
+import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
 import {Book,Sheet,RichBuilder} from './google-adapter.mjs';import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {installFrozenGenerationGuard} from './frozen-generation-guard.mjs';
 const target={spreadsheetId:'fixture-class',sheetId:20,cell:'D5',student:'FIXTURE PUPIL',className:'KIDS 90',code:'SCIENCE-G1-01',submissionAt:'2026-10-25T10:00:00Z'};
@@ -30,3 +30,12 @@ installFrozenGenerationGuard(context,guardGoogle);assert.equal(context.generate_
 remoteCells[4].values[3].note='teacher edited';assert.throws(()=>context.generate_(job),/PREFLIGHT_DESTINATION_CHANGED/);assert.equal(generated,1);
 remoteCells=structuredClone(originalCells);remoteCells[4].values[2]={userEnteredValue:{stringValue:'different pupil'},formattedValue:'different pupil'};assert.throws(()=>context.generate_(job),/PREFLIGHT_DESTINATION_CHANGED/);assert.equal(generated,1);
 console.log('PASS immutable targets, cross-class/source binding, saved-first and duplicate-paid protection, pupil/media conflict claims, paged persistent ledger, server allocated artifacts and ten class writes in one batch; 0 AI/0 live Sheet writes.');
+
+const moved={sheet:{getSheetId:()=>20},getA1Notation:()=> 'G8'};
+const native={destination_:(cls,route,student)=>{assert.equal(student,target.student);assert.equal(route.code,target.code);return {cell:moved};}};
+assert.equal(resolveFrozenTarget(native,job,target).target.cell,'G8');
+assert.equal(target.cell,'D5','frozen source membership must remain unchanged');
+assert.throws(()=>resolveFrozenTarget(native,{...job,receipt:{...job.receipt,student:'OTHER'}},target),/BINDING/);
+assert.throws(()=>resolveFrozenTarget({...native,destination_:()=>{throw Error('AMBIGUOUS');}},job,target),/AMBIGUOUS/);
+assert.throws(()=>resolveFrozenTarget({...native,destination_:()=>({cell:{...moved,sheet:{getSheetId:()=>99}}})},job,target),/SHEET_CHANGED/);
+console.log('PASS native relocation, immutable receipt identity, ambiguous names and cross-sheet refusal; 0 AI.');

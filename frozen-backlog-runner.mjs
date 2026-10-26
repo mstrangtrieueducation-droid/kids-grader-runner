@@ -39,7 +39,7 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
    if(!batch.length)return choose();return {batch,entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
   };
   await new Promise((resolve,reject)=>{
-   let stopped=0;
+   let stopped=0;const restarts=new Map();
    const schedule=w=>{if(w.busy||!w.connected)return;const work=w.retire?[]:choose();if(!work.batch?.length){
     const dueLater=q.items.some(x=>x.state==='RETRY'&&!attempted.has(x.id)&&x.nextAt<deadline-120000);
     if(!w.retire&&Date.now()<deadline-120000&&(active.size||dueLater)){setTimeout(()=>schedule(w),2000);return;}
@@ -47,7 +47,7 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
    }
     for(const {item,entry} of work.batch){attempted.add(item.id);item.state='CLAIMED';item.claim={runId:process.env.GITHUB_RUN_ID,worker:w.slot,jobId:entry.job.id,row:entry.row,controlId:work.controlId,at:new Date().toISOString()};}durable(work.batch.map(x=>x.item));w.busy=true;active.set(w.pid,work);w.send(work);
    };
-   for(let slot=0;slot<4;slot++){
+   const launch=slot=>{
     const dir=path.join(root,'private','campaign-workers',String(slot));fs.mkdirSync(dir,{recursive:true});
     for(const name of fs.readdirSync(root)){if(['private','.git','node_modules','.runtime'].includes(name))continue;fs.cpSync(path.join(root,name),path.join(dir,name),{recursive:true});}
     const w=fork(path.join(dir,'frozen-backlog-worker.mjs'),[],{cwd:dir,env:{...process.env,FROZEN_BACKLOG_WORKER:String(slot+1),CAMPAIGN_PARENT_PID:String(process.pid),CAMPAIGN_HALT_FILE:haltFile,RUNNER_SHEET_BATCH:'0',GOOGLE_RATE_GATE_FILE:path.resolve(process.env.GOOGLE_RATE_GATE_FILE||path.join(root,'private','campaign-rate.json'))},silent:true});w.slot=slot;workers.push(w);
@@ -56,13 +56,24 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
      if(m.event==='READY')schedule(w);
      if(m.event==='CALL_STARTED'){providerCalls++;}
      if(m.event==='RESULT_BATCH'){
-      const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;item.state=r.state;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
+      const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;item.state=r.state;item.resolvedTarget=r.target||item.resolvedTarget;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
       active.delete(w.pid);w.busy=false;durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(item.state==='RETRY'&&item.nextAt>Date.now())attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
       if(Math.floor(verified/50)*50>milestone){milestone=Math.floor(verified/50)*50;console.log(JSON.stringify({event:'CAMPAIGN_VERIFIED_MILESTONE',verified,total:q.total,providerCalls}));}schedule(w);
      }
     }catch(e){w.retire=true;reject(e);}});
-    w.on('exit',code=>{try{const work=active.get(w.pid);active.delete(w.pid);w.busy=false;if(work){for(const {item} of work.batch){item.state='HELD';item.error='WORKER_EXIT_RECHECK_NATIVE_LEDGER';}durable(work.batch.map(x=>x.item));}stopped++;if(stopped===4)resolve();}catch(e){reject(e);}});w.on('error',reject);
-   }
+    w.on('exit',code=>{try{const work=active.get(w.pid);active.delete(w.pid);w.busy=false;
+     if(work){
+      // A dead process cannot still issue a call. Refresh durable Jobs before any
+      // replacement claims: saved raw wins and uncertain paid requests stay held.
+      entriesByControl.set(work.controlId,readNativeQueue(g,work.controlId));
+      for(const {item} of work.batch){item.state='HELD';item.error='WORKER_EXIT_RECHECK_NATIVE_LEDGER';if(!item.workerRecoveryRuns?.includes(process.env.GITHUB_RUN_ID)){item.workerRecoveryRuns=[...(item.workerRecoveryRuns||[]),process.env.GITHUB_RUN_ID];attempted.delete(item.id);}}
+      durable(work.batch.map(x=>x.item));
+     }
+     const n=restarts.get(slot)||0;
+     if(work&&!w.retire&&!fs.existsSync(haltFile)&&Date.now()<deadline-120000&&n<3){restarts.set(slot,n+1);console.log(JSON.stringify({event:'CAMPAIGN_WORKER_RESTART',slot,attempt:n+1}));launch(slot);return;}
+     stopped++;if(stopped===4)resolve();
+    }catch(e){reject(e);}});w.on('error',reject);
+   };for(let slot=0;slot<4;slot++)launch(slot);
   });
   const report={at:new Date().toISOString(),campaignId:q.campaignId,total:q.total,workers:4,attempted:attempted.size,providerCalls,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};fs.writeFileSync(path.join(root,'private','campaign-report.json'),JSON.stringify(report));console.log(JSON.stringify({event:'CAMPAIGN_RUN_COMPLETE',...report}));return report;
  }finally{fs.writeFileSync(haltFile,'COORDINATOR_DRAINING');for(const w of workers)w.retire=true;if(workers.some(w=>w.connected))await Promise.all(workers.filter(w=>w.connected).map(w=>new Promise(resolve=>{w.once('exit',resolve);if(!w.busy)w.send({stop:true});})));clearInterval(beats);for(const l of leases.reverse())l.release();release();}
