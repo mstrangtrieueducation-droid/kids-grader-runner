@@ -5,7 +5,7 @@ export function installSubmissionSourceGate(c,{g,service,sourceId,isLatest,publi
  const step=c.step_,generate=c.generate_;
  c.step_=(j,row,...args)=>{
   if(hasSavedResult(j)||hasRequest(j))return step(j,row,...args);
-  if(!isLatest(j))return;
+  if(!isLatest(j)){j.status='SKIPPED_OLD_SUBMISSION';j.error='';j.nextAt=0;j.sourceFreshness={state:'NOT_LATEST',checkedAt:new Date().toISOString()};c.persist_(j,row);return;}
   if(typeof c.destination_==='function'){const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(cell.getFormula?.()||cell.getDataValidation?.()||c.hasFeedback_?.(cell.getDisplayValue()))return step(j,row,...args);}
   const result=inspectSubmissionSource({text:j.receipt.links,service,metadata:id=>g.fileMeta(id)});
   j.sourceIntake={...result,input:normalizeInput(j.receipt.links),receivedAt:j.receipt.time};

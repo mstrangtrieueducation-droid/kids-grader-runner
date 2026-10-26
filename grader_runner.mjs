@@ -1,6 +1,7 @@
 import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait,existingKidsCandidates} from './priority-kids-drain.mjs';
 import {savedDeliveryCandidates,reconcileSavedDelivery,savedDeliveryWork} from './saved-delivery-repair.mjs';
 import {prepareKidsDrain,existingSliceEnded,savedPassTracker} from './kids-intake-order.mjs';
+import {forwardProgressTracker,workFingerprint} from './drain-forward-progress.mjs';
 import {reusePreparedDownload} from './universal-media.mjs';
 import {installSourceAccessNotices} from './source-access-notices.mjs';
 import {createCurrentRosterCheck,markNotCurrent} from './current-roster-policy.mjs';
@@ -65,6 +66,7 @@ const universalMedia=createMediaService({g:google,root,ffmpeg});
 const emit=x=>console.log(JSON.stringify({...x,at:new Date().toISOString()}));
 let finished=0,paidCalls=0;const outcomes=[];
 const savedPass=savedPassTracker();
+const forwardProgress=forwardProgressTracker();
 const recoveredClusters=new Set(),preparedClusters=new Set(),contexts=new Map(),lastScans=new Map(),referenceUploads=new Map();
 let referenceStoreLoaded=false;
 function referenceStore(){
@@ -403,7 +405,7 @@ function runCluster(cluster,pass=0,phase='all',savedOnly=false){
  const phaseWork=savedOnly?savedDeliveryWork(ordinaryWork):phase==='ready'?criticalPriorityWork(queued,ordinaryWork,j=>c.isPendingCriticalCorrection_?.(j)||j.sheetTruth?.youtubeNoticeRepair==='teacher-youtube-download-classification-20261023'):ordinaryWork;
  const sliceStartedAt=Date.now();
  for(const {job,row} of phaseWork){
-  if(!savedPass.allows(job))continue;
+  if(!savedPass.allows(job)||!forwardProgress.allows(job))continue;
   if(existingSliceEnded({phase,savedOnly,attempted:attempted.size,startedAt:sliceStartedAt}))break;
   if(Date.now()>until-90000||finished>=maxJobs||paidCalls>=maxApiCalls||args.has('--drain')&&attempted.size>=(phase==='priority'?20:phase==='repair'?2:phase==='prepare'?1:process.env.RUNNER_SHEET_BATCH==='1'?20:8))break;if(selected&&job.cls.className!==selected)continue;
   if(args.has('--routing-recovery-only')&&!job.routingRecovery)continue;
@@ -415,9 +417,9 @@ function runCluster(cluster,pass=0,phase='all',savedOnly=false){
   if(!['WAITING_INPUT','QUEUED','READY','WAITING_MEDIA','RETRY','PROCESSING','GRADED'].includes(job.status))continue;
   savedPass.record(job);
   emit({event:'JOB_STARTED',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status});
-  const jobStarted=Date.now(),metricBefore={...google.metrics};
+  const jobStarted=Date.now(),metricBefore={...google.metrics},beforeWork=workFingerprint(job);
   try{c.preparePoolRetry_(job,row);c.step_(job,row,Math.min(until,Date.now()+20*60000),{});}catch(e){try{c.handleError_(job,row,e);}catch(handlerError){job.status='RETRY';job.error=e.message;job.handlerError=handlerError.message;job.nextAt=Date.now()+300000;try{c.persist_(job,row);}catch(persistError){emit({event:'JOB_STATE_WRITE_ERROR',id:job.id,error:safeError(persistError)});}}}
-  settleSheetTruth({job,resolve:()=>c.destination_(job.cls,job.route,job.receipt.student).cell,save:()=>c.persist_(job,row),emit});if(attempted.size%10===0||savedOnly&&MASTER_TERMINAL.has(job.status))ramBatch?.flush();
+  settleSheetTruth({job,resolve:()=>c.destination_(job.cls,job.route,job.receipt.student).cell,save:()=>c.persist_(job,row),emit});if(!forwardProgress.observe(job,beforeWork))emit({event:'NO_FORWARD_PROGRESS_DEFERRED',providerCalls:0});if(attempted.size%10===0||savedOnly&&MASTER_TERMINAL.has(job.status))ramBatch?.flush();
   emit({event:'JOB',id:job.id,student:job.receipt.student,className:job.cls.className,code:job.route.code,status:job.status,error:job.error||'',cell:job.cell||'',phase,elapsedMs:Date.now()-jobStarted,sheetCalls:google.metrics.sheetCalls-metricBefore.sheetCalls,sheetMs:google.metrics.sheetMs-metricBefore.sheetMs,audio:job.media?.filter(m=>!m.isReference).map(m=>m.runnerAudio||null)});outcomes.push({id:job.id,status:job.status,className:job.cls.className});if(MASTER_TERMINAL.has(job.status)){finished++;if(!ramBatch)updateProgress(c,cluster,'RUNNER — ĐANG CHẤM BÙ / TỰ ĐỘNG',{student:job.receipt.student,className:job.cls.className,code:job.route.code,cell:job.cell,status:job.status});}
  }
  emit({event:'CLUSTER_COMPLETE',account:cluster.email,counts:c.loadJobs_().reduce((a,x)=>(a[x.job.status]=(a[x.job.status]||0)+1,a),{})});

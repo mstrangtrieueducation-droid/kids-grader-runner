@@ -1,0 +1,7 @@
+import assert from 'node:assert/strict';import {forwardProgressTracker,workFingerprint} from './drain-forward-progress.mjs';
+let calls=0;const stuck={id:'noop',status:'READY',generateRequests:0,media:[]},next={id:'next',status:'READY',generateRequests:0},partial={id:'partial',status:'WAITING_MEDIA',media:[{id:'source',runnerDownloadBytes:10}]},tracker=forwardProgressTracker(),original=JSON.stringify(stuck);
+for(let pass=0;pass<30;pass++)for(const job of [stuck,next,partial]){if(!tracker.allows(job))continue;const before=workFingerprint(job);if(job===next&&job.status==='READY'){calls++;job.status='RETURNED';job.rawId='immutable-result';}if(job===partial)job.media[0].runnerDownloadBytes++;tracker.observe(job,before);}
+assert.equal(calls,1);assert.equal(JSON.stringify(stuck),original);assert(!tracker.allows(stuck));assert(tracker.allows(partial));assert(forwardProgressTracker().allows(stuck),'later writer can retry a stalled record');
+stuck.sourceIntake={state:'valid',reason:'DOWNLOAD_CONFIRMED'};assert(tracker.allows(stuck),'changed prerequisite reopens within current writer');
+const saved={id:'saved',rawId:'paid-original',generateRequests:1,usage:{tokens:40},status:'READY'},snapshot=JSON.stringify(saved);tracker.observe(saved,workFingerprint(saved));assert.equal(JSON.stringify(saved),snapshot);assert(!tracker.allows(saved));
+console.log('PASS unchanged job cannot monopolize drain; next record runs; real partial-download progress continues; changed prerequisites and later writers retry; immutable paid evidence; 0 API/0 Sheet writes.');
