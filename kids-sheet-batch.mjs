@@ -23,10 +23,12 @@ export function replaySheetBatches(g,cluster,journalDir,{emit=()=>{}}={}){
   fs.unlinkSync(p);emit({event:'SHEET_BATCH_REPLAYED',file});
  }
 }
-export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{}}={}){
+export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{},classOnly=false}={}){
  installBatchAdapter();replaySheetBatches(g,cluster,journalDir,{emit});
  const active=new Map(),originalBook=g.book,originalPreload=g.preloadSource,sourceReads=new Set(),journal=path.join(journalDir,cluster.controlId+'-'+Date.now()+'.json');
- const ids=new Set([cluster.controlId,...cluster.classes.map(c=>c.spreadsheetId)]);
+ // Parallel campaign workers share native control/artifact sheets. Those writes
+ // must use server append/immediate checkpoints, never stale absolute RAM rows.
+ const ids=new Set([...(classOnly?[]:[cluster.controlId]),...cluster.classes.map(c=>c.spreadsheetId)]);
  const writeJournal=()=>{const books=[...active.values()].filter(b=>b.requests.length).sort((a,b)=>(a.book.id===cluster.controlId?1:0)-(b.book.id===cluster.controlId?1:0)).map(b=>({id:b.book.id,requests:b.requests,...(sheetTruthEnabled()?{expected:[...b.expected.values()]}:{})}));if(books.length){const temp=journal+'.tmp';fs.writeFileSync(temp,JSON.stringify({at:new Date().toISOString(),books}));fs.renameSync(temp,journal);}};
  function load(id){
   if(active.has(id))return active.get(id).book;
@@ -63,5 +65,5 @@ export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{}}={}){
  }
  const session={stage,flush,close,checkpointControl};g.book=function(id){return ids.has(id)?load(id):originalBook.call(g,id);};
  if(originalPreload)g.preloadSource=function(id,width,names){if(ids.has(id)){load(id);return;}const key=JSON.stringify([id,width,names]);if(sourceReads.has(key))return;originalPreload.call(g,id,width,names);sourceReads.add(key);};
- try{load(cluster.controlId);}catch(e){g.book=originalBook;if(originalPreload)g.preloadSource=originalPreload;throw e;}return session;
+ try{if(!classOnly)load(cluster.controlId);}catch(e){g.book=originalBook;if(originalPreload)g.preloadSource=originalPreload;throw e;}return session;
 }

@@ -9,7 +9,7 @@ async function main(){
  const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","new-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs","automatic-work-queue-tests.mjs","linked-destination-binding-tests.mjs","retired-reference-inputs-tests.mjs","source-input-guards-tests.mjs"];runTest('automatic-authorization-tests.mjs');runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  runTest('master-cross-class-sweep-tests.mjs');runTest('master-first-snapshot-tests.mjs');runTest('student-speech-evidence-tests.mjs');runTest('master-submission-scope-tests.mjs');runTest('saved-speaking-consistency-tests.mjs');
  runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');runTest('saved-delivery-repair-tests.mjs');runTest('kids-intake-order-tests.mjs');runTest('batch-artifact-index-tests.mjs');runTest('current-batch-snapshot-tests.mjs');runTest('drain-forward-progress-tests.mjs');
- runTest('submission-assignment-scope-tests.mjs');
+ runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');
  runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
  runTest('continuous-dispatcher-tests.mjs');
@@ -39,6 +39,15 @@ async function main(){
  if(mode==='audit'){
   const counts={};for(const id of lane==='kids'?config.clusters.map(c=>c.controlId):[config.shadowing.controlId]){const range=lane==='kids'?"'Jobs'!F2:F5000":"'SHADOWING AI'!F2:F5000";const rows=google.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+encodeURIComponent(range)).values||[];for(const r of rows)if(r[0]){try{const j=JSON.parse(r[0]);counts[j.status]=(counts[j.status]||0)+1;}catch{counts.INVALID=(counts.INVALID||0)+1;}}}
   console.log(JSON.stringify({audit:true,counts,providerGenerateCalls:0}));return;
+ }
+ if(fs.existsSync(path.join(root,'backlog_563.enc'))){
+  const encrypted=fs.readFileSync(path.join(root,'backlog_563.enc'));if(encrypted.subarray(0,4).toString()!=='FB01')throw Error('BACKLOG_ENVELOPE_INVALID');
+  const decoder=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),encrypted.subarray(4,16));decoder.setAAD(Buffer.from(repository+'/frozen-backlog'));decoder.setAuthTag(encrypted.subarray(16,32));
+  const target=path.join(root,'private','backlog_563.json');fs.writeFileSync(target,gunzipSync(Buffer.concat([decoder.update(encrypted.subarray(32)),decoder.final()])));
+  // One GitHub writer/coordinator, four isolated media/AI workers, native leases.
+  process.env.GOOGLE_SHEETS_INTERVAL_MS='1500';process.env.GOOGLE_RATE_GATE_FILE=path.join(root,'private','campaign-google-rate.json');
+  const {runFrozenBacklog}=await import('./frozen-backlog-runner.mjs');const report=await runFrozenBacklog(target);
+  if(report.attempted||(report.counts.VERIFIED_WRITTEN||0)+(report.counts.ALREADY_PRESENT||0)<report.total)return;
  }
  let finished=0,requests=0;
  if(lane==='kids'){
