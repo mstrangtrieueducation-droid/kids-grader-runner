@@ -2,7 +2,7 @@ import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:c
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
-export async function runFrozenBacklog(file,{minutes=45}={}){
+export async function runFrozenBacklog(file,{minutes=300}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
  const q=validateBacklog(JSON.parse(fs.readFileSync(file))),{runnerGoogle:g}=await import('./grader_runner.mjs');
  const deadline=Date.now()+minutes*60000,release=localGuard(path.join(root,'private','runner.lock')),leases=[],workers=[],entriesByControl=new Map(),active=new Map();
@@ -39,7 +39,11 @@ export async function runFrozenBacklog(file,{minutes=45}={}){
   };
   await new Promise((resolve,reject)=>{
    let stopped=0;
-   const schedule=w=>{if(w.busy)return;const work=w.retire?[]:choose();if(!work.batch?.length){w.send({stop:true});return;}
+   const schedule=w=>{if(w.busy||!w.connected)return;const work=w.retire?[]:choose();if(!work.batch?.length){
+    const dueLater=q.items.some(x=>x.state==='RETRY'&&!attempted.has(x.id)&&x.nextAt<deadline-120000);
+    if(!w.retire&&Date.now()<deadline-120000&&(active.size||dueLater)){setTimeout(()=>schedule(w),2000);return;}
+    w.send({stop:true});return;
+   }
     w.busy=true;active.set(w.pid,work);for(const {item,entry} of work.batch){attempted.add(item.id);item.state='CLAIMED';item.claim={runId:process.env.GITHUB_RUN_ID,worker:w.slot,jobId:entry.job.id,row:entry.row,controlId:work.controlId,at:new Date().toISOString()};}durable(work.batch.map(x=>x.item));w.send(work);
    };
    for(let slot=0;slot<4;slot++){
@@ -52,7 +56,7 @@ export async function runFrozenBacklog(file,{minutes=45}={}){
      if(m.event==='CALL_STARTED'){providerCalls++;}
      if(m.event==='RESULT_BATCH'){
       const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;item.state=r.state;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
-      durable(work.batch.map(x=>x.item));active.delete(w.pid);w.busy=false;verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
+      durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(item.state==='RETRY'&&item.nextAt>Date.now())attempted.delete(item.id);active.delete(w.pid);w.busy=false;verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
       if(Math.floor(verified/50)*50>milestone){milestone=Math.floor(verified/50)*50;console.log(JSON.stringify({event:'CAMPAIGN_VERIFIED_MILESTONE',verified,total:q.total,providerCalls}));}schedule(w);
      }
     }catch(e){w.retire=true;reject(e);}});
@@ -60,6 +64,6 @@ export async function runFrozenBacklog(file,{minutes=45}={}){
    }
   });
   const report={at:new Date().toISOString(),campaignId:q.campaignId,total:q.total,workers:4,attempted:attempted.size,providerCalls,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};fs.writeFileSync(path.join(root,'private','campaign-report.json'),JSON.stringify(report));console.log(JSON.stringify({event:'CAMPAIGN_RUN_COMPLETE',...report}));return report;
- }finally{clearInterval(beats);for(const w of workers)w.retire=true;if(workers.some(w=>w.connected))await Promise.all(workers.filter(w=>w.connected).map(w=>new Promise(resolve=>{w.once('exit',resolve);if(!w.busy)w.send({stop:true});})));for(const l of leases.reverse())l.release();release();}
+ }finally{for(const w of workers)w.retire=true;if(workers.some(w=>w.connected))await Promise.all(workers.filter(w=>w.connected).map(w=>new Promise(resolve=>{w.once('exit',resolve);if(!w.busy)w.send({stop:true});})));clearInterval(beats);for(const l of leases.reverse())l.release();release();}
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))await runFrozenBacklog(process.env.FROZEN_BACKLOG_FILE);
