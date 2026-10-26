@@ -1,9 +1,12 @@
 import {cellEvidence,expectedBindings,guardClassRequests} from './sheet-truth-write-guard.mjs';
+import fs from 'node:fs';
 // Recheck the actual class cell before any paid call, even when its class batch
 // was loaded several minutes earlier. Reuse the existing native binding guard.
 export function installFrozenGenerationGuard(c,g){
  const generate=c.generate_;c.generate_=(job,...args)=>{
   if(!job.rawId&&!job.gradeId){
+   if(process.env.CAMPAIGN_HALT_FILE&&fs.existsSync(process.env.CAMPAIGN_HALT_FILE))throw Error('CAMPAIGN_COORDINATOR_STOPPED');
+   if(process.env.CAMPAIGN_PARENT_PID)process.kill(Number(process.env.CAMPAIGN_PARENT_PID),0);
    const cell=c.destination_(job.cls,job.route,job.receipt.student).cell,sheet=cell.sheet,master=sheet.book.cache.get(sheet.getName()+'|master');
    if(!master)throw Error('CAMPAIGN_CLASS_SNAPSHOT_MISSING');
    const row=cell.getRow()-1,col=cell.getColumn()-1,key=[sheet.getSheetId(),row,col].join('|');

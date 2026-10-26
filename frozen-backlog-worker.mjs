@@ -23,7 +23,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
  try{for(const {item,entry,executable} of batch){
  let result;try{
   if(!matchesTarget(entry.job,item.target))throw Error('CAMPAIGN_JOB_BINDING_INVALID');
-  if(Date.now()>deadline-120000){results.push({itemId:item.id,target:item.target,result:{state:'RETRY',error:'CAMPAIGN_SOFT_DEADLINE',nextAt:Date.now()+60000,job:entry.job}});continue;}
+  if(Date.now()>deadline-120000||process.env.CAMPAIGN_HALT_FILE&&fs.existsSync(process.env.CAMPAIGN_HALT_FILE)){results.push({itemId:item.id,target:item.target,result:{state:'RETRY',error:'CAMPAIGN_SOFT_DEADLINE',nextAt:Date.now()+60000,job:entry.job}});continue;}
   // No RAM queue/artifact writer: native append returns the server allocated rows.
   // Every reservation and raw save is immediately durable in the native ledger.
   c.loadJobs_=()=>entries;const nativePersist=c.campaignNativePersist_||c.persist_;c.campaignNativePersist_=nativePersist;
