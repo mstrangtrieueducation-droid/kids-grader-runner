@@ -43,6 +43,10 @@ export function appendNativeItems(previous,entries,resolve,{now=Date.now(),appro
  }
  q.total=q.items.length;q.membershipHash=digest(q.items.map(x=>x.id));validateBacklog(q);return {queue:q,added};
 }
+export function mergeDurableNativeItem(prepared,saved){
+ const proof=prepared.readbackRecovery;
+ return proof&&prepared.id===saved.id&&prepared.state==='PENDING_VALIDATION'&&saved.state===proof.previousState&&(saved.verifiedAt||null)===proof.previousVerifiedAt&&JSON.stringify(saved.attempts)===JSON.stringify(prepared.attempts)?prepared:saved;
+}
 export function preparationProgress(j){
  return digest({raw:j.rawId,grade:j.gradeId,status:j.status,requests:j.generateRequests,input:j.snapshotId||j.inputId,transport:j.campaignTransportProgress,
   media:(j.media||[]).map(m=>({id:m.id,download:m.runnerDownloadBytes,upload:m.upload?.offset,runner:m.runnerUpload?.offset,prepared:m.universalAudio?.segments?.map(s=>[s.sha256,s.fileUri])}))});

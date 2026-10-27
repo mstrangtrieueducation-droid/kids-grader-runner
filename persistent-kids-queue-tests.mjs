@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed,workerOwnsPreparation} from './persistent-kids-queue.mjs';
+import {appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed,workerOwnsPreparation,mergeDurableNativeItem} from './persistent-kids-queue.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {pedagogicSpans} from './pedagogical-language.mjs';
 const job={id:'synthetic-1',status:'READY',cls:{className:'KIDS 90',spreadsheetId:'synthetic-class'},receipt:{className:'KIDS 90',student:'SYNTHETIC PUPIL',code:'SCIENCE-G1-01',time:'2026-10-25T10:00:00Z',links:'synthetic-source'},route:{code:'SCIENCE-G1-01'},media:[{id:'synthetic-media'}]},entry={row:2,job};
@@ -30,3 +30,7 @@ assert.deepEqual(recovered.queue.items[0].attempts,first.queue.items[0].attempts
 assert.equal(recheckJob.generateRequests,1);assert.equal(recheckJob.rawId,'synthetic-durable-raw');
 assert.equal(appendNativeItems(first.queue,[{row:2,job:recheckJob}],()=>null,{reopenResolved:true}).queue.items[0].state,'VERIFIED_WRITTEN','a current teacher comment or protected cell prevents reopening');
 assert.equal(appendNativeItems(first.queue,[{row:2,job:{...recheckJob,status:'RETURNED'}}],resolve,{reopenResolved:true}).added,0,'the real native Sheet reconciliation must first authorize saved recovery');
+
+assert.deepEqual(mergeDurableNativeItem(recovered.queue.items[0],first.queue.items[0]),recovered.queue.items[0],'server manifest refresh must retain exactly proven Sheet-truth recovery');
+const advanced={...first.queue.items[0],state:'HELD',attempts:[{calls:1},{calls:0}]};
+assert.equal(mergeDurableNativeItem(recovered.queue.items[0],advanced),advanced,'never replace a concurrently advanced durable row');

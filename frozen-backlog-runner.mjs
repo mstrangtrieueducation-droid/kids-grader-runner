@@ -1,7 +1,7 @@
 import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed,cacheFirstItems,resultNativeClaim} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
-import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA,workerOwnsPreparation} from './persistent-kids-queue.mjs';
+import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA,workerOwnsPreparation,mergeDurableNativeItem} from './persistent-kids-queue.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
 export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
@@ -20,7 +20,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   beats=setInterval(()=>{try{for(const l of leases)l.heartbeat();}catch(e){fs.writeFileSync(haltFile,'LEASE_CHECK_FAILED');for(const w of workers)w.retire=true;}},60000);
   const book=g.book(control);let sheet=book.getSheetByName(tab);if(!sheet){sheet=book.insertSheet(tab);sheet.getRange(1,1,1,6).setValues([['itemId','state','updatedAt','runId','membershipHash','itemJson']]);}
   const existing=g.api(base+'/values/'+encodeURIComponent("'"+tab+"'!A2:F"+(q.total+1))).values||[];
-  if(existing.length){const append=table==='KidsTodo'&&existing.length<q.total,oldHash=existing[0][4];if((append?existing.length>q.total:existing.length!==q.total)||existing.some((r,i)=>r[0]!==q.items[i].id||r[4]!==oldHash)||!append&&oldHash!==q.membershipHash||append&&oldHash!==validateBacklog({...q,total:existing.length,items:q.items.slice(0,existing.length),membershipHash:oldHash}).membershipHash)throw Error('DURABLE_BACKLOG_MEMBERSHIP_MISMATCH');existing.forEach((r,i)=>{const saved=JSON.parse(r[5]);if(saved.id!==q.items[i].id)throw Error('DURABLE_ITEM_INVALID');q.items[i]=saved;});if(append)durable(q.items);}
+  if(existing.length){const append=table==='KidsTodo'&&existing.length<q.total,oldHash=existing[0][4];if((append?existing.length>q.total:existing.length!==q.total)||existing.some((r,i)=>r[0]!==q.items[i].id||r[4]!==oldHash)||!append&&oldHash!==q.membershipHash||append&&oldHash!==validateBacklog({...q,total:existing.length,items:q.items.slice(0,existing.length),membershipHash:oldHash}).membershipHash)throw Error('DURABLE_BACKLOG_MEMBERSHIP_MISMATCH');const reopened=[];existing.forEach((r,i)=>{const saved=JSON.parse(r[5]);if(saved.id!==q.items[i].id)throw Error('DURABLE_ITEM_INVALID');const merged=table==='KidsTodo'?mergeDurableNativeItem(q.items[i],saved):saved;q.items[i]=merged;if(merged!==saved)reopened.push(merged);});if(append)durable(q.items);else if(reopened.length)durable(reopened);}
   else durable(q.items);
   // Read only the existing persistent ledgers, never discovery across classes/Form.
   for(const cluster of config.clusters)entriesByControl.set(cluster.controlId,readNativeQueue(g,cluster.controlId));
