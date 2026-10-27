@@ -1,4 +1,5 @@
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
+import {replaySavedClassBatch} from './campaign-saved-replay.mjs';
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
 import {matchesTarget,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
@@ -32,7 +33,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   c.teacherApprovalJobs_=entries;c.teacherApprovalSession_=approvalSession(g,config.clusters[0].controlId);
   const j=entry.job;
   const {cell,target:resolvedTarget}=resolveFrozenTarget(c,j,item.target);
-  const before=cell.getDisplayValue();let recovered=false,noAudio=false;
+  const before=cell.getDisplayValue(),beforeNote=cell.getNote();let recovered=false,noAudio=false;
   const approval=c.teacherApprovalSession_.approved.get(j.id),manual=!!approval&&!approval.automatic&&String(approval.sourceLink).includes('/'+controlId+'/')&&String(approval.sourceLink).includes('A'+entry.row+':F'+entry.row)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(before);
   if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);}
   if(hasTeacherReview(before)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
@@ -59,6 +60,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
    result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.rosterEligibility?.state==='NOT_IN_CURRENT_ROSTER'?'SKIPPED_NOT_IN_CURRENT_ROSTER':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:Number(j.nextAt)||0};
   }
   result.target=resolvedTarget;
+  result.beforeNote=beforeNote;if(result.state==='STAGED')result.deliveryCell=structuredClone(c.destination_(j.cls,j.route,j.receipt.student).cell.cells()[0]?.values?.[0]);
  }catch(e){let retired=false;try{retired=closeRetiredCampaignRecord(c,entry.job,entry.row,e);}catch{}result={state:retired?'SKIPPED_NOT_IN_CURRENT_ROSTER':'HELD',error:retired?null:/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',job:entry.job};}
  if(c.runnerUniversalMedia_?.downloadProgress)result.job.campaignTransportProgress=c.runnerUniversalMedia_.downloadProgress();
  results.push({itemId:item.id,target:item.target,result});
@@ -67,6 +69,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
  // Native batch guard has now checked fresh names, headers and teacher edits.
  // Read the real class grid once, never count the staged RAM value as delivery.
  for(const id of new Set(batch.map(x=>x.item.target.spreadsheetId))){const cls=cluster.classes.find(x=>x.spreadsheetId===id);const book=g.book(id),sheet=book.getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
+ for(const id of replaySavedClassBatch(c,g,results)){const cls=cluster.classes.find(x=>x.spreadsheetId===id),sheet=g.book(id).getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
  for(const out of results){const {result:r,target:t}=out;if(r.state==='STAGED'){
   const actual=resolveFrozenTarget(c,r.job,t).cell,text=actual.getDisplayValue();
   const exact=actual.sheet.getSheetId()===r.target.sheetId&&actual.getA1Notation()===r.target.cell;

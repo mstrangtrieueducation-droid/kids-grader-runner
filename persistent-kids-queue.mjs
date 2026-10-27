@@ -9,6 +9,7 @@ import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 import {approvalSession} from './teacher-approval-guards.mjs';
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export const NATIVE_TODO_SCHEMA='kids-native-todo-v1';
+export const discoveryAllowed=(frozenRemaining,todo)=>frozenRemaining===0&&!todo.items.some(x=>!campaignClosed(x.state));
 export function appendNativeItems(previous,entries,resolve,{now=Date.now(),approved=new Set()}={}){
  const q=previous?structuredClone(validateBacklog(previous)):{schema:NATIVE_TODO_SCHEMA,campaignId:'native-kids-persistent-4',workers:4,total:0,items:[],membershipHash:digest([])};
  if(q.schema!==NATIVE_TODO_SCHEMA)throw Error('NATIVE_TODO_SCHEMA_REQUIRED');

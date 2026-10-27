@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import {appendNativeItems,preparationProgress,retryProgressTracker} from './persistent-kids-queue.mjs';
+import {appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed} from './persistent-kids-queue.mjs';
 import {pedagogicSpans} from './pedagogical-language.mjs';
 const job={id:'synthetic-1',status:'READY',cls:{className:'KIDS 90',spreadsheetId:'synthetic-class'},receipt:{className:'KIDS 90',student:'SYNTHETIC PUPIL',code:'SCIENCE-G1-01',time:'2026-10-25T10:00:00Z',links:'synthetic-source'},route:{code:'SCIENCE-G1-01'},media:[{id:'synthetic-media'}]},entry={row:2,job};
 const resolve=e=>({spreadsheetId:e.job.cls.spreadsheetId,className:e.job.cls.className,sheetId:20,cell:'D5',student:e.job.receipt.student,code:e.job.receipt.code,submissionAt:e.job.receipt.time});
 const first=appendNativeItems(null,[entry],resolve);assert.equal(first.added,1);assert.equal(first.queue.workers,4);first.queue.items[0].state='VERIFIED_WRITTEN';first.queue.items[0].attempts.push({calls:1});
 const same=appendNativeItems(first.queue,[entry],resolve);assert.equal(same.added,0);assert.deepEqual(same.queue.items,first.queue.items);
+assert(discoveryAllowed(0,first.queue));assert(!discoveryAllowed(1,first.queue),'frozen pending work forbids another full-class discovery');assert(!discoveryAllowed(0,{items:[{state:'RETRY',nextAt:Date.now()+60000}]}),'a future retry remains queued work');assert(discoveryAllowed(0,{items:[{state:'SKIPPED_NOT_IN_CURRENT_ROSTER'},{state:'PROTECTED'}]}));
 const later={row:3,job:{...job,id:'synthetic-2',receipt:{...job.receipt,time:'2026-10-26T10:00:00Z'}}};const next=appendNativeItems(first.queue,[{...entry,job:{...job,status:'RETURNED',rawId:'saved'}},later],resolve);assert.equal(next.added,1);assert.equal(next.queue.total,2);assert.deepEqual(next.queue.items[0],first.queue.items[0]);
 assert.equal(appendNativeItems(null,[entry,{row:4,job:{...job,id:'paid-duplicate',generateRequests:1}}],resolve).added,0);
 assert.equal(appendNativeItems(null,[entry],()=>null).added,0);

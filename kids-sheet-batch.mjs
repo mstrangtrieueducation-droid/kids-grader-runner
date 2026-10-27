@@ -9,8 +9,9 @@ const typed=v=>v instanceof Date?{stringValue:v.toISOString()}:typeof v==='numbe
 let installed=false;
 export function installBatchAdapter(){
  if(installed)return;installed=true;
- const set=Range.prototype.setValues,append=Sheet.prototype.appendRows,batch=Book.prototype.batch;
+ const set=Range.prototype.setValues,clear=Range.prototype.clearContent,append=Sheet.prototype.appendRows,batch=Book.prototype.batch;
  Range.prototype.setValues=function(values){if(!this.sheet.book.ramBatch)return set.call(this,values);this.sheet.book.ramBatch.stage(this.sheet.book,{updateCells:{range:{sheetId:this.sheet.getSheetId(),startRowIndex:this.r-1,endRowIndex:this.r+this.nr-1,startColumnIndex:this.c-1,endColumnIndex:this.c+this.nc-1},rows:values.map(row=>({values:row.map(v=>({userEnteredValue:typed(v)}))})),fields:'userEnteredValue'}});return this;};
+ Range.prototype.clearContent=function(){if(!this.sheet.book.ramBatch)return clear.call(this);return this.setValues(Array.from({length:this.nr},()=>Array(this.nc).fill('')));};
  Sheet.prototype.appendRows=function(values){if(!this.book.ramBatch)return append.call(this,values);const row=this.getLastRow()+1;this.lastAppendRow=row;this.getRange(row,1,values.length,Math.max(...values.map(r=>r.length))).setValues(values);return this;};
  Book.prototype.batch=function(requests){if(!this.ramBatch)return batch.call(this,requests);for(const r of requests)this.ramBatch.stage(this,r);return {};};
 }
