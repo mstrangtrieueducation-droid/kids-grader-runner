@@ -46,7 +46,9 @@ async function main(){
   const decoder=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),encrypted.subarray(4,16));decoder.setAAD(Buffer.from(repository+'/frozen-backlog'));decoder.setAuthTag(encrypted.subarray(16,32));
   const target=path.join(root,'private','backlog_563.json');fs.writeFileSync(target,gunzipSync(Buffer.concat([decoder.update(encrypted.subarray(32)),decoder.final()])));
   // One GitHub writer/coordinator, four isolated media/AI workers, native leases.
-  process.env.GOOGLE_SHEETS_INTERVAL_MS='1500';process.env.GOOGLE_RATE_GATE_FILE=path.join(root,'private','campaign-google-rate.json');
+  // Keep four media/AI workers while leaving Sheets quota room for the other
+  // grading lanes using the same service-account principal.
+  process.env.GOOGLE_SHEETS_INTERVAL_MS='2000';process.env.GOOGLE_RATE_GATE_FILE=path.join(root,'private','campaign-google-rate.json');
   const {runFrozenBacklog}=await import('./frozen-backlog-runner.mjs');const report=await runFrozenBacklog(target);
   const {campaignClosed}=await import('./frozen-backlog-policy.mjs');frozenRemaining=Object.entries(report.counts).filter(([state])=>!campaignClosed(state)).reduce((n,[,count])=>n+count,0);
   if(Date.now()>workDeadline-5*60000)return;
