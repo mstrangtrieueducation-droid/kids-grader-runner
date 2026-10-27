@@ -3,6 +3,7 @@ import {generationSpent} from './master-policy.mjs';
 import {emptyTeacherBody,receiptOnlyCell,auxiliaryListeningOnly} from './dashboard-feedback.mjs';
 export const DASHBOARD_REPROCESS_AUTH='teacher-dashboard-empty-feedback-20261014';
 export function dashboardReprocessPlan(job,text,childId){
+ if(job.invalidResultRetry)return null;
  if(!sourceInMasterScope(job.receipt)||job.rawId||job.gradeId||!generationSpent(job)||job.dashboardReprocessAuth||!(emptyTeacherBody(text)||auxiliaryListeningOnly(text))||!receiptOnlyCell(text)||!/ĐÃ NỘP/iu.test(text))return null;
  if([...(job.previousGradingAttempts||[]),...(job.failedAttempts||[])].some(x=>x.rawId||x.gradeId))return null; // recover archived paid output before considering another request
  // A new explicitly authorized attempt; original reservations and history remain
@@ -15,9 +16,10 @@ export function dashboardReprocessPlan(job,text,childId){
 export function authorizeEmptyDashboardReprocess(c,jobs,{emit=()=>{}}={}){
  const ids=new Set(jobs.map(x=>x.job.id)),added=[];
  for(const item of jobs){const j=item.job;if(j.providerRetryOrigin||j.supersededByProviderRetry||jobs.some(x=>x.job.providerRetryOrigin?.parentId===j.id)||j.dashboardReprocessAuth||j.supersededByDashboardRegrade||!sourceInMasterScope(j.receipt)||j.rawId||j.gradeId||!generationSpent(j))continue;
+  if(jobs.some(x=>x.job.invalidResultRetry?.parents?.some(p=>p.id===j.id)))continue;
   try{const dst=c.destination_(j.cls,j.route,j.receipt.student),cell=dst.cell;if(cell.getFormula()||cell.getDataValidation())continue;
    const id=c.hash_([DASHBOARD_REPROCESS_AUTH,j.id]);if(ids.has(id))continue;
-   const child=dashboardReprocessPlan(j,cell.getDisplayValue(),id);if(!child)continue;
+  const child=dashboardReprocessPlan(j,cell.getDisplayValue(),id);if(!child)continue;
    const row=c.persist_(child);j.previousDashboardReprocessStatus=j.status;j.supersededByDashboardRegrade=id;j.status='SUPERSEDED_BY_APPROVED_DASHBOARD_REPROCESS';c.persist_(j,item.row);ids.add(id);added.push({job:child,row});emit({event:'DASHBOARD_EMPTY_FEEDBACK_REPROCESS_AUTHORIZED',parentId:j.id,id,providerCalls:0});
   }catch(e){emit({event:'DASHBOARD_REPROCESS_TARGET_UNRESOLVED',id:j.id,error:String(e.message||'TARGET_UNKNOWN'),providerCalls:0});}
  }

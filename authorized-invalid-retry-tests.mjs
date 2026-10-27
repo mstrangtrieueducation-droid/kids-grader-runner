@@ -4,6 +4,8 @@ import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'invalid-retry-test-')),approvalFile=path.join(temp,'approval.json');process.env.INVALID_RESULT_RETRY_AUTH_FILE=approvalFile;
 import {automaticEligible} from './automatic-authorization.mjs';
 import {selectExisting} from './frozen-backlog-policy.mjs';
+import {providerRetryCandidate,planProviderRetries} from './provider-retry-policy.mjs';
+import {dashboardReprocessPlan,authorizeEmptyDashboardReprocess} from './dashboard-reprocess.mjs';
 const rejected={candidates:[{finishReason:'RECITATION'}]},valid={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({assessable:true,band:'0%',roseSections:[{label:'Feedback',text:'Actual assessment.'}]})}]}}]},unassessable={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({assessable:false,band:'',reason:'NO_SPEECH_DETECTED',roseSections:[]})}]}}]};
 const base={id:'SYNTHETIC-PARENT',cls:{spreadsheetId:'SYNTHETIC-BOOK',className:'KIDS 99'},route:{code:'DE-01',kind:'reading',sourceTab:'SYNTHETIC-FORM'},receipt:{className:'KIDS 99',student:'SYNTHETIC PUPIL',code:'DE-01',row:3,time:'2026-10-20T01:00:00.000Z',links:'https://drive.google.com/file/d/SYNTHETIC_SOURCE/view'},status:'SYSTEM_GRADING_ERROR',rawId:'old-raw',generateRequests:1,physicalGenerateRequests:1,apiUsage:{total:123},masterGenerationReserved:true};
 function fixture(changes={}){
@@ -21,6 +23,11 @@ function fixture(changes={}){
  assert.equal(f.run(),child);assert.equal(f.writes.length,1,'same receipt can append exactly one child');
  const target={...f.parent.cls,student:f.parent.receipt.student,code:f.parent.receipt.code,submissionAt:f.parent.receipt.time};assert.equal(selectExisting(target,f.entries),child,'authorized child selected before failed saved parent');
  child.job.rawId='new-invalid';child.job.generateRequests=1;child.job.status='SYSTEM_GRADING_ERROR';assert.equal(authorizeInvalidRetry(f.c,child,f.entries,f.cell,f.persist),null);assert.equal(automaticEligible(child.job,f.entries.map(x=>x.job)),false);assert.equal(f.writes.length,1);
+ const rejectedAgain={...structuredClone(child.job),rawId:undefined,status:'WAITING_PROVIDER_QUOTA',providerFailure:{http:429},error:'PROVIDER_QUOTA_REJECTED'};
+ assert.equal(providerRetryCandidate(rejectedAgain),false);assert.equal(dashboardReprocessPlan(rejectedAgain,'✅ ĐÃ NỘP\n— NHẬN XÉT GV —','third'),null);
+ const noRawParent={...structuredClone(f.parent),rawId:undefined,apiUsage:undefined,providerFailure:{http:429},status:'WAITING_PROVIDER_QUOTA'};
+ assert.equal(planProviderRetries([noRawParent,rejectedAgain],{lane:'kids',isLatest:()=>true,emptyTarget:()=>true}).length,0,'older retry handlers cannot license a third attempt through the parent');
+ assert.equal(authorizeEmptyDashboardReprocess({destination_:()=>{throw Error('must be skipped');}},[{job:noRawParent,row:2},{job:rejectedAgain,row:22}]),0,'legacy dashboard recovery cannot create a second child through the parent');
  const changed=structuredClone(child.job);changed.receipt.links+='?tampered';assert.equal(authorizedInvalidRetry(changed,f.entries),false);assert.equal(automaticEligible({...changed,rawId:undefined,generateRequests:0,status:'WAITING_INPUT'},f.entries.map(x=>x.job)),false);
  f.entries.push({row:23,job:{...structuredClone(f.parent),id:'LATE-VALID',rawId:'valid-raw'}});assert.equal(authorizedInvalidRetry(child.job,f.entries),false,'later unreviewed saved result blocks authorization');
 }

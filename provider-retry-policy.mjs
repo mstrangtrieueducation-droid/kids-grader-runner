@@ -17,6 +17,7 @@ export function providerRetryFailure(j){
  return null;
 }
 export function providerRetryCandidate(j){
+ if(j.invalidResultRetry)return false; // Explicit one-new-attempt approval is not an unlimited retry chain.
  return sourceInMasterScope(j.receipt||j.source)&&!/^IELTS\s*4[0-4]$/i.test(j.cls?.className||j.source?.className||'')&&!/^(RETURNED|DONE|COMPLETED_|SKIPPED_|SUPERSEDED_)/.test(j.status||'')
   &&!j.supersededByProviderRetry&&!j.supersededByDashboardRegrade&&!j.presentationResubmissionRequired&&!j.technicalInputFailure&&attempted(j)&&!hasProviderResult(j)&&!!providerRetryFailure(j);
 }
@@ -30,6 +31,8 @@ export function planProviderRetries(jobs,{lane,isLatest,emptyTarget,now=Date.now
  for(const parent of jobs){
   if(!providerRetryCandidate(parent))continue;
   const key=providerWorkKey(parent),related=jobs.filter(j=>providerWorkKey(j)===key),id=providerRetryId(parent.id);
+  const attempt=j=>{const s=j.receipt||j.source||{};return JSON.stringify([s.time||s.at,s.links||s.link||s.fileIds]);};
+  if(related.some(j=>j.invalidResultRetry&&attempt(j)===attempt(parent)))continue;
   if(chosen.has(key)||related.some(j=>hasProviderResult(j))||jobs.some(j=>j.id===id||j.providerRetryOrigin?.parentId===parent.id))continue;
   if(related.some(j=>j!==parent&&!/^(SKIPPED_|SUPERSEDED_|FAILED_|NEEDS_REVIEW|SYSTEM_|WAITING_PROVIDER_QUOTA|PENDING_RETRY)/.test(j.status||'')&&!providerRetryFailure(j)))continue;
   if(!isLatest(parent))continue;
