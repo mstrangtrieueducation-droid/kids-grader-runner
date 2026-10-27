@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';
 import {Sheet} from './google-adapter.mjs';
-import {intakeDue,tailWindow,intakeNewKidsReceipts,INTAKE_INTERVAL,encodeIntakeState,decodeIntakeState,boundTailRows,takeIntakeRows} from './continuous-intake.mjs';
+import {intakeDue,tailWindow,intakeNewKidsReceipts,INTAKE_INTERVAL,encodeIntakeState,decodeIntakeState,boundTailRows,takeIntakeRows,historyWindow,acknowledgeHistory} from './continuous-intake.mjs';
 assert(intakeDue({},100));assert(!intakeDue({completedAt:100},101));assert(intakeDue({completedAt:100},100+INTAKE_INTERVAL));
 assert.deepEqual(tailWindow({known:101,rowCount:200}),{acknowledged:101,start:102,end:151,empty:false});
 assert.deepEqual(tailWindow({cursor:150,known:999,rowCount:200}),{acknowledged:150,start:151,end:200,empty:false});
@@ -48,3 +48,21 @@ const replayState={tabs:{'synthetic-source|11':150},deferred:[{source:'synthetic
 const replay=fixture({initial:{FLEET_SCAN_INTAKE_TAIL_V1:JSON.stringify(replayState)}});await intakeNewKidsReceipts(replay.options);assert.equal(replay.parsed[0].row,102);const resumed=decodeIntakeState(replay.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert.equal(resumed.tabs['synthetic-source|11'],150);assert.equal(resumed.deferred.length,0,'deferred old row replays independently of the new tail cursor');
 const many={tabs:{},deferred:Array.from({length:2000},(_,row)=>({source:'synthetic-source',tab:'SCIENCE G3',row,controlId:'synthetic-control',nextAt:0,reason:'NATIVE_ASSIGNMENT_PENDING'}))};const encoded=encodeIntakeState(many);assert(encoded.startsWith('gz:'));assert(encoded.length<32000);assert.deepEqual(decodeIntakeState(encoded),many);
 console.log('Real native Form parser retains absolute rows, +07 timestamps and rich multi-links; bounded batched tails, durable cursor, failure replay, issue persistence and lease cleanup verified. 0 AI/0 live writes.');
+
+// Old gaps must not be hidden below a newer Jobs high watermark.
+assert.deepEqual(historyWindow({known:900,rowCount:1000}),{before:901,start:651,end:900,empty:false});
+assert.deepEqual(historyWindow({before:651,known:950,rowCount:1000}),{before:651,start:401,end:650,empty:false});
+assert(historyWindow({before:2,known:950,rowCount:1000}).empty);
+const oldRows=[{row:899},{row:850},{row:800}],hp={start:651};
+assert.equal(acknowledgeHistory(hp,oldRows,oldRows.slice(0,1)),851,'never skip an unhandled older hole');
+assert.equal(acknowledgeHistory(hp,oldRows,oldRows),651,'known/out-of-scope history consumes no class sweep slot');
+const historic=fixture({wireRow:50,initial:{FLEET_SCAN_INTAKE_TAIL_V1:JSON.stringify({tabs:{'synthetic-source|11':150}})}});
+await intakeNewKidsReceipts(historic.options);
+assert.equal(historic.parsed[0].row,50,'a real native receipt below both the Jobs watermark and old 32-row bootstrap is replayed');
+const historicState=decodeIntakeState(historic.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);
+assert.equal(historicState.tabs['synthetic-source|11'],150,'historical work cannot rewind fresh intake');
+assert.equal(historicState.historyBefore['synthetic-source|11'],2);
+const historicalFailure=fixture({wireRow:50,network:true});
+await assert.rejects(()=>intakeNewKidsReceipts(historicalFailure.options));
+assert.equal(historicalFailure.saved.length,0,'failed source reads cannot certify old coverage');
+console.log('Historical native Form gaps below high watermarks are replayable; separate descending coverage survives handover without a full class scan or local writes.');

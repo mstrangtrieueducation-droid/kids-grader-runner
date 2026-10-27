@@ -21,3 +21,12 @@ const nextWorker=[3,2,1,0].find(slot=>workerOwnsPreparation(continuation,slot,'c
 assert.equal([0,1,2,3].filter(slot=>workerOwnsPreparation(continuation,slot,'current-hosted-run')).length,1,'one preparation owner per current run');assert([0,1,2,3].every(slot=>workerOwnsPreparation(continuation,slot,'new-hosted-run')),'a new host is free to assign work without trusting an old disk');
 fs.unlinkSync(partial(0));for(let slot=0;slot<4;slot++)fs.rmdirSync(path.join(disk,String(slot)));fs.rmdirSync(disk);
 console.log('PASS permanent four-worker manifest, append-only attempts, saved history retained, consumed duplicate blocked, native binding required and stalled preparation yields without reservation reset; 0 AI/0 Sheet writes.');
+
+const recheckJob={...job,status:'READY',rawId:'synthetic-durable-raw',generateRequests:1,sheetTruth:{state:'PENDING'}};
+const recovered=appendNativeItems(first.queue,[{row:2,job:recheckJob}],resolve,{reopenResolved:true});
+assert.equal(recovered.added,1);assert.equal(recovered.queue.total,1);
+assert.equal(recovered.queue.items[0].state,'PENDING_VALIDATION');
+assert.deepEqual(recovered.queue.items[0].attempts,first.queue.items[0].attempts);
+assert.equal(recheckJob.generateRequests,1);assert.equal(recheckJob.rawId,'synthetic-durable-raw');
+assert.equal(appendNativeItems(first.queue,[{row:2,job:recheckJob}],()=>null,{reopenResolved:true}).queue.items[0].state,'VERIFIED_WRITTEN','a current teacher comment or protected cell prevents reopening');
+assert.equal(appendNativeItems(first.queue,[{row:2,job:{...recheckJob,status:'RETURNED'}}],resolve,{reopenResolved:true}).added,0,'the real native Sheet reconciliation must first authorize saved recovery');

@@ -11,6 +11,17 @@ export const INTAKE_INTERVAL=10*60000;
 export const decodeIntakeState=value=>JSON.parse(value?.startsWith('gz:')?gunzipSync(Buffer.from(value.slice(3),'base64')).toString('utf8'):value||'{"tabs":{}}');
 export function encodeIntakeState(state){const text=JSON.stringify(state),encoded=text.length>12000?'gz:'+gzipSync(text).toString('base64'):text;if(encoded.length>32000)throw Error('NATIVE_INTAKE_CURSOR_CAPACITY');return encoded;}
 export function intakeDue(state,now=Date.now()){return !!state?.more||!state?.completedAt||now-state.completedAt>=INTAKE_INTERVAL;}
+// Historical coverage is independent of the largest known Jobs row. A high
+// watermark certifies neither older intake nor a recently repaired class column.
+export function historyWindow({before,known=1,rowCount,pageSize=250}){
+ const ceiling=Math.min(rowCount,Number.isInteger(before)?before-1:Math.max(1,known));
+ const start=Math.max(2,ceiling-pageSize+1),end=ceiling;
+ return {before:ceiling+1,start,end,empty:end<2};
+}
+export function acknowledgeHistory(plan,candidates,chosen){
+ const unhandled=candidates.filter(r=>!chosen.includes(r));
+ return unhandled.length?Math.max(...unhandled.map(r=>r.row))+1:plan.start;
+}
 export function tailWindow({cursor,known=1,rowCount,pageSize=50}){
  if(!Number.isInteger(rowCount)||rowCount<1)throw Error('SOURCE_ROW_COUNT_INVALID');
  const acknowledged=Number.isInteger(cursor)&&cursor>=1?cursor:Math.max(1,known);
@@ -51,8 +62,11 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
    const source=vm.runInContext('KG.source',c),tabs=Array.from(vm.runInContext('KIDS21_AUTO.tabs',c)),entries=readJobs(g,cluster.controlId);
    contexts.push({cluster,c,source,tabs});all.push(...entries.map(e=>({...e,source})));
   }
+  const classOrder=config.clusters.flatMap(cluster=>cluster.classes.map(cls=>({cluster,cls})));
+  const classStart=Number(state.ledgerClassCursor)||0;
+  const ledgerClasses=Array.from({length:Math.min(2,classOrder.length)},(_,i)=>classOrder[(classStart+i)%classOrder.length]);
   const groups=new Map();for(const item of contexts){if(!groups.has(item.source))groups.set(item.source,[]);groups.get(item.source).push(item);}
-  let observed=0,handled=0,added=0,more=false,failures=0;const next=structuredClone(state);next.tabs ||= {};
+  let observed=0,handled=0,added=0,more=false,failures=0;const next=structuredClone(state);next.tabs ||= {};next.historyBefore ||= {};next.ledgerClassCursor=(classStart+ledgerClasses.length)%Math.max(1,classOrder.length);
   const deferredKey=x=>[x.source,x.tab,x.row,x.controlId].join('|'),deferred=new Map((state.deferred||[]).map(x=>[deferredKey(x),x]));
   const defer=(source,r,cluster,reason)=>{const x={source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId,reason,nextAt:now()+INTAKE_INTERVAL};deferred.set(deferredKey(x),x);failures++;};
   for(const [source,members] of groups){
@@ -61,35 +75,44 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
    for(const tab of tabs){
     const sheet=book.getSheetByName(tab);if(!sheet)throw Error('SOURCE_TAB_NOT_FOUND');
     const key=source+'|'+sheet.getSheetId(),known=Math.max(1,...all.filter(e=>e.source===source&&e.job.receipt?.sourceTab===tab).map(e=>Number(e.job.receipt.row)||1));
-    const window=tailWindow({cursor:state.tabs?.[key],known,rowCount:sheet.meta.properties.gridProperties.rowCount});
+    const rowCount=sheet.meta.properties.gridProperties.rowCount;
+    const window=tailWindow({cursor:state.tabs?.[key],known,rowCount});
+    const history=historyWindow({before:state.historyBefore?.[key],known,rowCount});
     const bootstrap=state.tabs?.[key]===undefined?Array.from({length:Math.min(32,Math.max(0,known-1))},(_,i)=>Math.max(2,known-31)+i):[];
     const replay=[...new Set([...bootstrap,...[...deferred.values()].filter(x=>x.source===source&&x.tab===tab&&x.nextAt<=now()&&x.row<=sheet.meta.properties.gridProperties.rowCount).slice(0,4).map(x=>x.row)])];
-    if(!window.empty||replay.length)plans.push({sheet,tab,key,...window,replay,width:Math.min(7,sheet.meta.properties.gridProperties.columnCount)});
+    if(!window.empty||replay.length||!history.empty)plans.push({sheet,tab,key,...window,history,replay,width:Math.min(7,sheet.meta.properties.gridProperties.columnCount)});
    }
-   if(!plans.length)continue;
-   const ranges=plans.flatMap(p=>[quoted(p.tab)+'!A1:'+col(p.width)+'1',...(!p.empty?[quoted(p.tab)+'!A'+p.start+':'+col(p.width)+p.end]:[]),...rowRanges(p.replay.filter(row=>p.empty||row<p.start||row>p.end)).map(([start,end])=>quoted(p.tab)+'!A'+start+':'+col(p.width)+end)]);
-   const response=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+source+'?'+ranges.map(x=>'ranges='+encodeURIComponent(x)).join('&')+'&includeGridData=true&fields=sheets(properties(title),data(startRow,rowData(values(effectiveValue,userEnteredValue,formattedValue,hyperlink,textFormatRuns))))');
+   const ranges=plans.flatMap(p=>[quoted(p.tab)+'!A1:'+col(p.width)+'1',...(!p.empty?[quoted(p.tab)+'!A'+p.start+':'+col(p.width)+p.end]:[]),...(!p.history.empty?[quoted(p.tab)+'!A'+p.history.start+':'+col(p.width)+p.history.end]:[]),...rowRanges(p.replay.filter(row=>p.empty||row<p.start||row>p.end)).map(([start,end])=>quoted(p.tab)+'!A'+start+':'+col(p.width)+end)]);
+   const response=plans.length?g.api('https://sheets.googleapis.com/v4/spreadsheets/'+source+'?'+ranges.map(x=>'ranges='+encodeURIComponent(x)).join('&')+'&includeGridData=true&fields=sheets(properties(title),data(startRow,rowData(values(effectiveValue,userEnteredValue,formattedValue,hyperlink,textFormatRuns))))'):{sheets:[]};
    const pages=[];
    for(const plan of plans){
-    const wire=response.sheets?.find(s=>s.properties.title===plan.tab);if(!wire){failures++;continue;}
-    const cells=Array.from({length:Math.max(plan.empty?1:plan.end,...plan.replay)},()=>({}));
+    const wire=response.sheets?.find(s=>s.properties.title===plan.tab);if(!wire)throw Error('NATIVE_SOURCE_PAGE_MISSING');
+    const cells=Array.from({length:Math.max(plan.empty?1:plan.end,plan.history.empty?1:plan.history.end,...plan.replay)},()=>({}));
     for(const block of wire.data||[]){const offset=block.startRow||0;for(let i=0;i<(block.rowData||[]).length;i++)cells[offset+i]=block.rowData[i];}
     book.cache.set(plan.tab+'|master',gridMaster(cells,plan.width));
-    let parsed;try{parsed=members[0].c.sourceRows_(plan.tab).filter(r=>(!plan.empty&&r.row>=plan.start&&r.row<=plan.end)||plan.replay.includes(r.row));}catch{failures++;continue;}
+    let parsed;try{parsed=members[0].c.sourceRows_(plan.tab).filter(r=>(!plan.empty&&r.row>=plan.start&&r.row<=plan.end)||plan.replay.includes(r.row)||!plan.history.empty&&r.row>=plan.history.start&&r.row<=plan.history.end);}catch{throw Error('NATIVE_SOURCE_PAGE_PARSE_FAILED');}
     // Empty allocated rows do not acknowledge future Form submissions.
     const nonempty=parsed.filter(r=>r.time||r.student||r.code||r.links);observed+=nonempty.length;
-    const tail=nonempty.filter(r=>!plan.empty&&r.row>=plan.start&&r.row<=plan.end),old=nonempty.filter(r=>!tail.includes(r));
+    const tail=nonempty.filter(r=>!plan.empty&&r.row>=plan.start&&r.row<=plan.end);
+    const receiptKey=r=>[r.sourceTab,r.row,r.time,r.className,r.student,r.code,r.links].join('|');
+    const knownReceipts=new Set(all.filter(e=>e.source===source).map(e=>receiptKey(e.job.receipt||{})));
+    const history=nonempty.filter(r=>!tail.includes(r)&&!plan.history.empty&&r.row>=plan.history.start&&r.row<=plan.history.end&&members.some(x=>x.c.inAutoScope_(r))&&!knownReceipts.has(receiptKey(r))).sort((a,b)=>b.row-a.row);
+    const old=[...history,...nonempty.filter(r=>!tail.includes(r)&&!history.includes(r)&&plan.replay.includes(r.row))];
     for(const r of old)for(const {cluster,c} of members)if(c.inAutoScope_(r)){const x={source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId,reason:'NATIVE_RECEIPT_RECHECK',nextAt:0},key=deferredKey(x);if(!deferred.has(key))deferred.set(key,x);}
-    pages.push({plan,tail,old,rows:[...tail,...old]});
+    pages.push({plan,tail,old,history,rows:[...tail,...old]});
    }
    const selected=takeIntakeRows(pages);const receipts=[];
-   pages.forEach(({plan,tail,rows},index)=>{
+   pages.forEach(({plan,tail,history,rows},index)=>{
     const chosen=selected[index],chosenTail=chosen.filter(r=>tail.includes(r));receipts.push(...chosen);
     next.tabs[plan.key]=Math.max(plan.acknowledged,...chosenTail.map(r=>r.row));
+    next.historyBefore[plan.key]=plan.history.empty?2:acknowledgeHistory(plan.history,history,chosen);
+    if(next.historyBefore[plan.key]>2)more=true;
     if(rows.length>chosen.length||tail.some(r=>r.row===plan.end)&&plan.end<plan.sheet.meta.properties.gridProperties.rowCount)more=true;
    });
    for(const {cluster,c} of members){
-    const relevant=receipts.filter(r=>c.inAutoScope_(r));
+    const replayClasses=ledgerClasses.filter(x=>x.cluster===cluster).map(x=>x.cls.spreadsheetId);
+    const ledgerReceipts=all.filter(e=>e.source===source&&replayClasses.includes(e.job.cls?.spreadsheetId)).map(e=>e.job.receipt).filter(r=>r&&c.inAutoScope_(r));
+    const relevant=[...new Map([...receipts.filter(r=>c.inAutoScope_(r)),...ledgerReceipts].map(r=>[[r.className,r.sourceTab,r.row,r.student,r.code,r.links].join('|'),r])).values()];
     if(!relevant.length)continue;
     for(const r of relevant)deferred.delete(deferredKey({source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId}));
     let batch;
@@ -110,7 +133,7 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
   next.completedAt=now();next.more=more;next.deferred=[...deferred.values()];
   if(next.deferred.length>5000)throw Error('NATIVE_DEFERRED_QUEUE_CAPACITY');
   properties.set(cursorKey,encodeIntakeState(next));leases[0].save(properties);
-  emit({event:'KIDS_NATIVE_TAIL_INTAKE',observed,handled,added,more,failures,deferred:next.deferred.length,fullClassScans:0,providerCalls:0});
+  emit({event:'KIDS_NATIVE_TAIL_INTAKE',observed,handled,added,more,failures,deferred:next.deferred.length,historyCoverageTabs:Object.keys(next.historyBefore).length,ledgerClassesRechecked:ledgerClasses.length,fullClassScans:0,providerCalls:0});
   return {due:true,observed,handled,added,more,failed:failures>0,providerCalls:0};
  }finally{
   // Do not leave a partial Form grid installed for freshness/generation guards.

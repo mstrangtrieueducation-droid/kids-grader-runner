@@ -15,7 +15,7 @@ export const NATIVE_TODO_SCHEMA='kids-native-todo-v1';
 // A continuation must return there; a new hosted run starts with fresh disks.
 export const workerOwnsPreparation=(item,slot,runId)=>!item.claim||item.claim.runId!==runId||item.claim.worker===slot;
 export const discoveryAllowed=(frozenRemaining,todo)=>frozenRemaining===0&&!todo.items.some(x=>!campaignClosed(x.state));
-export function appendNativeItems(previous,entries,resolve,{now=Date.now(),approved=new Set()}={}){
+export function appendNativeItems(previous,entries,resolve,{now=Date.now(),approved=new Set(),reopenResolved=false}={}){
  const q=previous?structuredClone(validateBacklog(previous)):{schema:NATIVE_TODO_SCHEMA,campaignId:'native-kids-persistent-4',workers:4,total:0,items:[],membershipHash:digest([])};
  if(q.schema!==NATIVE_TODO_SCHEMA)throw Error('NATIVE_TODO_SCHEMA_REQUIRED');
  const known=new Set(q.items.map(x=>x.id)),all=entries.map(x=>x.job),newest=new Map();
@@ -24,7 +24,19 @@ export function appendNativeItems(previous,entries,resolve,{now=Date.now(),appro
   if(!old||Date.parse(j.receipt?.time)>Date.parse(old.job.receipt?.time))newest.set(key,entry);
  }
  let added=0;for(const entry of newest.values()){
-  const j=entry.job,prior=q.items.filter(x=>matchesTarget(j,x.target)),live=prior.some(x=>!campaignClosed(x.state)),id=digest(approved.has(j.id)&&prior.length&&!live?['native-todo',j.id,'manual',prior.length]:['native-todo',j.id]);if(known.has(id)||approved.has(j.id)&&live)continue;
+  const j=entry.job,prior=q.items.filter(x=>matchesTarget(j,x.target)),live=prior.some(x=>!campaignClosed(x.state)),id=digest(approved.has(j.id)&&prior.length&&!live?['native-todo',j.id,'manual',prior.length]:['native-todo',j.id]);if(known.has(id)){
+   const old=q.items.find(x=>x.id===id);
+   // Only prepareNativeTodo's fresh native resolver may reopen a closed manifest
+   // row. Keep the same job, reservation, artifacts and entire attempt history.
+   if(reopenResolved&&['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(old.state)){
+    let target;try{target=resolve(entry);}catch{continue;}
+    if(target&&matchesTarget(j,target)){
+     old.readbackRecovery={at:new Date(now).toISOString(),previousState:old.state,previousVerifiedAt:old.verifiedAt||null,providerCalls:0};
+     old.state='PENDING_VALIDATION';old.nextAt=0;old.error=null;old.resolvedTarget=target;old.verifiedAt=null;old.savedArtifact=!!(j.rawId||j.gradeId);added++;
+    }
+   }continue;
+  }
+  if(approved.has(j.id)&&live)continue;
   let target;try{target=resolve(entry);}catch{continue;}if(!target||!matchesTarget(j,target))continue;
   const chosen=selectExisting(target,entries,now);if(!approved.has(j.id)&&(!chosen||chosen.job.id!==j.id))continue;
   q.items.push({id,target,state:'PENDING_VALIDATION',savedArtifact:!!(j.rawId||j.gradeId),attempts:[]});known.add(id);added++;
@@ -55,7 +67,7 @@ export async function prepareNativeTodo(file,{config,google,buildContext}){
   const manual=approved.has(j.id)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(text);
   if(cell.getFormula()||cell.getDataValidation()||!manual&&(hasTeacherReview(text)||!receiptOnlyCell(text)))return null;
   return {spreadsheetId:j.cls.spreadsheetId,sheetId:cell.sheet.getSheetId(),cell:cell.getA1Notation(),className:j.cls.className,student:j.receipt.student,code:j.receipt.code,submissionAt:j.receipt.time};
- },{approved});
+ },{approved,reopenResolved:true});
  fs.writeFileSync(file,JSON.stringify(result.queue));return {...result,entries:entries.length};
  }finally{for(const batch of batches.reverse())batch.close();}
 }
