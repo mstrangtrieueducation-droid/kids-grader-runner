@@ -1,7 +1,7 @@
 import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed,cacheFirstItems} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
-import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA} from './persistent-kids-queue.mjs';
+import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA,workerOwnsPreparation} from './persistent-kids-queue.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
 export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
@@ -26,14 +26,14 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   for(const cluster of config.clusters)entriesByControl.set(cluster.controlId,readNativeQueue(g,cluster.controlId));
   const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
   console.log(JSON.stringify({event:'CAMPAIGN_STARTED',workers:4,total:q.total,verified,fullClassScans:0}));
-  const choose=()=>{
+  const choose=slot=>{
    if(Date.now()>deadline-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
-   const candidates=q.items.filter(item=>!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!candidates.length)return [];
+   const candidates=q.items.filter(item=>workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID)&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!candidates.length)return [];
    for(const first of cacheFirstItems(candidates)){
-   const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose();}
+   const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose(slot);}
    const entries=entriesByControl.get(cluster.controlId),batch=[];
-   for(const item of cacheFirstItems(q.items.filter(x=>x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
+   for(const item of cacheFirstItems(q.items.filter(x=>workerOwnsPreparation(x,slot,process.env.GITHUB_RUN_ID)&&x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
     const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
     if(!claimAllowed(entry.job,busy)){continue;}
@@ -44,7 +44,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   };
   await new Promise((resolve,reject)=>{
    let stopped=0;const restarts=new Map();
-   const schedule=w=>{if(w.busy||!w.connected)return;const work=w.retire?[]:choose();if(!work.batch?.length){
+   const schedule=w=>{if(w.busy||!w.connected)return;const work=w.retire?[]:choose(w.slot);if(!work.batch?.length){
     const dueLater=q.items.some(x=>x.state==='RETRY'&&!attempted.has(x.id)&&x.nextAt<deadline-120000);
     if(!w.retire&&Date.now()<deadline-120000&&(active.size||dueLater)){setTimeout(()=>schedule(w),2000);return;}
     w.send({stop:true});return;

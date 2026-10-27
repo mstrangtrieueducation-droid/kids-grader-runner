@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed} from './persistent-kids-queue.mjs';
+import {appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed,workerOwnsPreparation} from './persistent-kids-queue.mjs';
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {pedagogicSpans} from './pedagogical-language.mjs';
 const job={id:'synthetic-1',status:'READY',cls:{className:'KIDS 90',spreadsheetId:'synthetic-class'},receipt:{className:'KIDS 90',student:'SYNTHETIC PUPIL',code:'SCIENCE-G1-01',time:'2026-10-25T10:00:00Z',links:'synthetic-source'},route:{code:'SCIENCE-G1-01'},media:[{id:'synthetic-media'}]},entry={row:2,job};
 const resolve=e=>({spreadsheetId:e.job.cls.spreadsheetId,className:e.job.cls.className,sheetId:20,cell:'D5',student:e.job.receipt.student,code:e.job.receipt.code,submissionAt:e.job.receipt.time});
@@ -13,4 +14,10 @@ const approved=new Set([job.id]),manual=appendNativeItems(first.queue,[{...entry
 const authored=[{text:'Con đọc rõ.\n',tone:'praise'},{text:'Tuy nhiên, để bài đọc được hoàn thiện hơn, con chú ý âm cuối nhé.',tone:'correction'}];assert.deepEqual(pedagogicSpans(authored),authored,'keep the authored bridge without inserting a duplicate');
 const tracker=retryProgressTracker(),before=preparationProgress(job);assert(tracker.allow({...job,nextAt:Date.now()},before));assert(tracker.allow({...job,nextAt:Date.now()+5000},before));assert(!tracker.allow({...job,nextAt:Date.now()+10000},before));assert(tracker.allow({...job,media:[{id:'synthetic-media',runnerDownloadBytes:100}]},before));
 assert(tracker.allow({...job,campaignTransportProgress:[['synthetic.part',30000000]]},before),'resumable source downloads must continue while bytes advance');
+const disk=fs.mkdtempSync(path.join(os.tmpdir(),'worker-affinity-')),partial=slot=>path.join(disk,String(slot),'synthetic.part');
+for(let slot=0;slot<4;slot++)fs.mkdirSync(path.join(disk,String(slot)));
+fs.writeFileSync(partial(0),Buffer.alloc(16384));const continuation={claim:{runId:'current-hosted-run',worker:0},state:'RETRY'};
+const nextWorker=[3,2,1,0].find(slot=>workerOwnsPreparation(continuation,slot,'current-hosted-run'));assert.equal(nextWorker,0);assert.equal(fs.statSync(partial(nextWorker)).size,16384,'retry must find the already downloaded bytes, even if another worker is idle');fs.appendFileSync(partial(nextWorker),Buffer.alloc(8192));assert.equal(fs.statSync(partial(0)).size,24576);
+assert.equal([0,1,2,3].filter(slot=>workerOwnsPreparation(continuation,slot,'current-hosted-run')).length,1,'one preparation owner per current run');assert([0,1,2,3].every(slot=>workerOwnsPreparation(continuation,slot,'new-hosted-run')),'a new host is free to assign work without trusting an old disk');
+fs.unlinkSync(partial(0));for(let slot=0;slot<4;slot++)fs.rmdirSync(path.join(disk,String(slot)));fs.rmdirSync(disk);
 console.log('PASS permanent four-worker manifest, append-only attempts, saved history retained, consumed duplicate blocked, native binding required and stalled preparation yields without reservation reset; 0 AI/0 Sheet writes.');
