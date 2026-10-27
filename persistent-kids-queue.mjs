@@ -22,7 +22,7 @@ export function appendNativeItems(previous,entries,resolve,{now=Date.now(),appro
   const j=entry.job,prior=q.items.filter(x=>matchesTarget(j,x.target)),live=prior.some(x=>!campaignClosed(x.state)),id=digest(approved.has(j.id)&&prior.length&&!live?['native-todo',j.id,'manual',prior.length]:['native-todo',j.id]);if(known.has(id)||approved.has(j.id)&&live)continue;
   let target;try{target=resolve(entry);}catch{continue;}if(!target||!matchesTarget(j,target))continue;
   const chosen=selectExisting(target,entries,now);if(!approved.has(j.id)&&(!chosen||chosen.job.id!==j.id))continue;
-  q.items.push({id,target,state:'PENDING_VALIDATION',attempts:[]});known.add(id);added++;
+  q.items.push({id,target,state:'PENDING_VALIDATION',savedArtifact:!!(j.rawId||j.gradeId),attempts:[]});known.add(id);added++;
  }
  q.total=q.items.length;q.membershipHash=digest(q.items.map(x=>x.id));validateBacklog(q);return {queue:q,added};
 }

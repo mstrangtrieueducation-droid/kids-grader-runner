@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';
-import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
+import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,resolveFrozenTarget,cacheFirstItems} from './frozen-backlog-policy.mjs';
 import {Book,Sheet,RichBuilder} from './google-adapter.mjs';import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {installFrozenGenerationGuard} from './frozen-generation-guard.mjs';
 const target={spreadsheetId:'fixture-class',sheetId:20,cell:'D5',student:'FIXTURE PUPIL',className:'KIDS 90',code:'SCIENCE-G1-01',submissionAt:'2026-10-25T10:00:00Z'};
 const job={id:'fixture-job',status:'READY',cls:{spreadsheetId:target.spreadsheetId,className:target.className},receipt:{student:target.student,className:target.className,code:target.code,time:target.submissionAt,links:'fixture-source'},route:{code:target.code},media:[{id:'fixture-media'}]};
 const entry={row:2,job},item={id:'fixture-item',target};const q={schema:'kids-frozen-backlog-v1',total:1,workers:4,items:[item],membershipHash:createHash('sha256').update(JSON.stringify([item.id])).digest('hex')};
+const executionOrder=[{id:'new'},{id:'saved',delivery:{rawId:'saved-raw'}},{id:'native-saved',savedArtifact:true}];assert.deepEqual(cacheFirstItems(executionOrder).map(x=>x.id),['saved','native-saved','new']);assert.equal(executionOrder[0].id,'new','cache priority does not rewrite immutable receipt membership');
 assert.equal(validateBacklog(q),q);assert.throws(()=>validateBacklog({...q,items:[item,item],total:2}),/DUPLICATE/);assert.throws(()=>validateBacklog({...q,membershipHash:'wrong'}),/MEMBERSHIP/);
 assert(matchesTarget(job,target));assert(!matchesTarget(job,{...target,submissionAt:'2026-10-25T11:00:00Z'}));assert(!matchesTarget(job,{...target,spreadsheetId:'other'}));
 assert.equal(selectExisting(target,[entry]),entry);

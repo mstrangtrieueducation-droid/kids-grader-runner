@@ -1,5 +1,5 @@
 import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:child_process';import {fileURLToPath} from 'node:url';
-import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed} from './frozen-backlog-policy.mjs';
+import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed,cacheFirstItems} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
 import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA} from './persistent-kids-queue.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
@@ -30,10 +30,10 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
    if(Date.now()>deadline-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
    const candidates=q.items.filter(item=>!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!candidates.length)return [];
-   for(const first of candidates){
+   for(const first of cacheFirstItems(candidates)){
    const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose();}
    const entries=entriesByControl.get(cluster.controlId),batch=[];
-   for(const item of q.items.filter(x=>x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now()))){
+   for(const item of cacheFirstItems(q.items.filter(x=>x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
     const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
     if(!claimAllowed(entry.job,busy)){continue;}

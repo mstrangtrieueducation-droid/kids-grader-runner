@@ -20,7 +20,7 @@ export function replaySavedClassBatch(c,g,results){
    if(value.userEnteredValue?.stringValue!==r.after||!hasTeacherReview(r.after))continue;
    const request={updateCells:{range:{sheetId:target.sheetId,startRowIndex:row,endRowIndex:row+1,startColumnIndex:col,endColumnIndex:col+1},rows:[{values:[value]}],fields:'userEnteredValue,textFormatRuns,userEnteredFormat.wrapStrategy,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment'}};
    const group=groups.get(target.spreadsheetId)||[];group.push({out,expected,request});groups.set(target.spreadsheetId,group);
-  }catch{/* Retain the original conflict and immutable artifact for a later turn. */}
+  }catch(error){r.replayProof={version:'native-saved-batch-readback-replay-v1',held:true,reason:/^[A-Z0-9_: .-]+$/.test(error.message||'')?error.message:'SOURCE_RECHECK_FAILED',providerCalls:0};}
  }
  for(const [id,items]of groups){const plan=guardClassRequests(g,id,items.map(x=>x.request),items.map(x=>x.expected));if(!plan.requests.length)continue;
   g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+':batchUpdate','POST',{requests:plan.requests});written.add(id);
