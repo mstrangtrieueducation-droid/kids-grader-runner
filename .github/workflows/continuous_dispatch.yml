@@ -2,7 +2,7 @@ name: Continuous KIDS Queue Controller
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '*/15 * * * *'
 permissions:
   contents: read
   actions: write
@@ -22,7 +22,9 @@ jobs:
         with:
           node-version: '24'
       - name: Check scheduler safeguards
-        run: node continuous-dispatcher-tests.mjs
+        run: |
+          node continuous-dispatcher-tests.mjs
+          node controller-supervisor-tests.mjs
       - name: Keep one grade writer moving and poll for new submissions
         env:
           GRADING_LANE: kids
@@ -30,4 +32,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           PRIVATE_BUNDLE_KEY: ${{ secrets.PRIVATE_BUNDLE_KEY }}
-        run: node continuous-dispatcher.mjs
+        run: node controller-supervisor.mjs
