@@ -33,17 +33,19 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   const j=entry.job;
   const {cell,target:resolvedTarget}=resolveFrozenTarget(c,j,item.target);
   const before=cell.getDisplayValue();let recovered=false,noAudio=false;
+  const approval=c.teacherApprovalSession_.approved.get(j.id),manual=!!approval&&!approval.automatic&&String(approval.sourceLink).includes('/'+controlId+'/')&&String(approval.sourceLink).includes('A'+entry.row+':F'+entry.row)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(before);
   if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);}
-  if(hasTeacherReview(before))result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
+  if(hasTeacherReview(before)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
   else if(cell.getFormula()||cell.getDataValidation())result={state:'PROTECTED',error:'DESTINATION_PROTECTED',before,after:before,job:j};
   else if(noAudio)result={state:'STAGED',verifiedAt:null,before,after:cell.getDisplayValue(),job:j,calls:0,error:null};
   else {
-   if(!executable&&!recovered)throw Error('NATIVE_HISTORY_REQUIRES_RECONCILIATION');
+   if(!executable&&!recovered&&!manual)throw Error('NATIVE_HISTORY_REQUIRES_RECONCILIATION');
    const sourceId=vm.runInContext('KG.source',c);g.preloadSource(sourceId,7,[j.route.sourceTab]);
    reconcileSavedDelivery(c,[entry],{deadline});
    addAutomaticAuthorizations(c.teacherApprovalSession_,[entry],controlId,'Jobs',g.book(controlId).getSheetByName('Jobs').getSheetId(),{allJobs:entries});
    if(recovered&&(j.rawId||j.gradeId))c.teacherApprovalSession_.approved.set(j.id,{jobId:j.id,automatic:true,authorization:'TEACHER_SAVED_RESULT_RECOVERY_20261027',sourceLink:`https://docs.google.com/spreadsheets/d/${controlId}/edit#gid=${g.book(controlId).getSheetByName('Jobs').getSheetId()}&range=A${entry.row}:F${entry.row}`});
    acceptTeacherApprovals([entry],c.teacherApprovalSession_,controlId,'Jobs',c.persist_);
+   if(manual&&j.teacherApproval?.approved){j.teacherApprovalOverwrite=true;c.persist_(j,entry.row);}
    if(!c.teacherApprovalSession_.approved.has(j.id))throw Error('CAMPAIGN_AUTHORIZATION_MISSING');
    let calls=0;c.recordMasterGeneration_=()=>{calls++;process.send({event:'CALL_STARTED',itemId:item.id});};
    c.preparePoolRetry_(j,entry.row);
@@ -53,7 +55,8 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
    c.teacherApprovalSession_.flush();
    const actual=c.destination_(j.cls,j.route,j.receipt.student).cell;
    const after=actual.getDisplayValue(),exact=actual.sheet.getSheetId()===resolvedTarget.sheetId&&actual.getA1Notation()===resolvedTarget.cell;
-   result={state:exact&&hasTeacherReview(after)?'STAGED':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:Number(j.nextAt)||0};
+   if(manual&&after===before&&hasTeacherReview(after)){c.teacherApprovalSession_.finish(j);c.teacherApprovalSession_.flush();c.persist_(j,entry.row);}
+   result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:Number(j.nextAt)||0};
   }
   result.target=resolvedTarget;
  }catch(e){result={state:'HELD',error:/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',job:entry.job};}
