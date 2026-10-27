@@ -13,6 +13,10 @@ export function existingUncalledChild(j,matches){
  const parents=matches.map(x=>x.job||x);
  return j.dashboardReprocessAuth===DASHBOARD_REPROCESS_AUTH&&parents.some(p=>p.id===j.regradeParentId&&p.supersededByDashboardRegrade===j.id&&!assessmentEvidence(p))&&j.systemGradingFailure?.studentActionRequired===false;
 }
+export function uncalledTechnicalRecovery(j,matches){
+ if(j.presentationResubmissionRequired||j.technicalInputFailure||!/^SYSTEM_AUDIO_INPUT_|^SYSTEM_PROCESSING_ERROR$|^MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT$|^PROVIDER_PREPAYMENT_REQUIRED$/.test(j.error||''))return false;
+ return [j,...matches.map(x=>x.job||x)].every(x=>!hasRequest(x)&&!assessmentEvidence(x));
+}
 export function prepareCampaignRecovery(c,j,row,{matches,cell}){
  if(cell.getFormula()||cell.getDataValidation()||hasTeacherReview(cell.getDisplayValue())||!receiptOnlyCell(cell.getDisplayValue()))return false;
  if(c.currentRoster_&&!c.currentRoster_(j.receipt,{fresh:true}))return false;
@@ -24,7 +28,7 @@ export function prepareCampaignRecovery(c,j,row,{matches,cell}){
   j.campaignSavedRecovery={version:CAMPAIGN_RECOVERY,previousStatus:j.status,previousError:j.error,at:new Date().toISOString(),providerCalls:0};
   j.status='READY';j.nextAt=0;c.persist_(j,row);return true;
  }
- if(existingUncalledChild(j,matches)){
+ if(existingUncalledChild(j,matches)||uncalledTechnicalRecovery(j,matches)){
   const previous={status:j.status,error:j.error,notice:j.autoNotice||null,renderHash:j.resultHash||null,at:new Date().toISOString()};
   // Only the existing, teacher-authorized uncalled child is resumed. Its paid
   // parent is unchanged. Technical notices are preserved as text, not grades.
