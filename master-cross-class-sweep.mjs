@@ -46,7 +46,7 @@ export function createMasterSweep({google,lane,controlId,classes,entries,resolve
   emit({event:'MASTER_SWEEP_REPORT',lane,classes:rows.length,scanned:states.size,newReturned:rows.reduce((n,r)=>n+r.newReturned,0),existing:rows.reduce((n,r)=>n+r.existing,0),assignment:rows.reduce((n,r)=>n+r.assignment,0),pending:rows.reduce((n,r)=>n+r.pending,0),issueWriteFailures:issueResult.failed.length,providerCalls:0});return {rows,issueResult,spreadsheetId:controlId,sheetId};
  }
  const allowsJob=job=>[...states.values()].some(item=>item.jobId===job.id&&item.outcome==='pending');
- return {scan,refresh,publish,states,allowsJob};
+ return {scan,refresh,publish,states,allowsJob,flushIssues:()=>flushClassIssues(google,issues,lane)};
 }
 function stableSheetId(id,title,book){let n=createHash('sha256').update(id+'|'+title).digest().readUInt32BE(0)&0x7fffffff;const ids=new Set(book.sheets.map(s=>s.getSheetId()));while(ids.has(n))n=(n+1)&0x7fffffff;return n;}
 function registerCreatedSheet(book,title,sheetId,rowCount,columnCount){if(book.getSheetByName(title))return;const meta={properties:{sheetId,title,gridProperties:{rowCount,columnCount,frozenRowCount:1}},merges:[]};book.sheets.push(new Sheet(book,meta));if(book.meta?.sheets)book.meta.sheets.push(meta);book.cache?.set(title+'|master',gridMaster([],columnCount));}

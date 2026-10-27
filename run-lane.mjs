@@ -9,7 +9,7 @@ async function main(){
  const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","new-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs","automatic-work-queue-tests.mjs","linked-destination-binding-tests.mjs","retired-reference-inputs-tests.mjs","source-input-guards-tests.mjs"];runTest('automatic-authorization-tests.mjs');runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  runTest('master-cross-class-sweep-tests.mjs');runTest('master-first-snapshot-tests.mjs');runTest('student-speech-evidence-tests.mjs');runTest('master-submission-scope-tests.mjs');runTest('saved-speaking-consistency-tests.mjs');
  runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');runTest('saved-delivery-repair-tests.mjs');runTest('kids-intake-order-tests.mjs');runTest('batch-artifact-index-tests.mjs');runTest('current-batch-snapshot-tests.mjs');runTest('drain-forward-progress-tests.mjs');
- runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');runTest('ingestion-policy-tests.mjs');runTest('campaign-recovery-tests.mjs');runTest('persistent-kids-queue-tests.mjs');runTest('campaign-saved-replay-tests.mjs');
+ runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');runTest('ingestion-policy-tests.mjs');runTest('campaign-recovery-tests.mjs');runTest('persistent-kids-queue-tests.mjs');runTest('continuous-intake-tests.mjs');runTest('continuous-kids-service-tests.mjs');runTest('campaign-saved-replay-tests.mjs');
  runTest('sheet-truth-merge-chunk-tests.mjs');runTest('authorized-invalid-retry-tests.mjs');runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
  runTest('continuous-dispatcher-tests.mjs');
@@ -43,33 +43,24 @@ async function main(){
   const counts={};for(const id of lane==='kids'?config.clusters.map(c=>c.controlId):[config.shadowing.controlId]){const range=lane==='kids'?"'Jobs'!F2:F5000":"'SHADOWING AI'!F2:F5000";const rows=google.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+encodeURIComponent(range)).values||[];for(const r of rows)if(r[0]){try{const j=JSON.parse(r[0]);counts[j.status]=(counts[j.status]||0)+1;}catch{counts.INVALID=(counts.INVALID||0)+1;}}}
   console.log(JSON.stringify({audit:true,counts,providerGenerateCalls:0}));return;
  }
- const workDeadline=Date.now()+300*60000;let frozenRemaining=0;
- if(fs.existsSync(path.join(root,'backlog_563.enc'))){
-  const encrypted=fs.readFileSync(path.join(root,'backlog_563.enc'));if(encrypted.subarray(0,4).toString()!=='FB01')throw Error('BACKLOG_ENVELOPE_INVALID');
-  const decoder=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),encrypted.subarray(4,16));decoder.setAAD(Buffer.from(repository+'/frozen-backlog'));decoder.setAuthTag(encrypted.subarray(16,32));
-  const target=path.join(root,'private','backlog_563.json');fs.writeFileSync(target,gunzipSync(Buffer.concat([decoder.update(encrypted.subarray(32)),decoder.final()])));
-  // One GitHub writer/coordinator, four isolated media/AI workers, native leases.
-  // Keep four media/AI workers while leaving Sheets quota room for the other
-  // grading lanes using the same service-account principal.
-  process.env.GOOGLE_SHEETS_INTERVAL_MS='2000';process.env.GOOGLE_RATE_GATE_FILE=path.join(root,'private','campaign-google-rate.json');
-  const {runFrozenBacklog}=await import('./frozen-backlog-runner.mjs');const report=await runFrozenBacklog(target);
-  const {campaignClosed}=await import('./frozen-backlog-policy.mjs');frozenRemaining=Object.entries(report.counts).filter(([state])=>!campaignClosed(state)).reduce((n,[,count])=>n+count,0);
-  if(Date.now()>workDeadline-5*60000)return;
- }
- if(lane==='kids'){
-  // All ordinary grading uses the same four-worker coordinator. The legacy
-  // runner may discover work only; it is never a one-worker paid fallback.
-  const {prepareNativeTodo,discoveryAllowed}=await import('./persistent-kids-queue.mjs'),{runFrozenBacklog}=await import('./frozen-backlog-runner.mjs'),{runnerGoogle,buildContext}=await import('./grader_runner.mjs');
-  const todoFile=path.join(root,'private','native-kids-todo.json');let todo=await prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext});
-  if(discoveryAllowed(frozenRemaining,todo.queue)){
-   const scanMinutes=Math.max(1,Math.min(30,(workDeadline-Date.now())/60000-5));
+ const workDeadline=Date.now()+300*60000;
+ const encrypted=fs.readFileSync(path.join(root,'backlog_563.enc'));if(encrypted.subarray(0,4).toString()!=='FB01')throw Error('BACKLOG_ENVELOPE_INVALID');
+ const decoder=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),encrypted.subarray(4,16));decoder.setAAD(Buffer.from(repository+'/frozen-backlog'));decoder.setAuthTag(encrypted.subarray(16,32));
+ const target=path.join(root,'private','backlog_563.json');fs.writeFileSync(target,gunzipSync(Buffer.concat([decoder.update(encrypted.subarray(32)),decoder.final()])));
+ process.env.GOOGLE_SHEETS_INTERVAL_MS='2000';process.env.GOOGLE_RATE_GATE_FILE=path.join(root,'private','campaign-google-rate.json');
+ const {runFrozenBacklog}=await import('./frozen-backlog-runner.mjs'),{prepareNativeTodo}=await import('./persistent-kids-queue.mjs'),{runnerGoogle,buildContext}=await import('./grader_runner.mjs'),{intakeNewKidsReceipts}=await import('./continuous-intake.mjs'),{runKidsService}=await import('./continuous-kids-service.mjs');
+ const todoFile=path.join(root,'private','native-kids-todo.json');
+ await runKidsService({deadline:workDeadline,
+  intake:()=>intakeNewKidsReceipts({config,google:runnerGoogle,buildContext,emit:x=>console.log(JSON.stringify(x))}),
+  runFrozen:minutes=>runFrozenBacklog(target,{minutes}),
+  prepareTodo:()=>prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext}),
+  discover:async scanMinutes=>{
    const scan=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--scan-only','--max-minutes='+scanMinutes],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:(scanMinutes+2)*60000,maxBuffer:20*1024*1024});
-   if(scan.status!==0){fs.writeFileSync(path.join(root,'private','intake-scan-failure.txt'),scan.stdout+'\n'+scan.stderr);throw Error('NATIVE_INTAKE_SCAN_FAILED');}
-   runnerGoogle.invalidate();todo=await prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext});
-  }
-  if(todo.queue.total&&Date.now()<workDeadline-3*60000)await runFrozenBacklog(todoFile,{table:'KidsTodo',minutes:Math.max(1,(workDeadline-Date.now())/60000-1)});
-  console.log(JSON.stringify({event:'KIDS_PERSISTENT_POOL_COMPLETE',workers:4,nativeQueueEntries:todo.entries,providerCallsInDiscovery:0}));return;
- }
+   if(scan.status!==0){fs.writeFileSync(path.join(root,'private','intake-scan-failure.txt'),scan.stdout+'\n'+scan.stderr);throw Error('NATIVE_INTAKE_SCAN_FAILED');}runnerGoogle.invalidate();
+  },
+  runTodo:minutes=>runFrozenBacklog(todoFile,{table:'KidsTodo',minutes})
+ });
+ return;
  let finished=0,requests=0;
  if(lane==='kids'){
   // The child stops new work at40min. Allow final raw/usage/Sheet checkpoints to finish without a 45min hard kill.
