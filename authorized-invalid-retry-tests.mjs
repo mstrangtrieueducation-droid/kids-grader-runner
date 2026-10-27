@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {authorizeInvalidRetry,authorizedInvalidRetry,invalidArtifactProof,invalidRetryId,invalidRetryGenerationDigest,INVALID_RETRY_AUTH} from './authorized-invalid-retry.mjs';
+import {authorizeInvalidRetry,authorizedInvalidRetry,invalidArtifactProof,invalidRetryId,invalidRetryGenerationDigest,INVALID_RETRY_AUTH,initializeAuthorizedRetryInventory} from './authorized-invalid-retry.mjs';
+import vm from 'node:vm';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'invalid-retry-test-')),approvalFile=path.join(temp,'approval.json');process.env.INVALID_RESULT_RETRY_AUTH_FILE=approvalFile;
 import {automaticEligible} from './automatic-authorization.mjs';
@@ -18,11 +19,15 @@ function fixture(changes={}){
 }
 {
  const f=fixture(),child=f.run();assert(child);assert.equal(child.row,22);assert.equal(JSON.stringify(f.parent),f.before,'paid parent preserved byte-for-byte');
- assert.equal(child.job.id,invalidRetryId(f.parent));assert.equal(child.job.generateRequests,0);assert.equal(child.job.rawId,undefined);assert.equal(child.job.apiUsage,undefined);assert.equal(child.job.media,undefined);assert.equal(child.job.snapshotId,undefined);assert.equal(child.job.autoManaged,true);
+ assert.equal(child.job.id,invalidRetryId(f.parent));assert.equal(child.job.generateRequests,0);assert.equal(child.job.rawId,undefined);assert.equal(child.job.apiUsage,undefined);assert.deepEqual(child.job.media,[]);assert.equal(child.job.snapshotId,undefined);assert.equal(child.job.autoManaged,true);
  assert(authorizedInvalidRetry(child.job,f.entries));assert(automaticEligible(child.job,f.entries.map(x=>x.job)));
  assert.equal(f.run(),child);assert.equal(f.writes.length,1,'same receipt can append exactly one child');
+ delete child.job.media;let saved=0;assert(initializeAuthorizedRetryInventory(child.job,f.entries,()=>saved++));assert.equal(saved,1);assert.deepEqual(child.job.media,[]);assert.equal(initializeAuthorizedRetryInventory(child.job,f.entries,()=>saved++),false);
+ const native=vm.createContext({Date,job:child.job,keys_:()=>['SYNTHETIC-KEY'],hash_:s=>'HASH-'+s,prop_:()=>({getProperty:k=>({'GEMINI_API_KEYS':'SYNTHETIC-KEY','GEMINI_KEY_PROJECT_IDS':'SYNTHETIC-PROJECT','GEMINI_POOL_COOLDOWNS':'{}'})[k]||''}),fleetModelPool_:()=>['gemini-3.8-flash'],configuredModel_:()=> 'gemini-3.8-flash',FALLBACK_MODEL_NAMES:[],require_:(ok,why)=>{if(!ok)throw Error(why);},persist_:()=>{},audit_:()=>{},fleetNeedsUpload_:()=>false});
+ vm.runInContext(fs.readFileSync(new URL('./gas/FleetKeyPool.gs',import.meta.url),'utf8'),native);child.job.status='READY';native.job={...child.job,media:undefined};assert.throws(()=>vm.runInContext('preparePoolRetry_(job,22)',native),/media.*iterable/,'reproduce the actual native initialization failure');native.job=child.job;vm.runInContext('preparePoolRetry_(job,22)',native);assert.equal(child.job.keyHash,'HASH-SYNTHETIC-KEY');assert.deepEqual(child.job.media,[]);assert.equal(child.job.generateRequests,0,'actual native pool setup performs no generation');assert.equal(JSON.stringify(f.parent),f.before);
  const target={...f.parent.cls,student:f.parent.receipt.student,code:f.parent.receipt.code,submissionAt:f.parent.receipt.time};assert.equal(selectExisting(target,f.entries),child,'authorized child selected before failed saved parent');
  child.job.rawId='new-invalid';child.job.generateRequests=1;child.job.status='SYSTEM_GRADING_ERROR';assert.equal(authorizeInvalidRetry(f.c,child,f.entries,f.cell,f.persist),null);assert.equal(automaticEligible(child.job,f.entries.map(x=>x.job)),false);assert.equal(f.writes.length,1);
+ delete child.job.media;assert.equal(initializeAuthorizedRetryInventory(child.job,f.entries,()=>{throw Error('paid job must not be changed');}),false);
  const rejectedAgain={...structuredClone(child.job),rawId:undefined,status:'WAITING_PROVIDER_QUOTA',providerFailure:{http:429},error:'PROVIDER_QUOTA_REJECTED'};
  assert.equal(providerRetryCandidate(rejectedAgain),false);assert.equal(dashboardReprocessPlan(rejectedAgain,'✅ ĐÃ NỘP\n— NHẬN XÉT GV —','third'),null);
  const noRawParent={...structuredClone(f.parent),rawId:undefined,apiUsage:undefined,providerFailure:{http:429},status:'WAITING_PROVIDER_QUOTA'};

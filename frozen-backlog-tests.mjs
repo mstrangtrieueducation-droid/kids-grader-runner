@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {createHash} from 'node:crypto';
-import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,resolveFrozenTarget,cacheFirstItems} from './frozen-backlog-policy.mjs';
+import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,resolveFrozenTarget,cacheFirstItems,resultNativeClaim} from './frozen-backlog-policy.mjs';
 import {Book,Sheet,RichBuilder} from './google-adapter.mjs';import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {installFrozenGenerationGuard} from './frozen-generation-guard.mjs';
 const target={spreadsheetId:'fixture-class',sheetId:20,cell:'D5',student:'FIXTURE PUPIL',className:'KIDS 90',code:'SCIENCE-G1-01',submissionAt:'2026-10-25T10:00:00Z'};
@@ -8,6 +8,7 @@ const entry={row:2,job},item={id:'fixture-item',target};const q={schema:'kids-fr
 const executionOrder=[{id:'new'},{id:'saved',delivery:{rawId:'saved-raw'}},{id:'native-saved',savedArtifact:true}];assert.deepEqual(cacheFirstItems(executionOrder).map(x=>x.id),['saved','native-saved','new']);assert.equal(executionOrder[0].id,'new','cache priority does not rewrite immutable receipt membership');
 assert.equal(validateBacklog(q),q);assert.throws(()=>validateBacklog({...q,items:[item,item],total:2}),/DUPLICATE/);assert.throws(()=>validateBacklog({...q,membershipHash:'wrong'}),/MEMBERSHIP/);
 assert(matchesTarget(job,target));assert(!matchesTarget(job,{...target,submissionAt:'2026-10-25T11:00:00Z'}));assert(!matchesTarget(job,{...target,spreadsheetId:'other'}));
+const claimed={...item,claim:{controlId:'fixture-control',jobId:job.id,row:2,worker:0,runId:'fixture-run'}},claimBefore=JSON.stringify(claimed),childResult={job:{...job,id:'fixture-authorized-child'},nativeRow:23};const rebound=resultNativeClaim(claimed,childResult,'fixture-control');assert.equal(rebound.jobId,'fixture-authorized-child');assert.equal(rebound.row,23);assert.deepEqual(rebound.priorNativeBinding,{jobId:job.id,row:2});assert.equal(JSON.stringify(claimed),claimBefore);assert.throws(()=>resultNativeClaim(claimed,{...childResult,job:{...childResult.job,receipt:{...job.receipt,student:'DIFFERENT FIXTURE'}}},'fixture-control'),/BINDING/);assert.throws(()=>resultNativeClaim(claimed,childResult,'different-control'),/CONTROL/);
 assert.equal(selectExisting(target,[entry]),entry);
 for(const evidence of [{generateRequests:1},{physicalGenerateRequests:1},{apiUsage:{tokens:1}}])assert.equal(selectExisting(target,[entry,{row:3,job:{...job,...evidence,id:'paid-parent'}}]),null,'paid duplicate never licenses the uncalled copy');
 const saved={row:3,job:{...job,id:'saved',rawId:'fixture-raw'}};assert.equal(selectExisting(target,[entry,saved]),saved);assert.equal(selectExisting(target,[{row:2,job:{...job,nextAt:Date.now()+60000}}]),null);

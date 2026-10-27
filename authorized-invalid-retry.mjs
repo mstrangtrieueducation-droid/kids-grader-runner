@@ -32,10 +32,15 @@ export function invalidArtifactProof(raw,job){
  return {code:'UNASSESSABLE_WITHOUT_VALID_SCORE',hash:hash(raw)};
 }
 export function authorizedInvalidRetry(job,all){
+ if(job.invalidResultRetry?.authorization!==INVALID_RETRY_AUTH)return false;
  const a=job.invalidResultRetry,approval=approvalSnapshot();if(!approval||a?.approvalSnapshotHash!==hash(approval)||a?.authorization!==INVALID_RETRY_AUTH||a.maxNewGenerations!==1||job.id!==invalidRetryId(job)||a.receiptHash!==hash(identity(job)))return false;
  const matches=all.map(x=>x.job||x).filter(p=>same(p,job)&&p.id!==job.id);
  if(!matches.length||matches.some(p=>p.invalidResultRetry||!a.parents?.some(x=>x.id===p.id&&x.referenceHash===hash([...references(p)].sort())&&x.generationDigest===invalidRetryGenerationDigest(p))||(hasRequest(p)||references(p).size)&&!approval.generationDigests.includes(invalidRetryGenerationDigest(p))))return false;
  return a.parents.length===matches.length&&a.parents.some(x=>x.proofs?.length);
+}
+export function initializeAuthorizedRetryInventory(job,all,save){
+ if(job.media!==undefined||job.rawId||job.gradeId||hasRequest(job)||!authorizedInvalidRetry(job,all))return false;
+ job.media=[];save();return true;
 }
 export function authorizeInvalidRetry(c,entry,entries,cell,persist){
  const parent=entry.job,all=entries.map(x=>x.job||x),id=invalidRetryId(parent);
@@ -68,7 +73,7 @@ export function authorizeInvalidRetry(c,entry,entries,cell,persist){
  if(!invalid)return null;
  // Rebuild source metadata, audio, frames and prompt from the current native
  // route. Do not copy any old input, raw, usage, counter or reservation fields.
- const child={id,cls:structuredClone(parent.cls),route:structuredClone(parent.route),receipt:structuredClone(parent.receipt),autoManaged:true,status:'WAITING_INPUT',attempts:0,nextAt:0,error:'',generateRequests:0,createdAt:new Date().toISOString(),invalidResultRetry:{authorization:INVALID_RETRY_AUTH,approvalSnapshotHash:hash(approval),maxNewGenerations:1,receiptHash:hash(identity(parent)),parents,at:new Date().toISOString()}};
+ const child={id,cls:structuredClone(parent.cls),route:structuredClone(parent.route),receipt:structuredClone(parent.receipt),autoManaged:true,media:[],status:'WAITING_INPUT',attempts:0,nextAt:0,error:'',generateRequests:0,createdAt:new Date().toISOString(),invalidResultRetry:{authorization:INVALID_RETRY_AUTH,approvalSnapshotHash:hash(approval),maxNewGenerations:1,receiptHash:hash(identity(parent)),parents,at:new Date().toISOString()}};
  const row=persist(child);if(!Number.isInteger(row)||row<2)throw Error('INVALID_RETRY_APPEND_NOT_CONFIRMED');
  const added={row,job:child};entries.push(added);return added;
 }

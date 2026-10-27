@@ -1,6 +1,6 @@
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
 import {replaySavedClassBatch} from './campaign-saved-replay.mjs';
-import {authorizeInvalidRetry} from './authorized-invalid-retry.mjs';
+import {authorizeInvalidRetry,initializeAuthorizedRetryInventory} from './authorized-invalid-retry.mjs';
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
 import {matchesTarget,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
@@ -37,6 +37,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   const before=cell.getDisplayValue(),beforeNote=cell.getNote();let recovered=false,noAudio=false;
   const licensed=authorizeInvalidRetry(c,entry,entries,cell,nativePersist);
   if(licensed){entry=licensed;j=entry.job;executable=true;}
+  initializeAuthorizedRetryInventory(j,entries,()=>c.persist_(j,entry.row));
   const approval=c.teacherApprovalSession_.approved.get(j.id),manual=!!approval&&!approval.automatic&&String(approval.sourceLink).includes('/'+controlId+'/')&&String(approval.sourceLink).includes('A'+entry.row+':F'+entry.row)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(before);
   if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);if(!noAudio&&j.campaignAudioSourceRecheck?.requiresSavedAssessmentReconciliation)throw Error('HISTORICAL_AUDIO_NOTICE_NOT_CONFIRMED');if(!noAudio)recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});}
   if(hasTeacherReview(before)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};

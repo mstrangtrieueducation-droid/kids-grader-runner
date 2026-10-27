@@ -14,6 +14,12 @@ export function validateBacklog(q){
  return q;
 }
 export function matchesTarget(j,t){return j.cls?.spreadsheetId===t.spreadsheetId&&normalize(j.cls?.className)===normalize(t.className)&&normalize(j.receipt?.student)===normalize(t.student)&&normalize(j.receipt?.code)===normalize(t.code)&&Date.parse(j.receipt?.time)===Date.parse(t.submissionAt);}
+export function resultNativeClaim(item,result,controlId){
+ if(!Number.isInteger(result.nativeRow)||result.nativeRow<2||!matchesTarget(result.job,item.target))throw Error('WORKER_NATIVE_RESULT_BINDING_INVALID');
+ const claim=item.claim;if(!claim||claim.controlId!==controlId)throw Error('WORKER_NATIVE_RESULT_CONTROL_INVALID');
+ if(claim.jobId===result.job.id&&claim.row===result.nativeRow)return claim;
+ return {...claim,priorNativeBinding:claim.priorNativeBinding||{jobId:claim.jobId,row:claim.row},jobId:result.job.id,row:result.nativeRow};
+}
 export function selectExisting(t,entries,now=Date.now()){
  const all=entries.map(x=>x.job),matches=entries.filter(x=>matchesTarget(x.job,t));
  const explicit=matches.find(x=>authorizedInvalidRetry(x.job,all));
