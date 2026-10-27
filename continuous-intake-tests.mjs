@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import vm from 'node:vm';
 import {Sheet} from './google-adapter.mjs';
-import {intakeDue,tailWindow,intakeNewKidsReceipts,INTAKE_INTERVAL,encodeIntakeState,decodeIntakeState} from './continuous-intake.mjs';
+import {intakeDue,tailWindow,intakeNewKidsReceipts,INTAKE_INTERVAL,encodeIntakeState,decodeIntakeState,boundTailRows,takeIntakeRows} from './continuous-intake.mjs';
 assert(intakeDue({},100));assert(!intakeDue({completedAt:100},101));assert(intakeDue({completedAt:100},100+INTAKE_INTERVAL));
-assert.deepEqual(tailWindow({known:101,rowCount:200}),{acknowledged:69,start:70,end:119,empty:false});
+assert.deepEqual(tailWindow({known:101,rowCount:200}),{acknowledged:101,start:102,end:151,empty:false});
 assert.deepEqual(tailWindow({cursor:150,known:999,rowCount:200}),{acknowledged:150,start:151,end:200,empty:false});
 assert(tailWindow({cursor:200,rowCount:200}).empty);
 assert.throws(()=>tailWindow({rowCount:0}),/ROW_COUNT/);
+const pages=Array.from({length:12},(_,tab)=>Array.from({length:50},(_,row)=>({tab,row}))),bounded=boundTailRows(pages);assert.equal(bounded.flat().length,24);assert(bounded.every(x=>x.length===2));assert.deepEqual(bounded[0],pages[0].slice(0,2),'each page advances only through selected contiguous rows');
+const weighted=takeIntakeRows([{tail:pages[0],old:pages[1]}])[0];assert.equal(weighted.filter(x=>x.tab===0).length,18);assert.equal(weighted.filter(x=>x.tab===1).length,6);assert.equal(takeIntakeRows([{tail:pages[0],old:[]}])[0].length,24);
 function fixture({network=false,issueFailure=false,rowFailure=false,wireRow=102,initial={}}={}){
  const config={clusters:[{controlId:'synthetic-control',classes:[{className:'KIDS 90',spreadsheetId:'synthetic-class'}]}]},saved=[],calls=[],parsed=[];let releases=0,invalidations=0;
  const book={id:'synthetic-source',cache:new Map()},norm=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').trim().replace(/\s+/g,' ').toUpperCase();
- const c=vm.createContext({Date,Object,KG:{source:'synthetic-source'},norm_:norm,require_:(v,e)=>{if(!v)throw Error(e);},SpreadsheetApp:{openById:()=>book},runnerProperties:new Map()});
+ const c=vm.createContext({Date,Object,FLEET_CLUSTER:config.clusters[0],KG:{source:'synthetic-source'},norm_:norm,require_:(v,e)=>{if(!v)throw Error(e);},SpreadsheetApp:{openById:()=>book},runnerProperties:new Map()});
  vm.runInContext(fs.readFileSync('gas/Fleet.gs','utf8'),c);
  const tabs=Array.from(vm.runInContext('KIDS21_AUTO.tabs',c));
  book.sheets=tabs.map((title,i)=>new Sheet(book,{properties:{title,sheetId:i+1,gridProperties:{rowCount:200,columnCount:5}},merges:[]}));book.getSheetByName=name=>book.sheets.find(s=>s.getName()===name);
@@ -39,7 +41,7 @@ for(const option of [{issueFailure:true},{rowFailure:true}]){
  const bad=fixture(option);const result=await intakeNewKidsReceipts(bad.options);assert(result.failed);const state=JSON.parse(bad.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert(state.deferred.some(x=>x.row===102&&x.tab==='SCIENCE G3'),'failed row remains durably replayable without holding newer rows');assert.equal(bad.releases(),1);assert.equal(bad.invalidations(),2);
 }
 const idle=fixture({initial:{FLEET_SCAN_INTAKE_TAIL_V1:JSON.stringify({completedAt:Date.parse('2026-10-27T10:59:00Z'),tabs:{}})}});assert.equal((await intakeNewKidsReceipts(idle.options)).due,false);assert.equal(idle.calls.length,0);assert.equal(idle.releases(),1);
-const filled=fixture({wireRow:119});assert((await intakeNewKidsReceipts(filled.options)).more,'a full tail page continues immediately rather than sleeping ten minutes');
+const filled=fixture({wireRow:151});assert((await intakeNewKidsReceipts(filled.options)).more,'a full tail page continues immediately rather than sleeping ten minutes');
 const replayState={tabs:{'synthetic-source|11':150},deferred:[{source:'synthetic-source',tab:'SCIENCE G3',row:102,controlId:'synthetic-control',nextAt:0}]};
 const replay=fixture({initial:{FLEET_SCAN_INTAKE_TAIL_V1:JSON.stringify(replayState)}});await intakeNewKidsReceipts(replay.options);assert.equal(replay.parsed[0].row,102);const resumed=decodeIntakeState(replay.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert.equal(resumed.tabs['synthetic-source|11'],150);assert.equal(resumed.deferred.length,0,'deferred old row replays independently of the new tail cursor');
 const many={tabs:{},deferred:Array.from({length:2000},(_,row)=>({source:'synthetic-source',tab:'SCIENCE G3',row,controlId:'synthetic-control',nextAt:0,reason:'NATIVE_ASSIGNMENT_PENDING'}))};const encoded=encodeIntakeState(many);assert(encoded.startsWith('gz:'));assert(encoded.length<32000);assert.deepEqual(decodeIntakeState(encoded),many);

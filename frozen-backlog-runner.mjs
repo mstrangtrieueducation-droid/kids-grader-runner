@@ -12,7 +12,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
  const saveLocal=()=>{const t=file+'.tmp';fs.writeFileSync(t,JSON.stringify(q));fs.renameSync(t,file);};
  const control=config.clusters[0].controlId,tab=table,base='https://sheets.googleapis.com/v4/spreadsheets/'+control;
  const durable=(items)=>{if(!items.length)return;g.api(base+'/values:batchUpdate','POST',{valueInputOption:'RAW',data:items.map(item=>({range:"'"+tab+"'!A"+(q.items.indexOf(item)+2)+':F'+(q.items.indexOf(item)+2),values:[[item.id,item.state,new Date().toISOString(),process.env.GITHUB_RUN_ID||'',q.membershipHash,JSON.stringify(item)]]}))});saveLocal();};
- let beats,providerCalls=0;
+ let beats,providerCalls=0,preparationAdvanced=0;
  try{
   // The ordinary workflow and this coordinator share the same GitHub concurrency
   // group. A coordinator owns all native leases; workers never erase/acquire them.
@@ -61,6 +61,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
      if(m.event==='CALL_STARTED'){providerCalls++;}
      if(m.event==='RESULT_BATCH'){
       const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;if(Number.isInteger(r.nativeRow))item.claim=resultNativeClaim(item,r,work.controlId);item.state=r.state;item.resolvedTarget=r.target||item.resolvedTarget;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,replayProof:r.replayProof||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;else if(Number.isInteger(r.nativeRow)&&matchesTarget(r.job,item.target)&&r.job.invalidResultRetry)work.entries.push({job:r.job,row:r.nativeRow});else throw Error('WORKER_NATIVE_ENTRY_INVALID');fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
+      for(const {item} of work.batch){const job=work.entries.find(x=>x.job.id===item.delivery.jobId)?.job;if(job&&preparationProgress(job)!==work.before.get(item.id))preparationAdvanced++;}
       active.delete(w.pid);w.busy=false;restarts.set(slot,0);durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(item.state==='RETRY'&&item.nextAt>Date.now()&&progress.allow(work.entries.find(x=>x.job.id===item.delivery.jobId).job,work.before.get(item.id)))attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
       if(Math.floor(verified/50)*50>milestone){milestone=Math.floor(verified/50)*50;console.log(JSON.stringify({event:'CAMPAIGN_VERIFIED_MILESTONE',verified,total:q.total,providerCalls}));}schedule(w);
      }
@@ -79,7 +80,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
     }catch(e){reject(e);}});w.on('error',reject);
    };for(let slot=0;slot<4;slot++)launch(slot);
   });
-  const report={at:new Date().toISOString(),campaignId:q.campaignId,total:q.total,workers:4,attempted:attempted.size,providerCalls,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};fs.writeFileSync(path.join(root,'private','campaign-report.json'),JSON.stringify(report));console.log(JSON.stringify({event:'CAMPAIGN_RUN_COMPLETE',...report}));return report;
+  const report={at:new Date().toISOString(),campaignId:q.campaignId,total:q.total,workers:4,attempted:attempted.size,providerCalls,preparationAdvanced,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};fs.writeFileSync(path.join(root,'private','campaign-report.json'),JSON.stringify(report));console.log(JSON.stringify({event:'CAMPAIGN_RUN_COMPLETE',...report}));return report;
  }finally{fs.writeFileSync(haltFile,'COORDINATOR_DRAINING');for(const w of workers)w.retire=true;if(workers.some(w=>w.connected))await Promise.all(workers.filter(w=>w.connected).map(w=>new Promise(resolve=>{w.once('exit',resolve);if(!w.busy)w.send({stop:true});})));clearInterval(beats);for(const l of leases.reverse())l.release();release();}
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))await runFrozenBacklog(process.env.FROZEN_BACKLOG_FILE);
