@@ -53,9 +53,9 @@ async function main(){
  if(lane==='kids'){
   // All ordinary grading uses the same four-worker coordinator. The legacy
   // runner may discover work only; it is never a one-worker paid fallback.
-  const {prepareNativeTodo}=await import('./persistent-kids-queue.mjs'),{runFrozenBacklog}=await import('./frozen-backlog-runner.mjs'),{runnerGoogle,buildContext}=await import('./grader_runner.mjs');
+  const {prepareNativeTodo}=await import('./persistent-kids-queue.mjs'),{runFrozenBacklog}=await import('./frozen-backlog-runner.mjs'),{runnerGoogle,buildContext}=await import('./grader_runner.mjs'),{campaignClosed}=await import('./frozen-backlog-policy.mjs');
   const todoFile=path.join(root,'private','native-kids-todo.json');let todo=await prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext});
-  if(!todo.queue.items.some(x=>!['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(x.state))){
+  if(!todo.queue.items.some(x=>!campaignClosed(x.state))){
    const scanMinutes=Math.max(1,Math.min(30,(workDeadline-Date.now())/60000-5));
    const scan=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--scan-only','--max-minutes='+scanMinutes],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:(scanMinutes+2)*60000,maxBuffer:20*1024*1024});
    if(scan.status!==0){fs.writeFileSync(path.join(root,'private','intake-scan-failure.txt'),scan.stdout+'\n'+scan.stderr);throw Error('NATIVE_INTAKE_SCAN_FAILED');}

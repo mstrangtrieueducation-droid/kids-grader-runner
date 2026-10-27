@@ -1,4 +1,4 @@
-import {prepareCampaignRecovery,confirmedNoAudioNotice} from './campaign-recovery.mjs';
+import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
 import {matchesTarget,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
@@ -56,10 +56,10 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
    const actual=c.destination_(j.cls,j.route,j.receipt.student).cell;
    const after=actual.getDisplayValue(),exact=actual.sheet.getSheetId()===resolvedTarget.sheetId&&actual.getA1Notation()===resolvedTarget.cell;
    if(manual&&after===before&&hasTeacherReview(after)){c.teacherApprovalSession_.finish(j);c.teacherApprovalSession_.flush();c.persist_(j,entry.row);}
-   result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:Number(j.nextAt)||0};
+   result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.rosterEligibility?.state==='NOT_IN_CURRENT_ROSTER'?'SKIPPED_NOT_IN_CURRENT_ROSTER':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:Number(j.nextAt)||0};
   }
   result.target=resolvedTarget;
- }catch(e){result={state:'HELD',error:/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',job:entry.job};}
+ }catch(e){let retired=false;try{retired=closeRetiredCampaignRecord(c,entry.job,entry.row,e);}catch{}result={state:retired?'SKIPPED_NOT_IN_CURRENT_ROSTER':'HELD',error:retired?null:/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',job:entry.job};}
  if(c.runnerUniversalMedia_?.downloadProgress)result.job.campaignTransportProgress=c.runnerUniversalMedia_.downloadProgress();
  results.push({itemId:item.id,target:item.target,result});
  process.send({event:'ITEM_SAVED',itemId:item.id,calls:result.calls||0});

@@ -2,6 +2,7 @@ import {hasRequest,hasSavedResult} from './universal-media.mjs';
 import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
 import {hasTeacherReview,receiptOnlyCell,mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {truthNoticeText} from './sheet-truth-sync.mjs';
+import {markNotCurrent} from './current-roster-policy.mjs';
 export const CAMPAIGN_RECOVERY='teacher-universal-ingestion-20261027';
 function assessmentEvidence(x,seen=new Set()){
  if(!x||typeof x!=='object'||seen.has(x))return false;seen.add(x);
@@ -48,4 +49,8 @@ export function confirmedNoAudioNotice(c,j,row,cell){
  if(cell.getDisplayValue()!==before)throw Error('DESTINATION_CHANGED');
  cell.setRichTextValue(c.coloredFeedback_(cell,text,null));
  j.autoNotice=cell.getDisplayValue();j.status='COMPLETED_NEEDS_RESUBMISSION';j.error='';j.nextAt=0;delete j.pendingInputNotice;c.persist_(j,row);return true;
+}
+export function closeRetiredCampaignRecord(c,j,row,error){
+ if(!/^STUDENT_NOT_FOUND_OR_AMBIGUOUS$/.test(error?.message||'')||!c.currentRoster_||c.currentRoster_(j.receipt,{fresh:true})!==false)return false;
+ markNotCurrent(j,()=>c.persist_(j,row));return true;
 }

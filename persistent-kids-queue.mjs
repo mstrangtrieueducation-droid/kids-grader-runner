@@ -2,7 +2,7 @@
 // homework classification is introduced here; native eligibility/resolvers win.
 import fs from 'node:fs';
 import {createHash} from 'node:crypto';
-import {readNativeQueue,selectExisting,matchesTarget,validateBacklog} from './frozen-backlog-policy.mjs';
+import {readNativeQueue,selectExisting,matchesTarget,validateBacklog,campaignClosed} from './frozen-backlog-policy.mjs';
 import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {hasTeacherReview,receiptOnlyCell} from './teacher-feedback-state.mjs';
 import {masterScopeAllowsJob} from './master-submission-scope.mjs';
@@ -18,7 +18,7 @@ export function appendNativeItems(previous,entries,resolve,{now=Date.now(),appro
   if(!old||Date.parse(j.receipt?.time)>Date.parse(old.job.receipt?.time))newest.set(key,entry);
  }
  let added=0;for(const entry of newest.values()){
-  const j=entry.job,prior=q.items.filter(x=>matchesTarget(j,x.target)),live=prior.some(x=>!['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(x.state)),id=digest(approved.has(j.id)&&prior.length&&!live?['native-todo',j.id,'manual',prior.length]:['native-todo',j.id]);if(known.has(id)||approved.has(j.id)&&live)continue;
+  const j=entry.job,prior=q.items.filter(x=>matchesTarget(j,x.target)),live=prior.some(x=>!campaignClosed(x.state)),id=digest(approved.has(j.id)&&prior.length&&!live?['native-todo',j.id,'manual',prior.length]:['native-todo',j.id]);if(known.has(id)||approved.has(j.id)&&live)continue;
   let target;try{target=resolve(entry);}catch{continue;}if(!target||!matchesTarget(j,target))continue;
   const chosen=selectExisting(target,entries,now);if(!approved.has(j.id)&&(!chosen||chosen.job.id!==j.id))continue;
   q.items.push({id,target,state:'PENDING_VALIDATION',attempts:[]});known.add(id);added++;
