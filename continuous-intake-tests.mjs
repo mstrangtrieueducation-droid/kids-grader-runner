@@ -33,10 +33,10 @@ function fixture({network=false,issueFailure=false,rowFailure=false,wireRow=102,
 const f=fixture(),result=await intakeNewKidsReceipts(f.options);
 assert.equal(result.providerCalls,0);assert.equal(f.calls.length,1,'one batched tail transport, no 28-class scan');assert.equal(f.parsed.length,1);
 assert.equal(f.parsed[0].time,'2026-10-27T10:00:00.000Z');assert.equal(f.parsed[0].row,102);assert.equal(f.parsed[0].links,'https://example.test/a, https://example.test/b');
-const state=JSON.parse(f.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert.equal(state.tabs['synthetic-source|11'],102);assert.equal(f.releases(),1);assert.equal(f.invalidations(),1);
+const state=JSON.parse(f.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert.equal(state.tabs['synthetic-source|11'],102);assert.equal(f.releases(),1);assert.equal(f.invalidations(),2,'refresh before inspection and discard partial grids after intake');
 const network=fixture({network:true});await assert.rejects(()=>intakeNewKidsReceipts(network.options));assert.equal(network.saved.length,0);assert.equal(network.releases(),1);
 for(const option of [{issueFailure:true},{rowFailure:true}]){
- const bad=fixture(option);const result=await intakeNewKidsReceipts(bad.options);assert(result.failed);const state=JSON.parse(bad.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert(state.deferred.some(x=>x.row===102&&x.tab==='SCIENCE G3'),'failed row remains durably replayable without holding newer rows');assert.equal(bad.releases(),1);assert.equal(bad.invalidations(),1);
+ const bad=fixture(option);const result=await intakeNewKidsReceipts(bad.options);assert(result.failed);const state=JSON.parse(bad.saved[0].FLEET_SCAN_INTAKE_TAIL_V1);assert(state.deferred.some(x=>x.row===102&&x.tab==='SCIENCE G3'),'failed row remains durably replayable without holding newer rows');assert.equal(bad.releases(),1);assert.equal(bad.invalidations(),2);
 }
 const idle=fixture({initial:{FLEET_SCAN_INTAKE_TAIL_V1:JSON.stringify({completedAt:Date.parse('2026-10-27T10:59:00Z'),tabs:{}})}});assert.equal((await intakeNewKidsReceipts(idle.options)).due,false);assert.equal(idle.calls.length,0);assert.equal(idle.releases(),1);
 const filled=fixture({wireRow:119});assert((await intakeNewKidsReceipts(filled.options)).more,'a full tail page continues immediately rather than sleeping ten minutes');

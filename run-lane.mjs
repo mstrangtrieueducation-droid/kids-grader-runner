@@ -50,10 +50,11 @@ async function main(){
  process.env.GOOGLE_SHEETS_INTERVAL_MS='2000';process.env.GOOGLE_RATE_GATE_FILE=path.join(root,'private','campaign-google-rate.json');
  const {runFrozenBacklog}=await import('./frozen-backlog-runner.mjs'),{prepareNativeTodo}=await import('./persistent-kids-queue.mjs'),{runnerGoogle,buildContext}=await import('./grader_runner.mjs'),{intakeNewKidsReceipts}=await import('./continuous-intake.mjs'),{runKidsService}=await import('./continuous-kids-service.mjs');
  const todoFile=path.join(root,'private','native-kids-todo.json');
+ const refreshNativeLedgers=()=>{runnerGoogle.invalidate();for(const cluster of config.clusters)runnerGoogle.book(cluster.controlId).refresh();};
  await runKidsService({deadline:workDeadline,
   intake:()=>intakeNewKidsReceipts({config,google:runnerGoogle,buildContext,emit:x=>console.log(JSON.stringify(x))}),
-  runFrozen:minutes=>runFrozenBacklog(target,{minutes}),
-  prepareTodo:()=>prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext}),
+  runFrozen:minutes=>{refreshNativeLedgers();return runFrozenBacklog(target,{minutes});},
+  prepareTodo:()=>{refreshNativeLedgers();return prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext});},
   discover:async scanMinutes=>{
    const scan=spawnSync(process.execPath,[path.join(root,'grader_runner.mjs'),'--scheduled','--scan-only','--max-minutes='+scanMinutes],{cwd:root,env:process.env,encoding:'utf8',windowsHide:true,timeout:(scanMinutes+2)*60000,maxBuffer:20*1024*1024});
    if(scan.status!==0){fs.writeFileSync(path.join(root,'private','intake-scan-failure.txt'),scan.stdout+'\n'+scan.stderr);throw Error('NATIVE_INTAKE_SCAN_FAILED');}runnerGoogle.invalidate();

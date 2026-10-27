@@ -27,9 +27,13 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
   properties=new Map(Object.entries(leases[0].initial));let state;
   try{state=decodeIntakeState(properties.get(cursorKey));}catch{throw Error('NATIVE_INTAKE_CURSOR_INVALID');}
   if(!intakeDue(state,now()))return {due:false,providerCalls:0};
+  // Child workers and the teacher may have written since the previous cycle.
+  // Intake must inspect current native class cells, never the parent's old grid.
+  g.invalidate();
   const all=[];
   for(let i=0;i<config.clusters.length;i++){
    const cluster=config.clusters[i],c=buildContext(cluster);
+   g.book(cluster.controlId).refresh?.();
    for(const [key,value] of Object.entries(leases[i].initial))c.runnerProperties.set(key,value);
    const source=vm.runInContext('KG.source',c),tabs=Array.from(vm.runInContext('KIDS21_AUTO.tabs',c)),entries=readJobs(g,cluster.controlId);
    contexts.push({cluster,c,source,tabs});all.push(...entries.map(e=>({...e,source})));
