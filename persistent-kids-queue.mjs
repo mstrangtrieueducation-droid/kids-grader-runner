@@ -1,6 +1,8 @@
 // Scheduling over the existing native Jobs ledger. No receipt matching or
 // homework classification is introduced here; native eligibility/resolvers win.
 import fs from 'node:fs';
+import path from 'node:path';import {fileURLToPath} from 'node:url';
+import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {createHash} from 'node:crypto';
 import {readNativeQueue,selectExisting,matchesTarget,validateBacklog,campaignClosed} from './frozen-backlog-policy.mjs';
 import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
@@ -35,6 +37,11 @@ export function preparationProgress(j){
 }
 export function retryProgressTracker(){const stalled=new Map();return {allow(j,before){const moved=preparationProgress(j)!==before;if(moved){stalled.delete(j.id);return true;}const count=(stalled.get(j.id)||0)+1;stalled.set(j.id,count);return count<3;}};}
 export async function prepareNativeTodo(file,{config,google,buildContext}){
+ const batches=[];
+ try{
+ // Queue construction only reads native targets. Reuse bulk class snapshots;
+ // control/artifact writes stay immediate and outside these read-only batches.
+ for(const cluster of config.clusters)batches.push(beginSheetBatch(google,cluster,path.join(path.dirname(fileURLToPath(import.meta.url)),'private','native-todo-read-batches'),{classOnly:true}));
  const g=google,control=config.clusters[0].controlId,tab=g.book(control).getSheetByName('KidsTodo');let previous=null;
  if(tab){const rows=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+control+'/values/'+encodeURIComponent("'KidsTodo'!A2:F")).values||[];
   if(rows.length){const items=rows.map(r=>JSON.parse(r[5]));previous={schema:NATIVE_TODO_SCHEMA,campaignId:'native-kids-persistent-4',workers:4,total:items.length,items,membershipHash:rows[0][4]};validateBacklog(previous);if(rows.some(r=>r[4]!==previous.membershipHash))throw Error('NATIVE_TODO_MEMBERSHIP_INVALID');}
@@ -50,4 +57,5 @@ export async function prepareNativeTodo(file,{config,google,buildContext}){
   return {spreadsheetId:j.cls.spreadsheetId,sheetId:cell.sheet.getSheetId(),cell:cell.getA1Notation(),className:j.cls.className,student:j.receipt.student,code:j.receipt.code,submissionAt:j.receipt.time};
  },{approved});
  fs.writeFileSync(file,JSON.stringify(result.queue));return {...result,entries:entries.length};
+ }finally{for(const batch of batches.reverse())batch.close();}
 }

@@ -1,5 +1,7 @@
 import vm from 'node:vm';
 import {gzipSync,gunzipSync} from 'node:zlib';
+import path from 'node:path';import {fileURLToPath} from 'node:url';
+import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {gridMaster} from './google-adapter.mjs';
 import {stateStore} from './runner-state.mjs';
 import {readNativeQueue} from './frozen-backlog-policy.mjs';
@@ -31,7 +33,7 @@ function rowRanges(rows){const out=[];for(const row of [...new Set(rows)].sort((
 
 // This is a tail transport into the EXISTING native receipt parser and sweep.
 // It never decides submission status, matches a pupil, writes a review, or calls AI.
-export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=()=>{},now=Date.now,makeState=stateStore,readJobs=readNativeQueue,makeSweep=prepareKidsMasterSweep}={}){
+export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=()=>{},now=Date.now,makeState=stateStore,readJobs=readNativeQueue,makeSweep=prepareKidsMasterSweep,startBatch=beginSheetBatch}={}){
  const leases=[],contexts=[],cursorKey='FLEET_SCAN_INTAKE_TAIL_V1';let properties;
  try{
   for(const cluster of config.clusters){const lease=makeState(g,cluster.controlId);lease.acquire(now()+15*60000);leases.push(lease);}
@@ -90,12 +92,17 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
     const relevant=receipts.filter(r=>c.inAutoScope_(r));
     if(!relevant.length)continue;
     for(const r of relevant)deferred.delete(deferredKey({source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId}));
+    let batch;
     try{
+     // Intake owns all native leases and has no generation workers. Reuse the
+     // original single-writer RAM transaction with fresh-cell write guards.
+     batch=startBatch(g,cluster,path.join(path.dirname(fileURLToPath(import.meta.url)),'private','intake-sheet-batches'),{emit});
      const sweep=makeSweep(c,cluster,g,{emit,receipts:relevant}),issues=sweep.flushIssues();
+     batch.flush();
      added+=Number(sweep.intakeAdded)||0;
      if(issues.failed.length)for(const r of relevant)defer(source,r,cluster,'NATIVE_ISSUE_WRITE_DEFERRED');
      for(const item of sweep.states.values())if(item.error||item.outcome==='assignment')defer(source,item.source,cluster,item.error?'NATIVE_ROW_DEFERRED':'NATIVE_ASSIGNMENT_PENDING');
-    }catch{for(const r of relevant)defer(source,r,cluster,'NATIVE_CLUSTER_DEFERRED');}
+    }catch{for(const r of relevant)defer(source,r,cluster,'NATIVE_CLUSTER_DEFERRED');}finally{batch?.close();}
     handled+=relevant.length;
    }
   }
