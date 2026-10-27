@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {hasRequest,hasSavedResult,sourceIds} from './universal-media.mjs';
 import {savedDeliveryCandidates} from './saved-delivery-repair.mjs';
+import {authorizedInvalidRetry} from './authorized-invalid-retry.mjs';
 export const normalize=s=>String(s||'').normalize('NFC').trim().replace(/\s+/g,' ').toUpperCase();
 export const targetKey=t=>[t.spreadsheetId,t.sheetId,t.cell].join('|');
 export const campaignClosed=state=>['VERIFIED_WRITTEN','ALREADY_PRESENT','SKIPPED_NOT_IN_CURRENT_ROSTER','PROTECTED'].includes(state);
@@ -15,6 +16,8 @@ export function validateBacklog(q){
 export function matchesTarget(j,t){return j.cls?.spreadsheetId===t.spreadsheetId&&normalize(j.cls?.className)===normalize(t.className)&&normalize(j.receipt?.student)===normalize(t.student)&&normalize(j.receipt?.code)===normalize(t.code)&&Date.parse(j.receipt?.time)===Date.parse(t.submissionAt);}
 export function selectExisting(t,entries,now=Date.now()){
  const all=entries.map(x=>x.job),matches=entries.filter(x=>matchesTarget(x.job,t));
+ const explicit=matches.find(x=>authorizedInvalidRetry(x.job,all));
+ if(explicit)return Number(explicit.job.nextAt)>now?null:explicit;
  const possible=matches.filter(({job:j})=>!(Number(j.nextAt)>now)&&(automaticEligible(j,all)||mayResumeSaved(j)));
  // A saved result always precedes an uncalled duplicate of the same receipt.
  const saved=matches.filter(x=>x.job.rawId||x.job.gradeId);

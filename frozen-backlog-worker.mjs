@@ -1,5 +1,6 @@
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
 import {replaySavedClassBatch} from './campaign-saved-replay.mjs';
+import {authorizeInvalidRetry} from './authorized-invalid-retry.mjs';
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
 import {matchesTarget,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
@@ -22,7 +23,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
  g.invalidate();g.refreshFileMetadata();
  const ram=beginSheetBatch(g,cluster,path.resolve('private/campaign-journal'),{classOnly:true});
  const results=[];
- try{for(const {item,entry,executable} of batch){
+ try{for(const workItem of batch){let {item,entry,executable}=workItem;
  let result;try{
   if(!matchesTarget(entry.job,item.target))throw Error('CAMPAIGN_JOB_BINDING_INVALID');
   if(Date.now()>deadline-120000||process.env.CAMPAIGN_HALT_FILE&&fs.existsSync(process.env.CAMPAIGN_HALT_FILE)){results.push({itemId:item.id,target:item.target,result:{state:'RETRY',error:'CAMPAIGN_SOFT_DEADLINE',nextAt:Date.now()+60000,job:entry.job}});continue;}
@@ -31,9 +32,11 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   c.loadJobs_=()=>entries;const nativePersist=c.campaignNativePersist_||c.persist_;c.campaignNativePersist_=nativePersist;
   c.persist_=(j,row)=>{if(j.id!==entry.job.id||row!==entry.row)throw Error('CAMPAIGN_ROW_OWNERSHIP_INVALID');const actual=nativePersist(j,row);const e=entries.find(x=>x.row===row);if(e)e.job=j;return actual;};
   c.teacherApprovalJobs_=entries;c.teacherApprovalSession_=approvalSession(g,config.clusters[0].controlId);
-  const j=entry.job;
+  let j=entry.job;
   const {cell,target:resolvedTarget}=resolveFrozenTarget(c,j,item.target);
   const before=cell.getDisplayValue(),beforeNote=cell.getNote();let recovered=false,noAudio=false;
+  const licensed=authorizeInvalidRetry(c,entry,entries,cell,nativePersist);
+  if(licensed){entry=licensed;j=entry.job;executable=true;}
   const approval=c.teacherApprovalSession_.approved.get(j.id),manual=!!approval&&!approval.automatic&&String(approval.sourceLink).includes('/'+controlId+'/')&&String(approval.sourceLink).includes('A'+entry.row+':F'+entry.row)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(before);
   if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);if(!noAudio&&j.campaignAudioSourceRecheck?.requiresSavedAssessmentReconciliation)throw Error('HISTORICAL_AUDIO_NOTICE_NOT_CONFIRMED');if(!noAudio)recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});}
   if(hasTeacherReview(before)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
@@ -62,6 +65,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   result.target=resolvedTarget;
   result.beforeNote=beforeNote;if(result.state==='STAGED')result.deliveryCell=structuredClone(c.destination_(j.cls,j.route,j.receipt.student).cell.cells()[0]?.values?.[0]);
  }catch(e){let retired=false;try{retired=closeRetiredCampaignRecord(c,entry.job,entry.row,e);}catch{}const downloading=e.message==='TRANSIENT_MEDIA_DOWNLOAD_TIMEOUT';result={state:retired?'SKIPPED_NOT_IN_CURRENT_ROSTER':downloading?'RETRY':'HELD',error:retired?null:downloading?'SOURCE_INPUT_PENDING':/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',...(downloading?{nextAt:Date.now()+2000}:{}),job:entry.job};}
+ result.nativeRow=entry.row;
  if(c.runnerUniversalMedia_?.downloadProgress)result.job.campaignTransportProgress=c.runnerUniversalMedia_.downloadProgress();
  results.push({itemId:item.id,target:item.target,result});
  process.send({event:'ITEM_SAVED',itemId:item.id,calls:result.calls||0});

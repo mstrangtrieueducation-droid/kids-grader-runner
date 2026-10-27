@@ -1,10 +1,12 @@
 import {cellEvidence,expectedBindings,guardClassRequests} from './sheet-truth-write-guard.mjs';
 import fs from 'node:fs';
+import {authorizedInvalidRetry} from './authorized-invalid-retry.mjs';
 // Recheck the actual class cell before any paid call, even when its class batch
 // was loaded several minutes earlier. Reuse the existing native binding guard.
 export function installFrozenGenerationGuard(c,g){
  const generate=c.generate_;c.generate_=(job,...args)=>{
   if(!job.rawId&&!job.gradeId){
+   if(job.invalidResultRetry&&!authorizedInvalidRetry(job,c.loadJobs_()))throw Error('INVALID_RESULT_RETRY_AUTHORIZATION_CHANGED');
    if(process.env.CAMPAIGN_HALT_FILE&&fs.existsSync(process.env.CAMPAIGN_HALT_FILE))throw Error('CAMPAIGN_COORDINATOR_STOPPED');
    if(process.env.CAMPAIGN_PARENT_PID)process.kill(Number(process.env.CAMPAIGN_PARENT_PID),0);
    const cell=c.destination_(job.cls,job.route,job.receipt.student).cell,sheet=cell.sheet,master=sheet.book.cache.get(sheet.getName()+'|master');

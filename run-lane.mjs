@@ -10,7 +10,7 @@ async function main(){
  runTest('master-cross-class-sweep-tests.mjs');runTest('master-first-snapshot-tests.mjs');runTest('student-speech-evidence-tests.mjs');runTest('master-submission-scope-tests.mjs');runTest('saved-speaking-consistency-tests.mjs');
  runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');runTest('saved-delivery-repair-tests.mjs');runTest('kids-intake-order-tests.mjs');runTest('batch-artifact-index-tests.mjs');runTest('current-batch-snapshot-tests.mjs');runTest('drain-forward-progress-tests.mjs');
  runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');runTest('ingestion-policy-tests.mjs');runTest('campaign-recovery-tests.mjs');runTest('persistent-kids-queue-tests.mjs');runTest('campaign-saved-replay-tests.mjs');
- runTest('kids-apple-input-recovery-tests.mjs');
+ runTest('authorized-invalid-retry-tests.mjs');runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
  runTest('continuous-dispatcher-tests.mjs');
  runTest('universal-media-tests.mjs');runTest('partial-download-resume-tests.mjs');
@@ -31,6 +31,9 @@ async function main(){
  const config=bundle.config; if(config.kids?.model!=='gemini-3.8-flash'||config.kids?.routing!=='teacher-master-v2-20261014')throw Error('MASTER_POLICY_BINDING_REQUIRED'); const sa=JSON.parse(required('GOOGLE_SERVICE_ACCOUNT_JSON')),key=required('GEMINI_KEY_'+lane.toUpperCase());
  if(bundle.lane!==lane||bundle.schema!=='private-grading-bundle-v1'||config.approvedRepository!==repository||config.serviceAccount!==sa.client_email)throw Error('PRIVATE_BINDING_INVALID');
  fs.mkdirSync(path.join(root,'private'),{recursive:true,mode:0o700});
+ const invalidApprovalFile=path.join(root,'approved-invalid-retry.enc');if(fs.existsSync(invalidApprovalFile)){
+  const b=fs.readFileSync(invalidApprovalFile);if(b.subarray(0,4).toString()!=='IR01')throw Error('INVALID_RETRY_ENVELOPE');const d=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),b.subarray(4,16));d.setAAD(Buffer.from(repository+'/invalid-result-retry'));d.setAuthTag(b.subarray(16,32));const value=gunzipSync(Buffer.concat([d.update(b.subarray(32)),d.final()]));const approval=JSON.parse(value);if(approval.authorization!=='teacher-invalid-result-one-new-attempt-20261027'||!Array.isArray(approval.generationDigests))throw Error('INVALID_RETRY_APPROVAL_BINDING');process.env.INVALID_RESULT_RETRY_AUTH_FILE=path.join(root,'private','invalid-result-retry-approval.json');fs.writeFileSync(process.env.INVALID_RESULT_RETRY_AUTH_FILE,value,{mode:0o600});
+ }
  process.env.RUNNER_CONFIG=JSON.stringify(config);process.env.GOOGLE_CREDENTIALS=JSON.stringify(sa);process.env.GEMINI_API_KEY=key;process.env.KIDS_NATIVE_CONFIG=JSON.stringify(config.nativeConfig);process.env.RUNNER_SHEET_BATCH='1';process.env.RUNNER_HOST='github';if(bundle.nonStudentAudioRegistry)fs.writeFileSync(path.join(root,'private/non-student-audio-registry.json'),JSON.stringify(bundle.nonStudentAudioRegistry));
  if(lane==='kids'){const catalog=path.join(root,'migration/kids-barem-20261012/catalog.approved.json');fs.mkdirSync(path.dirname(catalog),{recursive:true});fs.writeFileSync(catalog,JSON.stringify(bundle.barem),{mode:0o600});process.env.MASTER_BAREM_CATALOG=catalog;runTest('kids-barem-recovery-tests.mjs');}
  else{fs.writeFileSync(path.join(root,'shadowing-references.json'),JSON.stringify(bundle.references),{mode:0o600});runTest('shadowing-tests.mjs');}
