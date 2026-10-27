@@ -9,10 +9,15 @@ export function replaySavedClassBatch(c,g,results){
  const groups=new Map(),written=new Set();
  for(const out of results){const r=out.result,j=r.job;if(r.state!=='STAGED'||!j.rawId&&!j.gradeId)continue;
   try{
-   const {cell,target}=resolveFrozenTarget(c,j,out.target),text=cell.getDisplayValue();
+   let {cell,target}=resolveFrozenTarget(c,j,out.target),text=cell.getDisplayValue();
    if(text===r.after||!receiptOnlyCell(r.before)||!receiptOnlyCell(text)||hasTeacherReview(text)||cell.getFormula()||cell.getDataValidation()||cell.getNote()!==(r.beforeNote||'')||target.sheetId!==r.target.sheetId||target.cell!==r.target.cell)continue;
    if(c.currentRoster_&&!c.currentRoster_(j.receipt,{fresh:true}))continue;
    c.currentSource_(j);
+   // The native source check intentionally invalidates the destination grid.
+   // Re-read it after that check; a missing cache is not a delivery conflict.
+   g.preloadSource(target.spreadsheetId,cell.sheet.meta.properties.gridProperties.columnCount,[cell.sheet.getName()]);
+   ({cell,target}=resolveFrozenTarget(c,j,out.target));text=cell.getDisplayValue();
+   if(text===r.after||!receiptOnlyCell(text)||hasTeacherReview(text)||cell.getFormula()||cell.getDataValidation()||cell.getNote()!==(r.beforeNote||'')||target.sheetId!==r.target.sheetId||target.cell!==r.target.cell)continue;
    const sheet=cell.sheet,master=sheet.book.cache.get(sheet.getName()+'|master'),row=cell.getRow()-1,col=cell.getColumn()-1;
    if(!master?.cells)continue;
    const expected={key:[target.sheetId,row,col].join('|'),sheetId:target.sheetId,title:sheet.getName(),row,col,before:structuredClone(cellEvidence(master.cells[row]?.values?.[col])),...expectedBindings(sheet,master,row,col)};
