@@ -3,10 +3,15 @@ import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
 import {hasTeacherReview,receiptOnlyCell,mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {truthNoticeText} from './sheet-truth-sync.mjs';
 export const CAMPAIGN_RECOVERY='teacher-universal-ingestion-20261027';
+function assessmentEvidence(x,seen=new Set()){
+ if(!x||typeof x!=='object'||seen.has(x))return false;seen.add(x);
+ if(x.rawId||x.gradeId||x.verificationRawId||x.apiUsage||x.usage||x.verificationUsage||x.providerResponseReceived?.httpStatus===200||x.gradeUsable===true||x.candidates?.length)return true;
+ return Object.values(x).some(v=>v&&typeof v==='object'&&assessmentEvidence(v,seen));
+}
 export function existingUncalledChild(j,matches){
- if(hasRequest(j)||j.rawId||j.gradeId||j.apiUsage||j.usage||j.providerResponseReceived?.httpStatus===200||j.presentationResubmissionRequired||j.technicalInputFailure)return false;
+ if(hasRequest(j)||assessmentEvidence(j)||j.presentationResubmissionRequired||j.technicalInputFailure)return false;
  const parents=matches.map(x=>x.job||x);
- return j.dashboardReprocessAuth===DASHBOARD_REPROCESS_AUTH&&parents.some(p=>p.id===j.regradeParentId&&p.supersededByDashboardRegrade===j.id&&!p.rawId&&!p.gradeId)&&j.systemGradingFailure?.studentActionRequired===false;
+ return j.dashboardReprocessAuth===DASHBOARD_REPROCESS_AUTH&&parents.some(p=>p.id===j.regradeParentId&&p.supersededByDashboardRegrade===j.id&&!assessmentEvidence(p))&&j.systemGradingFailure?.studentActionRequired===false;
 }
 export function prepareCampaignRecovery(c,j,row,{matches,cell}){
  if(cell.getFormula()||cell.getDataValidation()||hasTeacherReview(cell.getDisplayValue())||!receiptOnlyCell(cell.getDisplayValue()))return false;

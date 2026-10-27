@@ -42,7 +42,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
    const sourceId=vm.runInContext('KG.source',c);g.preloadSource(sourceId,7,[j.route.sourceTab]);
    reconcileSavedDelivery(c,[entry],{deadline});
    addAutomaticAuthorizations(c.teacherApprovalSession_,[entry],controlId,'Jobs',g.book(controlId).getSheetByName('Jobs').getSheetId(),{allJobs:entries});
-   if(recovered&&(j.rawId||j.gradeId))c.teacherApprovalSession_.approved.set(j.id,{automatic:true,authorization:'TEACHER_SAVED_RESULT_RECOVERY_20261027'});
+   if(recovered&&(j.rawId||j.gradeId))c.teacherApprovalSession_.approved.set(j.id,{jobId:j.id,automatic:true,authorization:'TEACHER_SAVED_RESULT_RECOVERY_20261027',sourceLink:`https://docs.google.com/spreadsheets/d/${controlId}/edit#gid=${g.book(controlId).getSheetByName('Jobs').getSheetId()}&range=A${entry.row}:F${entry.row}`});
    acceptTeacherApprovals([entry],c.teacherApprovalSession_,controlId,'Jobs',c.persist_);
    if(!c.teacherApprovalSession_.approved.has(j.id))throw Error('CAMPAIGN_AUTHORIZATION_MISSING');
    let calls=0;c.recordMasterGeneration_=()=>{calls++;process.send({event:'CALL_STARTED',itemId:item.id});};
@@ -57,6 +57,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   }
   result.target=resolvedTarget;
  }catch(e){result={state:'HELD',error:/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',job:entry.job};}
+ if(c.runnerUniversalMedia_?.downloadProgress)result.job.campaignTransportProgress=c.runnerUniversalMedia_.downloadProgress();
  results.push({itemId:item.id,target:item.target,result});
  process.send({event:'ITEM_SAVED',itemId:item.id,calls:result.calls||0});
  }}finally{ram.close();}

@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import {existingUncalledChild,prepareCampaignRecovery,confirmedNoAudioNotice} from './campaign-recovery.mjs';import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
 const parent={id:'parent',generateRequests:1,supersededByDashboardRegrade:'child'},child={id:'child',status:'WAITING_MODEL_ACCESS',error:'MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT',dashboardReprocessAuth:DASHBOARD_REPROCESS_AUTH,regradeParentId:'parent',generateRequests:0,autoNotice:'old technical text',systemGradingFailure:{studentActionRequired:false},receipt:{time:'2026-10-26T00:00:00Z',row:3,links:'fixture'}};
 assert(existingUncalledChild(child,[{job:parent}]));assert(!existingUncalledChild({...child,generateRequests:1},[{job:parent}]));assert(!existingUncalledChild(child,[{job:{...parent,rawId:'paid'}}]));assert(!existingUncalledChild({...child,regradeParentId:'wrong'},[{job:parent}]));
+for(const history of [{rawId:'archive-raw'},{gradeId:'archive-grade'},{providerResponseReceived:{httpStatus:200}},{apiUsage:{totalTokenCount:12}}]){
+ assert(!existingUncalledChild(child,[{job:{...parent,archives:[history]}}]));
+ assert(!existingUncalledChild({...child,archives:[history]},[{job:parent}]));
+}
 let text='✅ ĐÃ NỘP\n26/10/2026 07:00\n— NHẬN XÉT GV —',saved=0,reads=0;const cell={getDisplayValue:()=>text,getFormula:()=>'',getDataValidation:()=>null};const c={currentRoster_:()=>true,freshReceipt_:j=>j.receipt,persist_:()=>saved++,readArtifact_:()=>{reads++;return {candidates:[]};}};
 const j=structuredClone(child);assert(prepareCampaignRecovery(c,j,2,{matches:[{job:parent}],cell}));assert.equal(j.status,'READY');assert.equal(j.generateRequests,0);assert(!j.autoNotice);assert.equal(j.campaignTransportRecovery.previous.notice,'old technical text');assert.equal(parent.generateRequests,1);
 const paid={...child,rawId:'raw',generateRequests:1};assert(prepareCampaignRecovery(c,paid,2,{matches:[],cell}));assert.equal(paid.rawId,'raw');assert.equal(paid.generateRequests,1);assert.equal(reads,1);

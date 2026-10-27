@@ -1,14 +1,16 @@
 import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
+import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA} from './persistent-kids-queue.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
-export async function runFrozenBacklog(file,{minutes=300}={}){
+export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
  const q=validateBacklog(JSON.parse(fs.readFileSync(file))),{runnerGoogle:g}=await import('./grader_runner.mjs');
+ if(!['FrozenBacklog','KidsTodo'].includes(table)||(table==='KidsTodo')!==(q.schema===NATIVE_TODO_SCHEMA))throw Error('CAMPAIGN_TABLE_SCHEMA_MISMATCH');
  const deadline=Date.now()+minutes*60000,release=localGuard(path.join(root,'private','runner.lock')),leases=[],workers=[],entriesByControl=new Map(),active=new Map(),haltFile=path.join(root,'private','campaign-halt');
  if(fs.existsSync(haltFile))fs.unlinkSync(haltFile);
  const saveLocal=()=>{const t=file+'.tmp';fs.writeFileSync(t,JSON.stringify(q));fs.renameSync(t,file);};
- const control=config.clusters[0].controlId,tab='FrozenBacklog',base='https://sheets.googleapis.com/v4/spreadsheets/'+control;
+ const control=config.clusters[0].controlId,tab=table,base='https://sheets.googleapis.com/v4/spreadsheets/'+control;
  const durable=(items)=>{if(!items.length)return;g.api(base+'/values:batchUpdate','POST',{valueInputOption:'RAW',data:items.map(item=>({range:"'"+tab+"'!A"+(q.items.indexOf(item)+2)+':F'+(q.items.indexOf(item)+2),values:[[item.id,item.state,new Date().toISOString(),process.env.GITHUB_RUN_ID||'',q.membershipHash,JSON.stringify(item)]]}))});saveLocal();};
  let beats,providerCalls=0;
  try{
@@ -18,11 +20,11 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
   beats=setInterval(()=>{try{for(const l of leases)l.heartbeat();}catch(e){fs.writeFileSync(haltFile,'LEASE_CHECK_FAILED');for(const w of workers)w.retire=true;}},60000);
   const book=g.book(control);let sheet=book.getSheetByName(tab);if(!sheet){sheet=book.insertSheet(tab);sheet.getRange(1,1,1,6).setValues([['itemId','state','updatedAt','runId','membershipHash','itemJson']]);}
   const existing=g.api(base+'/values/'+encodeURIComponent("'"+tab+"'!A2:F"+(q.total+1))).values||[];
-  if(existing.length){if(existing.length!==q.total||existing.some((r,i)=>r[0]!==q.items[i].id||r[4]!==q.membershipHash))throw Error('DURABLE_BACKLOG_MEMBERSHIP_MISMATCH');existing.forEach((r,i)=>{const saved=JSON.parse(r[5]);if(saved.id!==q.items[i].id)throw Error('DURABLE_ITEM_INVALID');q.items[i]=saved;});}
+  if(existing.length){const append=table==='KidsTodo'&&existing.length<q.total,oldHash=existing[0][4];if((append?existing.length>q.total:existing.length!==q.total)||existing.some((r,i)=>r[0]!==q.items[i].id||r[4]!==oldHash)||!append&&oldHash!==q.membershipHash||append&&oldHash!==validateBacklog({...q,total:existing.length,items:q.items.slice(0,existing.length),membershipHash:oldHash}).membershipHash)throw Error('DURABLE_BACKLOG_MEMBERSHIP_MISMATCH');existing.forEach((r,i)=>{const saved=JSON.parse(r[5]);if(saved.id!==q.items[i].id)throw Error('DURABLE_ITEM_INVALID');q.items[i]=saved;});if(append)durable(q.items);}
   else durable(q.items);
   // Read only the existing persistent ledgers, never discovery across classes/Form.
   for(const cluster of config.clusters)entriesByControl.set(cluster.controlId,readNativeQueue(g,cluster.controlId));
-  const attempted=new Set();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
+  const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
   console.log(JSON.stringify({event:'CAMPAIGN_STARTED',workers:4,total:q.total,verified,fullClassScans:0}));
   const choose=()=>{
    if(Date.now()>deadline-120000)return [];
@@ -47,7 +49,7 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
     if(!w.retire&&Date.now()<deadline-120000&&(active.size||dueLater)){setTimeout(()=>schedule(w),2000);return;}
     w.send({stop:true});return;
    }
-    for(const {item,entry} of work.batch){attempted.add(item.id);item.state='CLAIMED';item.claim={runId:process.env.GITHUB_RUN_ID,worker:w.slot,jobId:entry.job.id,row:entry.row,controlId:work.controlId,at:new Date().toISOString()};}durable(work.batch.map(x=>x.item));w.busy=true;active.set(w.pid,work);w.send(work);
+    work.before=new Map(work.batch.map(x=>[x.item.id,preparationProgress(x.entry.job)]));for(const {item,entry} of work.batch){attempted.add(item.id);item.state='CLAIMED';item.claim={runId:process.env.GITHUB_RUN_ID,worker:w.slot,jobId:entry.job.id,row:entry.row,controlId:work.controlId,at:new Date().toISOString()};}durable(work.batch.map(x=>x.item));w.busy=true;active.set(w.pid,work);w.send(work);
    };
    const launch=slot=>{
     const dir=path.join(root,'private','campaign-workers',String(slot));fs.mkdirSync(dir,{recursive:true});
@@ -59,7 +61,7 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
      if(m.event==='CALL_STARTED'){providerCalls++;}
      if(m.event==='RESULT_BATCH'){
       const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;item.state=r.state;item.resolvedTarget=r.target||item.resolvedTarget;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
-      active.delete(w.pid);w.busy=false;durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(item.state==='RETRY'&&item.nextAt>Date.now())attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
+      active.delete(w.pid);w.busy=false;restarts.set(slot,0);durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(item.state==='RETRY'&&item.nextAt>Date.now()&&progress.allow(work.entries.find(x=>x.job.id===item.delivery.jobId).job,work.before.get(item.id)))attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
       if(Math.floor(verified/50)*50>milestone){milestone=Math.floor(verified/50)*50;console.log(JSON.stringify({event:'CAMPAIGN_VERIFIED_MILESTONE',verified,total:q.total,providerCalls}));}schedule(w);
      }
     }catch(e){w.retire=true;reject(e);}});
