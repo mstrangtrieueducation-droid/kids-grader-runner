@@ -1,0 +1,8 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
+const ids=Array.from({length:9},(_,i)=>'synthetic_child_'+String(i+1).padStart(2,'0')+'_12345');
+const c=vm.createContext({Date,KIDS_COST_POLICY:'synthetic',KG:{inlineLimit:100},require_:(ok,msg)=>{if(!ok)throw Error(msg);},destination_:()=>({cell:{getDisplayValue:()=>'',getFormula:()=>''}}),hasFeedback_:()=>false,driveIds_:()=>ids,fileMeta_:id=>({id,mime:'audio/mpeg',size:150*1024*1024,modified:'synthetic'}),inAutoScope_:()=>true,currentAssignment_:()=>true,expandedHeaders_:()=>[],guide_:()=>({form:['synthetic'],referenceMedia:[]}),initialPoolBinding_:()=>({keyHash:'synthetic',key:'fixture',model:'fixture'}),checkModel_:()=>{},hash_:()=> 'synthetic-hash',saveArtifact_:()=> 'synthetic-guide-artifact',persist_:()=>{}});
+const cost=fs.readFileSync(new URL('./gas/CostPolicy.gs',import.meta.url),'utf8'),start=cost.indexOf('function kidsCostPreflight_('),end=cost.indexOf('function ',start+10);assert(start>0&&end>start);
+vm.runInContext(cost.slice(start,end),c);const fleet=fs.readFileSync(new URL('./gas/Fleet.gs',import.meta.url),'utf8'),init=fleet.indexOf('function initializeAutoJob_(');assert(init>0);vm.runInContext(fleet.slice(init),c);
+const job={id:'synthetic-folder-job',receipt:{student:'SYNTHETIC PUPIL',links:'synthetic-folder'},route:{},cls:{}};
+c.initializeAutoJob_(job,2);assert.equal(job.media.length,9);assert.equal(job.studentFileCount,9);assert.equal(job.costPreflight.files.length,9);assert.equal(job.status,'QUEUED');
+console.log('PASS real Kids initialization/cost preflight retain every child beyond the former eight-file limit; 0 AI/0 live writes.');

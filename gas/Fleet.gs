@@ -167,7 +167,7 @@ function initializeAutoJob_(job,row) {
   const dst=destination_(job.cls,job.route,job.receipt.student);
   if(!currentAssignment_(expandedHeaders_(dst.sheet),job.route)) {job.status='SKIPPED_OLD_LESSON';persist_(job,row);return;}
   if(hasFeedback_(dst.cell.getDisplayValue())) {job.status='SKIPPED_EXISTING_FEEDBACK';persist_(job,row);return;}
-  const ids=driveIds_(job.receipt.links);require_(ids.length>0 && ids.length<=8,'MEDIA_INVENTORY_INVALID');
+  const ids=driveIds_(job.receipt.links);require_(ids.length>0,'MEDIA_INVENTORY_INVALID');
   kidsCostPreflight_(job);
   const snapshot=guide_(job.route), referenceIds=snapshot.referenceMedia||[];
   job.studentFileCount=ids.length;

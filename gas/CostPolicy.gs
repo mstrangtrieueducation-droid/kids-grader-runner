@@ -38,7 +38,7 @@ function kidsCostPreflight_(job){
  const dest=destination_(job.cls,job.route,job.receipt.student);
  require_(!hasFeedback_(dest.cell.getDisplayValue()),'PREFLIGHT_EXISTING_FEEDBACK');
  require_(!dest.cell.getFormula(),'DESTINATION_FORMULA');
- const ids=driveIds_(job.receipt.links);require_(ids.length>0&&ids.length<=8,'MEDIA_INVENTORY_INVALID');
+ const ids=driveIds_(job.receipt.links);require_(ids.length>0,'MEDIA_INVENTORY_INVALID');
  const previous=job.costPreflight?.files||[];
  const files=ids.map(id=>{
   let meta;try{meta=fileMeta_(id);}catch(_){throw Error('PREFLIGHT_FILE_MISSING_OR_INVALID');}

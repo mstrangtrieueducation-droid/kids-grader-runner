@@ -1,3 +1,4 @@
+import {repairMediaSourceNotice} from './media-source-notice-recovery.mjs';
 import {markNotCurrent} from './current-roster-policy.mjs';
 import {isResubmissionFeedback} from './sheet-truth-state.mjs';
 import {cleanupClassWaiting,seedSheetTruth,recoverArchivedRaw,sheetTruthEnabled,mayReopenNotice} from './sheet-truth-sync.mjs';
@@ -20,7 +21,12 @@ export function createMasterSweep({google,lane,controlId,classes,entries,resolve
  const countable=(j,text)=>j?.masterSweep?.version===SWEEP_VERSION&&j.masterSweep.baseline==='EMPTY'&&(['RETURNED','DONE'].includes(j.status)&&(/Chất lượng:[^\n]*\d+\s*%/.test(text)||lane==='ielts'&&/\b(?:[0-9](?:\.5|\.0)?)\s*\/\s*9|Overall|Tổng điểm|Band/i.test(text))||/^COMPLETED_.*RESUBMISSION$/.test(j.status)&&j.autoNotice===text);
  function inspect(item,mutate){
   const s=item.source,cls=item.cls,row=summary.get(s.className)||{className:s.className,newReturned:0,existing:0,assignment:0,pending:0};summary.set(s.className,row);let existing=findJob(s),j=existing?.job;item.jobId=j?.id;
-  try{if(!isCurrentStudent(s)){if(mutate&&j)markNotCurrent(j,()=>save(j,existing.row));return 'inactive';}const dst=resolve(s,j);let text=dst.cell?dst.cell.getDisplayValue():dst.text;const formula=dst.cell?.getFormula?.()||dst.formula||'';
+  try{if(!isCurrentStudent(s)){if(mutate&&j)markNotCurrent(j,()=>save(j,existing.row));return 'inactive';}const dst=resolve(s,j);let text=dst.cell?dst.cell.getDisplayValue():dst.text;
+   if(mutate&&sheetTruthEnabled()&&dst.cell){const recovery=repairMediaSourceNotice({source:s,existing,cell:dst.cell,service:google.mediaResolverService,metadata:id=>google.fileMeta(id),create:()=>enqueue(s,cls),save,readyStatus,freshStatus});
+    if(recovery.deferred){item.error=recovery.error;return 'pending';}
+    if(recovery.recovered){existing=recovery.entry;j=existing.job;item.jobId=j.id;text=dst.cell.getDisplayValue();emit({event:'SOURCE_RESOLVER_NOTICE_REOPENED',lane,providerCalls:0});}
+   }
+   const formula=dst.cell?.getFormula?.()||dst.formula||'';
    if(mutate&&sheetTruthEnabled()&&!String(text||'').trim())blankBefore.add(item.key);
    if(mutate&&sheetTruthEnabled()&&dst.cell&&!formula&&!dst.cell.getDataValidation?.()){
     const approved=!!j&&isApproved(j,existing?.row),reopen=mayReopenNotice(s,text,allJobs.map(x=>x.job||x),approved);
