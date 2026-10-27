@@ -35,7 +35,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   const {cell,target:resolvedTarget}=resolveFrozenTarget(c,j,item.target);
   const before=cell.getDisplayValue(),beforeNote=cell.getNote();let recovered=false,noAudio=false;
   const approval=c.teacherApprovalSession_.approved.get(j.id),manual=!!approval&&!approval.automatic&&String(approval.sourceLink).includes('/'+controlId+'/')&&String(approval.sourceLink).includes('A'+entry.row+':F'+entry.row)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(before);
-  if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);}
+  if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);if(!noAudio&&j.campaignAudioSourceRecheck?.requiresSavedAssessmentReconciliation)throw Error('HISTORICAL_AUDIO_NOTICE_NOT_CONFIRMED');if(!noAudio)recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});}
   if(hasTeacherReview(before)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
   else if(cell.getFormula()||cell.getDataValidation())result={state:'PROTECTED',error:'DESTINATION_PROTECTED',before,after:before,job:j};
   else if(noAudio)result={state:'STAGED',verifiedAt:null,before,after:cell.getDisplayValue(),job:j,calls:0,error:null};
@@ -61,7 +61,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   }
   result.target=resolvedTarget;
   result.beforeNote=beforeNote;if(result.state==='STAGED')result.deliveryCell=structuredClone(c.destination_(j.cls,j.route,j.receipt.student).cell.cells()[0]?.values?.[0]);
- }catch(e){let retired=false;try{retired=closeRetiredCampaignRecord(c,entry.job,entry.row,e);}catch{}result={state:retired?'SKIPPED_NOT_IN_CURRENT_ROSTER':'HELD',error:retired?null:/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',job:entry.job};}
+ }catch(e){let retired=false;try{retired=closeRetiredCampaignRecord(c,entry.job,entry.row,e);}catch{}const downloading=e.message==='TRANSIENT_MEDIA_DOWNLOAD_TIMEOUT';result={state:retired?'SKIPPED_NOT_IN_CURRENT_ROSTER':downloading?'RETRY':'HELD',error:retired?null:downloading?'SOURCE_INPUT_PENDING':/^[A-Z0-9_: .-]+$/.test(e.message||'')?e.message:'CAMPAIGN_ITEM_ERROR',...(downloading?{nextAt:Date.now()+2000}:{}),job:entry.job};}
  if(c.runnerUniversalMedia_?.downloadProgress)result.job.campaignTransportProgress=c.runnerUniversalMedia_.downloadProgress();
  results.push({itemId:item.id,target:item.target,result});
  process.send({event:'ITEM_SAVED',itemId:item.id,calls:result.calls||0});
