@@ -1,3 +1,4 @@
+import {prepareCampaignRecovery,confirmedNoAudioNotice} from './campaign-recovery.mjs';
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
 import {matchesTarget,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
@@ -31,14 +32,17 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   c.teacherApprovalJobs_=entries;c.teacherApprovalSession_=approvalSession(g,config.clusters[0].controlId);
   const j=entry.job;
   const {cell,target:resolvedTarget}=resolveFrozenTarget(c,j,item.target);
-  const before=cell.getDisplayValue();
+  const before=cell.getDisplayValue();let recovered=false,noAudio=false;
+  if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);}
   if(hasTeacherReview(before))result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
   else if(cell.getFormula()||cell.getDataValidation())result={state:'PROTECTED',error:'DESTINATION_PROTECTED',before,after:before,job:j};
+  else if(noAudio)result={state:'STAGED',verifiedAt:null,before,after:cell.getDisplayValue(),job:j,calls:0,error:null};
   else {
-   if(!executable)throw Error('NATIVE_HISTORY_REQUIRES_RECONCILIATION');
+   if(!executable&&!recovered)throw Error('NATIVE_HISTORY_REQUIRES_RECONCILIATION');
    const sourceId=vm.runInContext('KG.source',c);g.preloadSource(sourceId,7,[j.route.sourceTab]);
    reconcileSavedDelivery(c,[entry],{deadline});
    addAutomaticAuthorizations(c.teacherApprovalSession_,[entry],controlId,'Jobs',g.book(controlId).getSheetByName('Jobs').getSheetId(),{allJobs:entries});
+   if(recovered&&(j.rawId||j.gradeId))c.teacherApprovalSession_.approved.set(j.id,{automatic:true,authorization:'TEACHER_SAVED_RESULT_RECOVERY_20261027'});
    acceptTeacherApprovals([entry],c.teacherApprovalSession_,controlId,'Jobs',c.persist_);
    if(!c.teacherApprovalSession_.approved.has(j.id))throw Error('CAMPAIGN_AUTHORIZATION_MISSING');
    let calls=0;c.recordMasterGeneration_=()=>{calls++;process.send({event:'CALL_STARTED',itemId:item.id});};

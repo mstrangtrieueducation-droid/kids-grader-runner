@@ -190,6 +190,7 @@ export function buildContext(cluster){
  installTimelyKidsQueue(c,cluster);
  installKidsModelAccessRecovery(c,{emit});
  installKidsProviderRetry(c,{emit});
+ c.runnerUniversalMedia_=universalMedia;
  const scopedLatest=j=>{const fresh=c.freshReceipt_(j);return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;};
  installKidsPreprocessing(c,{g:google,service:universalMedia,emit,isLatest:j=>{if(process.env.FROZEN_BACKLOG_WORKER)return scopedLatest(j);google.preloadSource(vm.runInContext('KG.source',c),7,vm.runInContext('KIDS21_AUTO.tabs',c));const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});
  installCriticalHomeworkPolicy(c,catalog,{authorization:config.kids?.criticalCorrectionAuthorization,emit,verifyReplacement:(j,cell)=>verifyLiveCriticalTarget(c,google,j,cell),isLatest:j=>{if(process.env.FROZEN_BACKLOG_WORKER)return scopedLatest(j);const fresh=latestSource(c).get(sourceKey(c,j.receipt));return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;}});

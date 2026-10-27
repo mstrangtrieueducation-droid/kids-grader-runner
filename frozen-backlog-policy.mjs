@@ -16,7 +16,7 @@ export function selectExisting(t,entries,now=Date.now()){
  const possible=matches.filter(({job:j})=>!(Number(j.nextAt)>now)&&(automaticEligible(j,all)||mayResumeSaved(j)));
  // A saved result always precedes an uncalled duplicate of the same receipt.
  const saved=matches.filter(x=>x.job.rawId||x.job.gradeId);
- if(saved.length)return saved.find(x=>possible.includes(x))||savedDeliveryCandidates(saved)[0]||null;
+ if(saved.length)return saved.find(x=>possible.includes(x))||savedDeliveryCandidates(saved)[0]||saved[0]||null;
  if(matches.some(x=>hasRequest(x.job)||hasSavedResult(x.job)))return null;
  return possible.sort((a,b)=>b.row-a.row)[0]||null;
 }

@@ -27,16 +27,18 @@ export async function runFrozenBacklog(file,{minutes=300}={}){
   const choose=()=>{
    if(Date.now()>deadline-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
-   const first=q.items.find(item=>!attempted.has(item.id)&&!['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!first)return [];
+   const candidates=q.items.filter(item=>!attempted.has(item.id)&&!['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!candidates.length)return [];
+   for(const first of candidates){
    const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose();}
    const entries=entriesByControl.get(cluster.controlId),batch=[];
    for(const item of q.items.filter(x=>x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(x.state)&&!(x.nextAt>Date.now()))){
     const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
-    if(!claimAllowed(entry.job,busy)){attempted.add(item.id);continue;}
+    if(!claimAllowed(entry.job,busy)){continue;}
     batch.push({item,entry,executable:!!selected});if(batch.length===10)break;
    }
-   if(!batch.length)return choose();return {batch,entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
+   if(!batch.length)continue;return {batch,entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
+   }return [];
   };
   await new Promise((resolve,reject)=>{
    let stopped=0;const restarts=new Map();

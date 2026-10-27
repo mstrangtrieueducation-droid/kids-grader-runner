@@ -20,7 +20,7 @@ export function inspectSourceAccess(text,metadata){
   try{const m=metadata(id);checked++;if(m.trashed)return sourceResult('invalid','DRIVE_LINK_UNAVAILABLE',{accessEvidence:{id,http:200,trashed:true}});
    if(m.mimeType!=='application/vnd.google-apps.folder'&&m.size!==undefined&&Number(m.size)===0)return sourceResult('invalid','EMPTY_OR_REMOVED_FILE',{accessEvidence:{id,http:200,bytes:0}});
   }catch(e){const result=sourceFailure(e),code=Number(e.httpCode||String(e.message||'').match(/(?:HTTP[_ ]|SOURCE_HTTP_)(\d{3})/)?.[1]||0);
-   if([401,403,404,410].includes(code))return {...result,reason:[401,403].includes(code)?'DRIVE_ACCESS_DENIED':'DRIVE_LINK_UNAVAILABLE',accessEvidence:{id,http:code}};
+   if(!e.driveEvidence?.technical&&[403,404].includes(code))return {...result,reason:[401,403].includes(code)?'DRIVE_ACCESS_DENIED':'DRIVE_LINK_UNAVAILABLE',accessEvidence:{id,http:code}};
    return sourceResult('pending','SOURCE_CHECK_RETRY');
   }
  }

@@ -9,7 +9,7 @@ async function main(){
  const publicTests=["runner-tests.mjs", "kids-content-routing-tests.mjs","replay-safety-tests.mjs","master-policy-tests.mjs","new-policy-tests.mjs","export-runtime-import-tests.mjs","canonical-audio-tests.mjs","automatic-work-queue-tests.mjs","linked-destination-binding-tests.mjs","retired-reference-inputs-tests.mjs","source-input-guards-tests.mjs"];runTest('automatic-authorization-tests.mjs');runTest('export-safeguards.mjs');for(const n of publicTests)runTest(n);
  runTest('master-cross-class-sweep-tests.mjs');runTest('master-first-snapshot-tests.mjs');runTest('student-speech-evidence-tests.mjs');runTest('master-submission-scope-tests.mjs');runTest('saved-speaking-consistency-tests.mjs');
  runTest('returned-score-policy-tests.mjs');runTest('dashboard-feedback-tests.mjs');runTest('dashboard-reprocess-tests.mjs');runTest('saved-delivery-repair-tests.mjs');runTest('kids-intake-order-tests.mjs');runTest('batch-artifact-index-tests.mjs');runTest('current-batch-snapshot-tests.mjs');runTest('drain-forward-progress-tests.mjs');
- runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');
+ runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');runTest('ingestion-policy-tests.mjs');runTest('campaign-recovery-tests.mjs');
  runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
  runTest('continuous-dispatcher-tests.mjs');
