@@ -16,9 +16,14 @@ export async function runKidsService({deadline,intake,runFrozen,prepareTodo,disc
    let incoming;
    try{incoming=await intake();}catch{incoming={due:false,handled:0,failed:true};emit({event:'KIDS_INTAKE_DEFERRED_EXISTING_QUEUE_CONTINUES',providerCalls:0});}
    let progress=!!incoming.handled||!!incoming.more;
-   let todo=null,fastDrained=false;
-   if(incoming.added&&now()<deadline-3*60000){
-    todo=await prepareTodo();if(todo.queue.items.some(x=>!campaignClosed(x.state))){progress=(await drainTodo())||progress;fastDrained=true;freshSlices++;}
+   // Reopened native submissions may have entered the durable queue in a
+   // previous run. A fresh intake.added counter is not their readiness signal.
+   // Resolve once with the original native guards, then consume ready work
+   // before a slow frozen-history slice. Preserve the three-to-one sharing.
+   let todo=await prepareTodo(),fastDrained=false;
+   const nativeWaiting=todo.queue.items.some(x=>x.state==='PENDING_VALIDATION'&&!(x.nextAt>now()));
+   if((incoming.added||todo.added||nativeWaiting)&&now()<deadline-3*60000){
+    if(todo.queue.items.some(x=>!campaignClosed(x.state))){progress=(await drainTodo())||progress;fastDrained=true;freshSlices++;}
    }
    if(now()>=nextFrozen&&(!fastDrained||freshSlices>=3)){
     const report=await runFrozen(Math.max(1,Math.min(6,(deadline-now())/60000-3)));

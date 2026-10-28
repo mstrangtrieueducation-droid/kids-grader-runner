@@ -14,3 +14,10 @@ clock=0;let fresh=true;const order=[];
 await runKidsService({deadline:4*60000,now:()=>clock,sleep:async ms=>{clock+=ms;},emit:()=>{},intake:async()=>({due:false,added:fresh?1:0,handled:fresh?1:0}),prepareTodo:async()=>({queue:{items:[{state:fresh?'PENDING_VALIDATION':'VERIFIED_WRITTEN'}]}}),runTodo:async()=>{order.push('new-work');fresh=false;return {counts:{VERIFIED_WRITTEN:1},providerCalls:1};},runFrozen:async()=>{order.push('old-held');return {counts:{HELD:19},providerCalls:0};},discover:async()=>assert.fail('full scan')});
 assert(order.indexOf('new-work')<order.indexOf('old-held'),'newly staged native work must enter workers before rechecking old held rows');
 console.log('Continuous work survives a network error, consumes new work despite old held rows, sleeps while idle, wakes for later submissions and retains full-scan exclusion; 0 real provider calls.');
+
+// A source notice was repaired by a previous coordinator. No new Form row or
+// membership append is needed to make its native PENDING_VALIDATION work ready.
+clock=0;let restored=3;const restoredOrder=[];
+await runKidsService({deadline:4*60000,now:()=>clock,sleep:async ms=>{clock+=ms;},emit:()=>{},intake:async()=>({due:false,added:0,handled:0}),prepareTodo:async()=>({added:0,queue:{items:[{state:restored?'PENDING_VALIDATION':'VERIFIED_WRITTEN'}]}}),runTodo:async()=>{restoredOrder.push('restored-native');restored--;return {counts:{VERIFIED_WRITTEN:3-restored,PENDING_VALIDATION:restored},providerCalls:1};},runFrozen:async()=>{restoredOrder.push('old-frozen');return {counts:{HELD:12},providerCalls:0};},discover:async()=>assert.fail('no full scan while history unresolved')});
+assert.equal(restored,0);assert.deepEqual(restoredOrder.slice(0,4),['restored-native','restored-native','restored-native','old-frozen'],'existing reopened work starts first without a new intake event and retains 3:1 fairness');
+console.log('PASS durable reopened native work starts before frozen backlog, even with intake.added=0 and todo.added=0; original four-worker execution and protected native eligibility retained.');
