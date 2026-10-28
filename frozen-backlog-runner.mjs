@@ -7,7 +7,7 @@ import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA,workerOwnsPr
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
 export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
- const q=validateBacklog(JSON.parse(fs.readFileSync(file))),{runnerGoogle:g}=await import('./grader_runner.mjs');
+ const q=validateBacklog(JSON.parse(fs.readFileSync(file))),{runnerGoogle:g,buildContext}=await import('./grader_runner.mjs');
  if(!['FrozenBacklog','KidsTodo'].includes(table)||(table==='KidsTodo')!==(q.schema===NATIVE_TODO_SCHEMA))throw Error('CAMPAIGN_TABLE_SCHEMA_MISMATCH');
  const deadline=Date.now()+minutes*60000,release=localGuard(path.join(root,'private','runner.lock')),leases=[],workers=[],entriesByControl=new Map(),active=new Map(),haltFile=path.join(root,'private','campaign-halt');
  if(fs.existsSync(haltFile))fs.unlinkSync(haltFile);
@@ -26,6 +26,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   else durable(q.items);
   // Read only the existing persistent ledgers, never discovery across classes/Form.
   for(const cluster of config.clusters)entriesByControl.set(cluster.controlId,readNativeQueue(g,cluster.controlId));
+  const bindingContexts=new Map(),nativeRows=new Map();
   const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
   console.log(JSON.stringify({event:'CAMPAIGN_STARTED',workers:4,fastWorkers:3,heavyWorkers:1,claimBatchSize:1,total:q.total,verified,fullClassScans:0}));
   const choose=slot=>{
@@ -40,7 +41,9 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
     const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
     if(!workerAccepts(entry.job,slot,{heavyWaiting,ownerSlot:item.claim&&(item.claim.runId===process.env.GITHUB_RUN_ID||process.env.MEDIA_CACHE_RESTORED==='true')?item.claim.worker:undefined})||!claimAllowed(entry.job,busy)){continue;}
-    batch.push({item,entry,executable:!!selected});if(batch.length===1)break;
+    let nativeRowKey=nativeRows.get(entry.job.id);if(!nativeRowKey){try{let c=bindingContexts.get(cluster.controlId);if(!c){c=buildContext(cluster);bindingContexts.set(cluster.controlId,c);}const cell=c.destination_(entry.job.cls,entry.job.route,entry.job.receipt.student).cell;nativeRowKey=[entry.job.cls.spreadsheetId,cell.sheet.getSheetId(),cell.getA1Notation().match(/\d+$/)[0]].join('|');nativeRows.set(entry.job.id,nativeRowKey);}catch{nativeRowKey='unresolved-class|'+entry.job.cls.spreadsheetId;}}
+    if([...active.values()].some(w=>w.batch.some(b=>b.nativeRowKey===nativeRowKey||b.entry.job.cls.spreadsheetId===entry.job.cls.spreadsheetId&&(b.nativeRowKey.startsWith('unresolved-class|')||nativeRowKey.startsWith('unresolved-class|')))))continue;
+    batch.push({item,entry,nativeRowKey,executable:!!selected});if(batch.length===1)break;
    }
    if(!batch.length)continue;return {batch,entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
    }return [];
