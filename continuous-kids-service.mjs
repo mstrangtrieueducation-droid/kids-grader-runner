@@ -1,15 +1,17 @@
+import {mainRevisionChanged} from './cooperative-upgrade.mjs';
 import {serviceMinutes,ITEM_MS} from './workload-lanes.mjs';
 import {discoveryAllowed} from './persistent-kids-queue.mjs';
 import {campaignClosed} from './frozen-backlog-policy.mjs';
 const remaining=counts=>Object.entries(counts||{}).filter(([state])=>!campaignClosed(state)).reduce((n,[,v])=>n+v,0);
 const signature=counts=>JSON.stringify(Object.entries(counts||{}).sort());
-export async function runKidsService({deadline,intake,runFrozen,prepareTodo,discover,runTodo,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),emit=x=>console.log(JSON.stringify(x))}){
- let frozenRemaining=1,nextFrozen=0,nextTodo=0,previousFrozen='',previousTodo='',freshSlices=0;
+export async function runKidsService({deadline,intake,runFrozen,prepareTodo,discover,runTodo,checkUpgrade=mainRevisionChanged,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),emit=x=>console.log(JSON.stringify(x))}){
+ let frozenRemaining=1,nextFrozen=0,nextTodo=0,previousFrozen='',previousTodo='',freshSlices=0,upgradeRequested=false;
  const drainTodo=async()=>{
   const report=await runTodo(serviceMinutes(deadline,now())),fingerprint=signature(report.counts),moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousTodo;
-  previousTodo=fingerprint;nextTodo=moved?0:now()+10*60000;return moved;
+  upgradeRequested ||= !!report.upgradeRequested;previousTodo=fingerprint;nextTodo=moved?0:now()+10*60000;return moved;
  };
  while(now()<deadline-ITEM_MS-3*60000){
+  if(upgradeRequested||await checkUpgrade())return {handover:true,upgradeRequested:true};
   const cycleStarted=now();
   try{
    // Intake is independent of held/uncertain old jobs. It reads Form tails and
@@ -26,8 +28,10 @@ export async function runKidsService({deadline,intake,runFrozen,prepareTodo,disc
    if((incoming.added||todo.added||nativeWaiting)&&now()<deadline-3*60000){
     if(todo.queue.items.some(x=>!campaignClosed(x.state))){progress=(await drainTodo())||progress;fastDrained=true;freshSlices++;}
    }
+   if(upgradeRequested)return {handover:true,upgradeRequested:true};
    if(now()>=nextFrozen&&(!fastDrained||freshSlices>=3)){
     const report=await runFrozen(serviceMinutes(deadline,now()));
+    if(report.upgradeRequested)return {handover:true,upgradeRequested:true};
     frozenRemaining=remaining(report.counts);const fingerprint=signature(report.counts);
     const moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousFrozen;
     progress ||= moved;previousFrozen=fingerprint;nextFrozen=moved?0:now()+10*60000;freshSlices=0;

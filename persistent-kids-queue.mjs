@@ -13,7 +13,7 @@ const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export const NATIVE_TODO_SCHEMA='kids-native-todo-v1';
 // Partial downloads and prepared media live in the owning worker's directory.
 // A continuation must return there; a new hosted run starts with fresh disks.
-export const workerOwnsPreparation=(item,slot,runId)=>!item.claim||item.claim.runId!==runId||item.claim.worker===slot;
+export const workerOwnsPreparation=(item,slot,runId,restored=false)=>!item.claim||item.claim.runId!==runId&&!restored||item.claim.worker===slot;
 export const discoveryAllowed=(frozenRemaining,todo)=>frozenRemaining===0&&!todo.items.some(x=>!campaignClosed(x.state));
 export function appendNativeItems(previous,entries,resolve,{now=Date.now(),approved=new Set(),reopenResolved=false}={}){
  const q=previous?structuredClone(validateBacklog(previous)):{schema:NATIVE_TODO_SCHEMA,campaignId:'native-kids-persistent-4',workers:4,total:0,items:[],membershipHash:digest([])};

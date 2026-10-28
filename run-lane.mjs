@@ -5,7 +5,7 @@ const root=path.dirname(fileURLToPath(import.meta.url)),lane='kids',repository='
 const required=n=>{const v=process.env[n]?.trim();if(!v)throw Error('MISSING_'+n);return v;};
 const runTest=name=>{const r=spawnSync(process.execPath,[name],{cwd:root,env:{...process.env,NATIVE_YOUTUBE_INPUT:'false',SHEET_TRUTH_SYNC:'false',MODEL_GRADING_AVAILABLE:'true'},encoding:'utf8',windowsHide:true,maxBuffer:10*1024*1024});if(r.status){fs.mkdirSync(path.join(root,'private'),{recursive:true});fs.writeFileSync(path.join(root,'private','test-failure.txt'),r.stdout+'\n'+r.stderr);throw Error('SAFEGUARD_TEST_FAILED');}console.log(JSON.stringify({test:name,passed:true,providerCalls:0}));};
 async function main(){
- runTest('workload-lanes-tests.mjs');runTest('audio-completeness-tests.mjs');
+ runTest('encrypted-media-cache-tests.mjs');runTest('cooperative-upgrade-tests.mjs');runTest('workload-lanes-tests.mjs');runTest('audio-completeness-tests.mjs');
  runTest('kids-folder-inventory-tests.mjs');
  runTest('submission-source-tests.mjs');runTest('receipt-body-tests.mjs');runTest('unpaid-google-retry-tests.mjs');runTest('native-youtube-tests.mjs');runTest('current-roster-policy-tests.mjs');runTest('native-metadata-compat-tests.mjs');runTest('source-access-notices-tests.mjs');runTest('priority-kids-drain-tests.mjs');
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');

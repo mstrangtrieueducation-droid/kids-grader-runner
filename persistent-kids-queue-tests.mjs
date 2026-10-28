@@ -34,3 +34,7 @@ assert.equal(appendNativeItems(first.queue,[{row:2,job:{...recheckJob,status:'RE
 assert.deepEqual(mergeDurableNativeItem(recovered.queue.items[0],first.queue.items[0]),recovered.queue.items[0],'server manifest refresh must retain exactly proven Sheet-truth recovery');
 const advanced={...first.queue.items[0],state:'HELD',attempts:[{calls:1},{calls:0}]};
 assert.equal(mergeDurableNativeItem(recovered.queue.items[0],advanced),advanced,'never replace a concurrently advanced durable row');
+
+assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},3,'next',true),true);
+assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},0,'next',true),false);
+assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},0,'next',false),true);
