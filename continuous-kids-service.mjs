@@ -1,3 +1,4 @@
+import {serviceMinutes,ITEM_MS} from './workload-lanes.mjs';
 import {discoveryAllowed} from './persistent-kids-queue.mjs';
 import {campaignClosed} from './frozen-backlog-policy.mjs';
 const remaining=counts=>Object.entries(counts||{}).filter(([state])=>!campaignClosed(state)).reduce((n,[,v])=>n+v,0);
@@ -5,10 +6,10 @@ const signature=counts=>JSON.stringify(Object.entries(counts||{}).sort());
 export async function runKidsService({deadline,intake,runFrozen,prepareTodo,discover,runTodo,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),emit=x=>console.log(JSON.stringify(x))}){
  let frozenRemaining=1,nextFrozen=0,nextTodo=0,previousFrozen='',previousTodo='',freshSlices=0;
  const drainTodo=async()=>{
-  const report=await runTodo(Math.max(1,Math.min(8,(deadline-now())/60000-2))),fingerprint=signature(report.counts),moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousTodo;
+  const report=await runTodo(serviceMinutes(deadline,now())),fingerprint=signature(report.counts),moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousTodo;
   previousTodo=fingerprint;nextTodo=moved?0:now()+10*60000;return moved;
  };
- while(now()<deadline-3*60000){
+ while(now()<deadline-ITEM_MS-3*60000){
   const cycleStarted=now();
   try{
    // Intake is independent of held/uncertain old jobs. It reads Form tails and
@@ -26,7 +27,7 @@ export async function runKidsService({deadline,intake,runFrozen,prepareTodo,disc
     if(todo.queue.items.some(x=>!campaignClosed(x.state))){progress=(await drainTodo())||progress;fastDrained=true;freshSlices++;}
    }
    if(now()>=nextFrozen&&(!fastDrained||freshSlices>=3)){
-    const report=await runFrozen(Math.max(1,Math.min(6,(deadline-now())/60000-3)));
+    const report=await runFrozen(serviceMinutes(deadline,now()));
     frozenRemaining=remaining(report.counts);const fingerprint=signature(report.counts);
     const moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousFrozen;
     progress ||= moved;previousFrozen=fingerprint;nextFrozen=moved?0:now()+10*60000;freshSlices=0;

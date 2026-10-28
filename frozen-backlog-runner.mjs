@@ -1,3 +1,4 @@
+import {workerAccepts,mediaWorkload,ITEM_MS} from './workload-lanes.mjs';
 import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed,cacheFirstItems,resultNativeClaim} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
@@ -27,17 +28,18 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
   console.log(JSON.stringify({event:'CAMPAIGN_STARTED',workers:4,total:q.total,verified,fullClassScans:0}));
   const choose=slot=>{
-   if(Date.now()>deadline-120000)return [];
+   if(Date.now()>deadline-ITEM_MS-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
    const candidates=q.items.filter(item=>workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID)&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!candidates.length)return [];
+    const heavyWaiting=candidates.some(x=>{const c=config.clusters.find(y=>y.classes.some(z=>z.spreadsheetId===x.target.spreadsheetId));const es=c&&entriesByControl.get(c.controlId);const e=es&&selectExisting(x.target,es);return e&&mediaWorkload(e.job).lane==='heavy';});
    for(const first of cacheFirstItems(candidates)){
    const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose(slot);}
    const entries=entriesByControl.get(cluster.controlId),batch=[];
    for(const item of cacheFirstItems(q.items.filter(x=>workerOwnsPreparation(x,slot,process.env.GITHUB_RUN_ID)&&x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
     const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
-    if(!claimAllowed(entry.job,busy)){continue;}
-    batch.push({item,entry,executable:!!selected});if(batch.length===10)break;
+    if(!workerAccepts(entry.job,slot,{heavyWaiting,ownerSlot:item.claim?.runId===process.env.GITHUB_RUN_ID?item.claim.worker:undefined})||!claimAllowed(entry.job,busy)){continue;}
+    batch.push({item,entry,executable:!!selected});if(batch.length===1)break;
    }
    if(!batch.length)continue;return {batch,entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
    }return [];
@@ -45,11 +47,11 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   await new Promise((resolve,reject)=>{
    let stopped=0;const restarts=new Map();
    const schedule=w=>{if(w.busy||!w.connected)return;const work=w.retire?[]:choose(w.slot);if(!work.batch?.length){
-    const dueLater=q.items.some(x=>x.state==='RETRY'&&!attempted.has(x.id)&&x.nextAt<deadline-120000);
-    if(!w.retire&&Date.now()<deadline-120000&&(active.size||dueLater)){setTimeout(()=>schedule(w),2000);return;}
+    const dueLater=q.items.some(x=>['RETRY','PENDING_VALIDATION'].includes(x.state)&&!attempted.has(x.id)&&x.nextAt<deadline-120000);
+    if(!w.retire&&Date.now()<deadline-ITEM_MS-120000&&(active.size||dueLater)){setTimeout(()=>schedule(w),2000);return;}
     w.send({stop:true});return;
    }
-    work.before=new Map(work.batch.map(x=>[x.item.id,preparationProgress(x.entry.job)]));for(const {item,entry} of work.batch){attempted.add(item.id);item.state='CLAIMED';item.claim={runId:process.env.GITHUB_RUN_ID,worker:w.slot,jobId:entry.job.id,row:entry.row,controlId:work.controlId,at:new Date().toISOString()};}durable(work.batch.map(x=>x.item));w.busy=true;active.set(w.pid,work);w.send(work);
+    work.before=new Map(work.batch.map(x=>[x.item.id,preparationProgress(x.entry.job)]));for(const {item,entry} of work.batch){attempted.add(item.id);item.beforeClaimState=item.state;item.state='CLAIMED';item.claim={runId:process.env.GITHUB_RUN_ID,worker:w.slot,jobId:entry.job.id,row:entry.row,controlId:work.controlId,at:new Date().toISOString()};}durable(work.batch.map(x=>x.item));w.busy=true;active.set(w.pid,work);w.send(work);
    };
    const launch=slot=>{
     const dir=path.join(root,'private','campaign-workers',String(slot));fs.mkdirSync(dir,{recursive:true});
@@ -60,9 +62,9 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
      if(m.event==='READY')schedule(w);
      if(m.event==='CALL_STARTED'){providerCalls++;}
      if(m.event==='RESULT_BATCH'){
-      const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;if(Number.isInteger(r.nativeRow))item.claim=resultNativeClaim(item,r,work.controlId);item.state=r.state;item.resolvedTarget=r.target||item.resolvedTarget;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,replayProof:r.replayProof||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;else if(Number.isInteger(r.nativeRow)&&matchesTarget(r.job,item.target)&&r.job.invalidResultRetry)work.entries.push({job:r.job,row:r.nativeRow});else throw Error('WORKER_NATIVE_ENTRY_INVALID');fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
-      for(const {item} of work.batch){const job=work.entries.find(x=>x.job.id===item.delivery.jobId)?.job;if(job&&preparationProgress(job)!==work.before.get(item.id))preparationAdvanced++;}
-      active.delete(w.pid);w.busy=false;restarts.set(slot,0);durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(item.state==='RETRY'&&item.nextAt>Date.now()&&progress.allow(work.entries.find(x=>x.job.id===item.delivery.jobId).job,work.before.get(item.id)))attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
+      const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;if(r.unstarted){item.state=item.beforeClaimState||'PENDING_VALIDATION';delete item.beforeClaimState;continue;}delete item.beforeClaimState;if(Number.isInteger(r.nativeRow))item.claim=resultNativeClaim(item,r,work.controlId);item.state=r.state;item.resolvedTarget=r.target||item.resolvedTarget;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,replayProof:r.replayProof||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;else if(Number.isInteger(r.nativeRow)&&matchesTarget(r.job,item.target)&&r.job.invalidResultRetry)work.entries.push({job:r.job,row:r.nativeRow});else throw Error('WORKER_NATIVE_ENTRY_INVALID');fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
+      for(const {item} of work.batch){const job=work.entries.find(x=>x.job.id===item.delivery?.jobId)?.job;if(job&&preparationProgress(job)!==work.before.get(item.id))preparationAdvanced++;}
+      active.delete(w.pid);w.busy=false;restarts.set(slot,0);durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(['RETRY','PENDING_VALIDATION'].includes(item.state)&&item.delivery&&item.nextAt>Date.now()&&progress.allow(work.entries.find(x=>x.job.id===item.delivery.jobId).job,work.before.get(item.id)))attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
       if(Math.floor(verified/50)*50>milestone){milestone=Math.floor(verified/50)*50;console.log(JSON.stringify({event:'CAMPAIGN_VERIFIED_MILESTONE',verified,total:q.total,providerCalls}));}schedule(w);
      }
     }catch(e){w.retire=true;reject(e);}});

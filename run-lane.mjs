@@ -1,10 +1,11 @@
+import {SERVICE_MS} from './workload-lanes.mjs';
 import './hosted-bootstrap.mjs';
 import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';import {createDecipheriv} from 'node:crypto';import {gunzipSync} from 'node:zlib';import {spawnSync} from 'node:child_process';
 const root=path.dirname(fileURLToPath(import.meta.url)),lane='kids',repository='mstrangtrieueducation-droid/'+lane+'-grader-runner';
 const required=n=>{const v=process.env[n]?.trim();if(!v)throw Error('MISSING_'+n);return v;};
 const runTest=name=>{const r=spawnSync(process.execPath,[name],{cwd:root,env:{...process.env,NATIVE_YOUTUBE_INPUT:'false',SHEET_TRUTH_SYNC:'false',MODEL_GRADING_AVAILABLE:'true'},encoding:'utf8',windowsHide:true,maxBuffer:10*1024*1024});if(r.status){fs.mkdirSync(path.join(root,'private'),{recursive:true});fs.writeFileSync(path.join(root,'private','test-failure.txt'),r.stdout+'\n'+r.stderr);throw Error('SAFEGUARD_TEST_FAILED');}console.log(JSON.stringify({test:name,passed:true,providerCalls:0}));};
 async function main(){
- runTest('audio-completeness-tests.mjs');
+ runTest('workload-lanes-tests.mjs');runTest('audio-completeness-tests.mjs');
  runTest('kids-folder-inventory-tests.mjs');
  runTest('submission-source-tests.mjs');runTest('receipt-body-tests.mjs');runTest('unpaid-google-retry-tests.mjs');runTest('native-youtube-tests.mjs');runTest('current-roster-policy-tests.mjs');runTest('native-metadata-compat-tests.mjs');runTest('source-access-notices-tests.mjs');runTest('priority-kids-drain-tests.mjs');
  const mode=process.env.MODE||'audit';if(!['validate','audit','grade'].includes(mode))throw Error('MODE_INVALID');
@@ -45,7 +46,7 @@ async function main(){
   const counts={};for(const id of lane==='kids'?config.clusters.map(c=>c.controlId):[config.shadowing.controlId]){const range=lane==='kids'?"'Jobs'!F2:F5000":"'SHADOWING AI'!F2:F5000";const rows=google.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+encodeURIComponent(range)).values||[];for(const r of rows)if(r[0]){try{const j=JSON.parse(r[0]);counts[j.status]=(counts[j.status]||0)+1;}catch{counts.INVALID=(counts.INVALID||0)+1;}}}
   console.log(JSON.stringify({audit:true,counts,providerGenerateCalls:0}));return;
  }
- const workDeadline=Date.now()+300*60000;
+ const workDeadline=Date.now()+SERVICE_MS;
  const encrypted=fs.readFileSync(path.join(root,'backlog_563.enc'));if(encrypted.subarray(0,4).toString()!=='FB01')throw Error('BACKLOG_ENVELOPE_INVALID');
  const decoder=createDecipheriv('aes-256-gcm',Buffer.from(required('PRIVATE_BUNDLE_KEY'),'base64'),encrypted.subarray(4,16));decoder.setAAD(Buffer.from(repository+'/frozen-backlog'));decoder.setAuthTag(encrypted.subarray(16,32));
  const target=path.join(root,'private','backlog_563.json');fs.writeFileSync(target,gunzipSync(Buffer.concat([decoder.update(encrypted.subarray(32)),decoder.final()])));

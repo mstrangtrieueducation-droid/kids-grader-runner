@@ -1,3 +1,4 @@
+import {ITEM_MS} from './workload-lanes.mjs';
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
 import {replaySavedClassBatch} from './campaign-saved-replay.mjs';
 import {authorizeInvalidRetry,initializeAuthorizedRetryInventory} from './authorized-invalid-retry.mjs';
@@ -26,7 +27,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
  try{for(const workItem of batch){let {item,entry,executable}=workItem;
  let result;try{
   if(!matchesTarget(entry.job,item.target))throw Error('CAMPAIGN_JOB_BINDING_INVALID');
-  if(Date.now()>deadline-120000||process.env.CAMPAIGN_HALT_FILE&&fs.existsSync(process.env.CAMPAIGN_HALT_FILE)){results.push({itemId:item.id,target:item.target,result:{state:'RETRY',error:'CAMPAIGN_SOFT_DEADLINE',nextAt:Date.now()+60000,job:entry.job}});continue;}
+  if(Date.now()>deadline-120000||process.env.CAMPAIGN_HALT_FILE&&fs.existsSync(process.env.CAMPAIGN_HALT_FILE)){results.push({itemId:item.id,target:item.target,result:{unstarted:true,job:entry.job}});continue;}
   // No RAM queue/artifact writer: native append returns the server allocated rows.
   // Every reservation and raw save is immediately durable in the native ledger.
   c.loadJobs_=()=>entries;const nativePersist=c.campaignNativePersist_||c.persist_;c.campaignNativePersist_=nativePersist;
@@ -55,13 +56,14 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
    let calls=0;c.recordMasterGeneration_=()=>{calls++;process.send({event:'CALL_STARTED',itemId:item.id});};
    c.preparePoolRetry_(j,entry.row);
    // A soft boundary stops starting more work; it never kills an in-flight paid call.
-   c.step_(j,entry.row,Math.min(deadline,Date.now()+20*60000),{});
+   c.step_(j,entry.row,Math.min(deadline,Date.now()+ITEM_MS),{});
    settleSheetTruth({job:j,resolve:()=>c.destination_(j.cls,j.route,j.receipt.student).cell,save:()=>c.persist_(j,entry.row)});
    c.teacherApprovalSession_.flush();
    const actual=c.destination_(j.cls,j.route,j.receipt.student).cell;
    const after=actual.getDisplayValue(),exact=actual.sheet.getSheetId()===resolvedTarget.sheetId&&actual.getA1Notation()===resolvedTarget.cell;
    if(manual&&after===before&&hasTeacherReview(after)){c.teacherApprovalSession_.finish(j);c.teacherApprovalSession_.flush();c.persist_(j,entry.row);}
-   result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.rosterEligibility?.state==='NOT_IN_CURRENT_ROSTER'?'SKIPPED_NOT_IN_CURRENT_ROSTER':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:Number(j.nextAt)||0};
+   const preparing=executable&&calls===0&&!j.rawId&&!j.gradeId&&['READY','WAITING_MEDIA','WAITING_INPUT','RETRY','PROCESSING'].includes(j.status);
+   result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.rosterEligibility?.state==='NOT_IN_CURRENT_ROSTER'?'SKIPPED_NOT_IN_CURRENT_ROSTER':preparing?'PENDING_VALIDATION':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:preparing?Math.max(Number(j.nextAt)||0,Date.now()+2000):Number(j.nextAt)||0};
   }
   result.target=resolvedTarget;
   result.beforeNote=beforeNote;if(result.state==='STAGED')result.deliveryCell=structuredClone(c.destination_(j.cls,j.route,j.receipt.student).cell.cells()[0]?.values?.[0]);
