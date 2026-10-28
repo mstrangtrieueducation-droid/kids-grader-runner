@@ -31,7 +31,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   const choose=slot=>{
    if(Date.now()>deadline-ITEM_MS-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
-   const candidates=q.items.filter(item=>workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID,process.env.MEDIA_CACHE_RESTORED==='true')&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now())&&!busy.some(j=>j.cls.spreadsheetId===item.target.spreadsheetId));if(!candidates.length)return [];
+   const candidates=q.items.filter(item=>workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID,process.env.MEDIA_CACHE_RESTORED==='true')&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now()));if(!candidates.length)return [];
     const heavyWaiting=candidates.some(x=>{const c=config.clusters.find(y=>y.classes.some(z=>z.spreadsheetId===x.target.spreadsheetId));const es=c&&entriesByControl.get(c.controlId);const e=es&&selectExisting(x.target,es);return e&&mediaWorkload(e.job).lane==='heavy';});
    for(const first of cacheFirstItems(candidates)){
    const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose(slot);}
