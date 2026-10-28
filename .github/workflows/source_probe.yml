@@ -8,7 +8,7 @@ on:
         required: true
       client:
         type: choice
-        options: ['default', 'android_vr', 'web_embedded', 'android_vr_no_webpage', 'native_tokens', 'native_adapter']
+        options: ['default', 'android_vr', 'web_embedded', 'android_vr_no_webpage', 'native_tokens', 'native_adapter', 'audio_integrity']
         default: 'default'
       job_ids:
         type: string
@@ -31,9 +31,21 @@ jobs:
         with:
           node-version: '24'
       - name: Install the production media tools
-        run: python3 -m pip install --quiet --timeout 30 --retries 2 -r requirements.txt
+        run: |
+          python3 -m pip install --quiet --timeout 30 --retries 2 -r requirements.txt
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            python3 -m pip install --quiet 'imageio-ffmpeg==0.6.0'
+            media_bin="$RUNNER_TEMP/teacher-probe-tools"
+            mkdir -p "$media_bin"
+            ffmpeg_exe=$(python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
+            ln -sf "$ffmpeg_exe" "$media_bin/ffmpeg"
+            echo "$media_bin" >> "$GITHUB_PATH"
+          fi
       - name: Validate privacy and read-only probe contract
-        run: node source-probe-tests.mjs
+        run: |
+          node hosted-bootstrap.mjs
+          node source-probe-tests.mjs
+          node audio-timeline-probe-tests.mjs
       - name: Download selected YouTube sources without AI or Sheet writes
         env:
           GEMINI_API_KEY: ${{ (inputs.client == 'native_tokens' || inputs.client == 'native_adapter') && secrets.GEMINI_KEY_KIDS || '' }}
