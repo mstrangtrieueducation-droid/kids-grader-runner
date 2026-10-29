@@ -71,3 +71,8 @@ const historyPage=Array.from({length:250},(_,i)=>({row:1000-i})),bootstrap={row:
 assert.deepEqual(exceptionReplayRows([...historyPage,bootstrap],{replay:[1100]},historyPage),[bootstrap]);
 assert.equal(acknowledgeHistory({start:751},historyPage,historyPage.slice(0,6)),995,'all unselected history remains behind the durable watermark');
 assert.equal(exceptionReplayRows(historyPage,{replay:[]},historyPage).length,0,'unselected history cannot multiply exception rows and block fresh Form-tail commits');
+const {writeIntakeCheckpoint,readIntakeCheckpoint}=await import('./continuous-intake.mjs');
+const largeState={tabs:{'synthetic-source|1':100},deferred:Array.from({length:5000},(_,i)=>({row:i,source:'synthetic-'+i+'-'+i.toString(16).repeat(6),tab:'synthetic-tab',controlId:'synthetic-control',nextAt:i*123456789}))};
+let stored;const pointer=writeIntakeCheckpoint(largeState,(parts,sha)=>{assert(parts.every(x=>x.length<=30000));stored={parts,sha};return 5;});assert(pointer.startsWith('parts:v1:'));assert(pointer.length<300);assert.deepEqual(readIntakeCheckpoint(pointer,(start,count,sha)=>{assert.equal(start,5);assert.equal(count,stored.parts.length);assert.equal(sha,stored.sha);return stored.parts;}),largeState);
+assert.throws(()=>readIntakeCheckpoint(pointer,()=>stored.parts.map(x=>x+'corrupt')),/HASH_MISMATCH/);assert.throws(()=>writeIntakeCheckpoint(largeState,()=>undefined),/APPEND_UNCONFIRMED/);assert.deepEqual(readIntakeCheckpoint(encodeIntakeState({tabs:{}}),()=>assert.fail()),{tabs:{}});
+console.log('PASS durable overflow checkpoints preserve every deferred row, old inline checkpoints, exact shard identity/hash, append-before-pointer ordering and failed-save replay.');

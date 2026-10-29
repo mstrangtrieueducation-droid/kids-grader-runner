@@ -1,5 +1,6 @@
 import vm from 'node:vm';
 import {gzipSync,gunzipSync} from 'node:zlib';
+import {createHash} from 'node:crypto';
 import path from 'node:path';import {fileURLToPath} from 'node:url';
 import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {gridMaster} from './google-adapter.mjs';
@@ -9,7 +10,9 @@ import {prepareKidsMasterSweep} from './master-kids-sweep.mjs';
 
 export const INTAKE_INTERVAL=10*60000;
 export const decodeIntakeState=value=>JSON.parse(value?.startsWith('gz:')?gunzipSync(Buffer.from(value.slice(3),'base64')).toString('utf8'):value||'{"tabs":{}}');
-export function encodeIntakeState(state){const text=JSON.stringify(state),encoded=text.length>12000?'gz:'+gzipSync(text).toString('base64'):text;if(encoded.length>32000)throw Error('NATIVE_INTAKE_CURSOR_CAPACITY');return encoded;}
+export function encodeIntakeState(state,{allowLarge=false}={}){const text=JSON.stringify(state),encoded=text.length>12000?'gz:'+gzipSync(text).toString('base64'):text;if(!allowLarge&&encoded.length>32000)throw Error('NATIVE_INTAKE_CURSOR_CAPACITY');return encoded;}
+export function writeIntakeCheckpoint(state,append){const value=encodeIntakeState(state,{allowLarge:true});if(value.length<=32000)return value;const parts=Array.from({length:Math.ceil(value.length/30000)},(_,i)=>value.slice(i*30000,(i+1)*30000)),sha=createHash('sha256').update(value).digest('hex'),start=append(parts,sha);if(!Number.isInteger(start)||start<1)throw Error('INTAKE_CHECKPOINT_APPEND_UNCONFIRMED');return 'parts:v1:'+JSON.stringify({start,count:parts.length,sha});}
+export function readIntakeCheckpoint(value,read){if(!value?.startsWith('parts:v1:'))return decodeIntakeState(value);const p=JSON.parse(value.slice(9));if(!Number.isInteger(p.start)||p.start<1||!Number.isInteger(p.count)||p.count<1||p.count>1000||!/^[a-f0-9]{64}$/.test(p.sha))throw Error('INTAKE_CHECKPOINT_POINTER_INVALID');const parts=read(p.start,p.count,p.sha);if(parts.length!==p.count)throw Error('INTAKE_CHECKPOINT_PARTS_MISSING');const joined=parts.join('');if(createHash('sha256').update(joined).digest('hex')!==p.sha)throw Error('INTAKE_CHECKPOINT_HASH_MISMATCH');return decodeIntakeState(joined);}
 export function intakeDue(state,now=Date.now()){return !!state?.more||!state?.completedAt||now-state.completedAt>=INTAKE_INTERVAL;}
 // Historical coverage is independent of the largest known Jobs row. A high
 // watermark certifies neither older intake nor a recently repaired class column.
@@ -53,7 +56,7 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
  try{
   for(const cluster of config.clusters){const lease=makeState(g,cluster.controlId);lease.acquire(now()+15*60000);leases.push(lease);}
   properties=new Map(Object.entries(leases[0].initial));let state;
-  try{state=decodeIntakeState(properties.get(cursorKey));}catch{throw Error('NATIVE_INTAKE_CURSOR_INVALID');}
+  try{state=readIntakeCheckpoint(properties.get(cursorKey),(start,count,sha)=>{const s=g.book(config.clusters[0].controlId).getSheetByName('[KIDS_INTAKE_CHECKPOINTS]');if(!s)throw Error('INTAKE_CHECKPOINT_TAB_MISSING');const rows=s.getRange(start,1,count,3).getValues();if(rows.some((r,i)=>r[0]!==sha||Number(r[1])!==i))throw Error('INTAKE_CHECKPOINT_PART_IDENTITY');return rows.map(r=>r[2]);});}catch{throw Error('NATIVE_INTAKE_CURSOR_INVALID');}
   if(!intakeDue(state,now()))return {due:false,providerCalls:0};
   // Child workers and the teacher may have written since the previous cycle.
   // Intake must inspect current native class cells, never the parent's old grid.
@@ -136,7 +139,10 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
   more ||= [...deferred.values()].some(x=>x.nextAt<=now());
   next.completedAt=now();next.more=more;next.deferred=[...deferred.values()];
   if(next.deferred.length>5000)throw Error('NATIVE_DEFERRED_QUEUE_CAPACITY');
-  properties.set(cursorKey,encodeIntakeState(next));leases[0].save(properties);
+  const encoded=writeIntakeCheckpoint(next,(parts,sha)=>{const b=g.book(config.clusters[0].controlId),s=b.getSheetByName('[KIDS_INTAKE_CHECKPOINTS]')||b.insertSheet('[KIDS_INTAKE_CHECKPOINTS]');s.appendRows(parts.map((text,i)=>[sha,i,text]));return s.lastAppendRow;});
+  // Append and verify the shard binding before committing the small pointer.
+  // A failed append/save leaves the previous cursor intact and replayable.
+  properties.set(cursorKey,encoded);leases[0].save(properties);
   emit({event:'KIDS_NATIVE_TAIL_INTAKE',observed,handled,added,more,failures,deferred:next.deferred.length,historyCoverageTabs:Object.keys(next.historyBefore).length,ledgerClassesRechecked:ledgerClasses.length,fullClassScans:0,providerCalls:0});
   return {due:true,observed,handled,added,more,failed:failures>0,providerCalls:0};
  }finally{
