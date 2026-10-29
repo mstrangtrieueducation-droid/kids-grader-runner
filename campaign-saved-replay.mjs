@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {resolveFrozenTarget} from './frozen-backlog-policy.mjs';
 import {receiptOnlyCell,hasTeacherReview,teacherFeedbackPrefix} from './teacher-feedback-state.mjs';
 import {cellEvidence,expectedBindings,guardClassRequests} from './sheet-truth-write-guard.mjs';
-export function replaySavedClassBatch(c,g,results){
+export function replaySavedClassBatch(c,g,results,{commitClass}={}){
  const groups=new Map(),written=new Set();
  for(const out of results){const r=out.result,j=r.job;if(r.state!=='STAGED'||!j.rawId&&!j.gradeId)continue;
   try{
@@ -33,7 +33,7 @@ export function replaySavedClassBatch(c,g,results){
   }catch(error){r.replayProof={version:'native-saved-batch-readback-replay-v1',held:true,reason:/^[A-Z0-9_: .-]+$/.test(error.message||'')?error.message:'SOURCE_RECHECK_FAILED',providerCalls:0};}
  }
  for(const [id,items]of groups){const plan=guardClassRequests(g,id,items.map(x=>x.request),items.map(x=>x.expected));if(!plan.requests.length)continue;
-  g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+':batchUpdate','POST',{requests:plan.requests});written.add(id);
+  if(commitClass)commitClass({bookId:id,requests:plan.requests,expected:items.map(x=>x.expected)});else g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+':batchUpdate','POST',{requests:plan.requests});written.add(id);
   for(const x of items)if(plan.requests.includes(x.request)){x.out.result.after=x.merged;x.out.result.replayProof={version:'native-saved-batch-readback-replay-v1',rawId:x.out.result.job.rawId||x.out.result.job.gradeId,textHash:createHash('sha256').update(x.merged).digest('hex'),providerCalls:0,at:new Date().toISOString()};}
  }
  return written;

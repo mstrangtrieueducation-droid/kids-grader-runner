@@ -1,3 +1,4 @@
+import {submitClassWrite} from './central-sheet-writer.mjs';
 import {ITEM_MS} from './workload-lanes.mjs';
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
 import {replaySavedClassBatch} from './campaign-saved-replay.mjs';
@@ -22,7 +23,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   const nativeFresh=c.freshReceipt_;c.freshReceipt_=j=>{Google.prototype.preloadSource.call(g,vm.runInContext('KG.source',c),7,[j.route.sourceTab]);return nativeFresh(j);};
  }
  g.invalidate();g.refreshFileMetadata();
- const ram=beginSheetBatch(g,cluster,path.resolve('private/campaign-journal'),{classOnly:true});
+ const ram=beginSheetBatch(g,cluster,path.resolve('private/campaign-journal'),{classOnly:true,commitClass:request=>submitClassWrite(request,path.resolve('private/class-write-acks'))});
  const results=[];
  try{for(const workItem of batch){let {item,entry,executable}=workItem;
  let result;try{
@@ -76,7 +77,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
  // Native batch guard has now checked fresh names, headers and teacher edits.
  // Read the real class grid once, never count the staged RAM value as delivery.
  for(const id of new Set(batch.map(x=>x.item.target.spreadsheetId))){const cls=cluster.classes.find(x=>x.spreadsheetId===id);const book=g.book(id),sheet=book.getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
- for(const id of replaySavedClassBatch(c,g,results)){const cls=cluster.classes.find(x=>x.spreadsheetId===id),sheet=g.book(id).getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
+ for(const id of replaySavedClassBatch(c,g,results,{commitClass:request=>submitClassWrite(request,path.resolve('private/class-write-acks'))})){const cls=cluster.classes.find(x=>x.spreadsheetId===id),sheet=g.book(id).getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
  for(const out of results){const {result:r,target:t}=out;if(r.state==='STAGED'){
   const actual=resolveFrozenTarget(c,r.job,t).cell,text=actual.getDisplayValue();
   const exact=actual.sheet.getSheetId()===r.target.sheetId&&actual.getA1Notation()===r.target.cell;

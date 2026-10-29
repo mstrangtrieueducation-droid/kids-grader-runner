@@ -15,17 +15,17 @@ export function installBatchAdapter(){
  Sheet.prototype.appendRows=function(values){if(!this.book.ramBatch)return append.call(this,values);const row=this.getLastRow()+1;this.lastAppendRow=row;this.getRange(row,1,values.length,Math.max(...values.map(r=>r.length))).setValues(values);return this;};
  Book.prototype.batch=function(requests){if(!this.ramBatch)return batch.call(this,requests);for(const r of requests)this.ramBatch.stage(this,r);return {};};
 }
-export function replaySheetBatches(g,cluster,journalDir,{emit=()=>{}}={}){
+export function replaySheetBatches(g,cluster,journalDir,{emit=()=>{},commitClass}={}){
  fs.mkdirSync(journalDir,{recursive:true});
  // Replay durable, absolute-cell updates before reading Jobs or spending on API.
  for(const file of fs.readdirSync(journalDir).filter(f=>f.startsWith(cluster.controlId+'-')&&f.endsWith('.json'))){
   const p=path.join(journalDir,file),saved=JSON.parse(fs.readFileSync(p,'utf8'));
-  for(const item of saved.books){if(sheetTruthEnabled()&&cluster.classes.some(c=>c.spreadsheetId===item.id)){const plan=guardClassRequests(g,item.id,item.requests,item.expected||[]);item.requests=plan.requests;if(!item.requests.length)continue;}g.api('https://sheets.googleapis.com/v4/spreadsheets/'+item.id+':batchUpdate','POST',{requests:item.requests});g.books.get(item.id)?.cache.clear();}
+  for(const item of saved.books){if(sheetTruthEnabled()&&cluster.classes.some(c=>c.spreadsheetId===item.id)){const plan=guardClassRequests(g,item.id,item.requests,item.expected||[]);item.requests=plan.requests;if(!item.requests.length)continue;}if(commitClass&&cluster.classes.some(c=>c.spreadsheetId===item.id))commitClass({bookId:item.id,requests:item.requests,expected:item.expected||[]});else g.api('https://sheets.googleapis.com/v4/spreadsheets/'+item.id+':batchUpdate','POST',{requests:item.requests});g.books.get(item.id)?.cache.clear();}
   fs.unlinkSync(p);emit({event:'SHEET_BATCH_REPLAYED',file});
  }
 }
-export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{},classOnly=false}={}){
- installBatchAdapter();replaySheetBatches(g,cluster,journalDir,{emit});
+export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{},classOnly=false,commitClass}={}){
+ installBatchAdapter();replaySheetBatches(g,cluster,journalDir,{emit,commitClass});
  const active=new Map(),originalBook=g.book,originalPreload=g.preloadSource,sourceReads=new Set(),journal=path.join(journalDir,cluster.controlId+'-'+Date.now()+'.json');
  // Parallel campaign workers share native control/artifact sheets. Those writes
  // must use server append/immediate checkpoints, never stale absolute RAM rows.
@@ -55,7 +55,7 @@ export function beginSheetBatch(g,cluster,journalDir,{emit=()=>{},classOnly=fals
   book.cache.set(sheet.getName()+'|master',gridMaster(cells,batchSheetWidth(sheet.getName(),gp.columnCount,{control:book.id===cluster.controlId})));item.requests.push(clone(request));writeJournal();
  }
  function flush(){
-  writeJournal();for(const item of [...active.values()].sort((a,b)=>(a.book.id===cluster.controlId?1:0)-(b.book.id===cluster.controlId?1:0))){if(!item.requests.length)continue;if(sheetTruthEnabled()&&cluster.classes.some(c=>c.spreadsheetId===item.book.id)){const plan=guardClassRequests(g,item.book.id,item.requests,[...item.expected.values()]);item.requests=plan.requests;for(const e of plan.conflicts){const sheet=item.book.sheets.find(s=>s.getSheetId()===e.sheetId),master=item.book.cache.get(sheet.getName()+'|master');master.cells[e.row] ||= {values:[]};master.cells[e.row].values[e.col]=clone(e.current);item.book.cache.set(sheet.getName()+'|master',gridMaster(master.cells,sheet.meta.properties.gridProperties.columnCount));}if(plan.conflicts.length)emit({event:'SHEET_TRUTH_TEACHER_EDITS_PROTECTED',cells:plan.conflicts.length,providerCalls:0});}if(item.requests.length)g.api('https://sheets.googleapis.com/v4/spreadsheets/'+item.book.id+':batchUpdate','POST',{requests:item.requests});emit({event:'SHEET_BATCH_WRITTEN',spreadsheetId:item.book.id,mutations:item.requests.length,requests:1});item.requests=[];item.expected.clear();writeJournal();}
+  writeJournal();for(const item of [...active.values()].sort((a,b)=>(a.book.id===cluster.controlId?1:0)-(b.book.id===cluster.controlId?1:0))){if(!item.requests.length)continue;if(sheetTruthEnabled()&&cluster.classes.some(c=>c.spreadsheetId===item.book.id)){const plan=guardClassRequests(g,item.book.id,item.requests,[...item.expected.values()]);item.requests=plan.requests;for(const e of plan.conflicts){const sheet=item.book.sheets.find(s=>s.getSheetId()===e.sheetId),master=item.book.cache.get(sheet.getName()+'|master');master.cells[e.row] ||= {values:[]};master.cells[e.row].values[e.col]=clone(e.current);item.book.cache.set(sheet.getName()+'|master',gridMaster(master.cells,sheet.meta.properties.gridProperties.columnCount));}if(plan.conflicts.length)emit({event:'SHEET_TRUTH_TEACHER_EDITS_PROTECTED',cells:plan.conflicts.length,providerCalls:0});}if(item.requests.length){if(commitClass&&cluster.classes.some(c=>c.spreadsheetId===item.book.id))commitClass({bookId:item.book.id,requests:item.requests,expected:[...item.expected.values()]});else g.api('https://sheets.googleapis.com/v4/spreadsheets/'+item.book.id+':batchUpdate','POST',{requests:item.requests});}emit({event:'SHEET_BATCH_WRITTEN',spreadsheetId:item.book.id,mutations:item.requests.length,requests:1});item.requests=[];item.expected.clear();writeJournal();}
   if(fs.existsSync(journal))fs.unlinkSync(journal);
  }
  function close(){try{flush();}finally{g.book=originalBook;if(originalPreload)g.preloadSource=originalPreload;for(const {book,clear,invalidate}of active.values()){delete book.ramBatch;book.cache.clear=clear;book.invalidateSheet=invalidate;book.cache.clear();}}}

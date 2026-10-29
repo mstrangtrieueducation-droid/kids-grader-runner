@@ -159,6 +159,7 @@ export function universalValidatedRequest(payload,job){
  const expanded={...payload,contents},check={...job,media};const body=validatedAudioRequest(expanded,check);job.lastPayloadValidation=check.lastPayloadValidation;return body;
 }
 export function createMediaService({g,root,key=process.env.GEMINI_API_KEY,ffmpeg=process.env.FFMPEG_PATH||'ffmpeg',run=spawnSync,download=request,nativeYouTube=true,youtubeDownloadFirst=true}){
+ root=process.env.GRADING_SHARED_MEDIA_ROOT||root;
  installTransientGoogle(g);const dir=path.join(root,'private','universal-media');fs.mkdirSync(dir,{recursive:true});const urls=new Map(),prepared=new Map(),nativeCache=new Map();
  const register=(id,url)=>urls.set(id,url);
 

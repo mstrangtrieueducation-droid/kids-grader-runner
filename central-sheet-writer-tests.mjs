@@ -1,0 +1,8 @@
+import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';import {centralSheetWriter} from './central-sheet-writer.mjs';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'synthetic-writer-')),commits=[],guards=[];
+try{const writer=centralSheetWriter({}, {interval:5,guard:(g,id,requests,expected)=>{guards.push({id,expected});return {requests:requests.filter(x=>!x.conflict),conflicts:requests.filter(x=>x.conflict)};},commit:(id,requests)=>commits.push({id,requests})});
+for(let i=0;i<8;i++)writer.enqueue({id:'synthetic-'+i,bookId:'synthetic-class',requests:[{cell:i,richText:'synthetic only',conflict:i===7}],expected:[{row:i}]},path.join(dir,i+'.json'));
+await new Promise(r=>setTimeout(r,30));writer.close();assert.equal(commits.length,1);assert.equal(commits[0].requests.length,7);assert.equal(guards.length,1);assert.equal(guards[0].expected.length,8);for(let i=0;i<7;i++)assert(JSON.parse(fs.readFileSync(path.join(dir,i+'.json'))).committed);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'7.json'))).error,'DESTINATION_CHANGED_BEFORE_COMMIT');
+const retry=centralSheetWriter({}, {guard:(g,id,requests)=>({requests,conflicts:[]}),commit:()=>{throw Error('synthetic-network');}});retry.enqueue({id:'synthetic-failed',bookId:'synthetic-class',requests:[{}]},path.join(dir,'retry.json'));retry.close();assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'retry.json'))).error,'TRANSIENT_CENTRAL_CLASS_COMMIT_RETRY');
+console.log('PASS eight producers coalesce into one guarded class commit; teacher conflict isolates only that item; failed network never acknowledged as delivered.');
+}finally{fs.rmSync(dir,{recursive:true,force:true});}
