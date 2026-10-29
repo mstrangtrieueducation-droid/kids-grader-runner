@@ -63,6 +63,7 @@ async function main(){
    }
   },
   intake:()=>intakeNewKidsReceipts({config,google:runnerGoogle,buildContext,emit:x=>console.log(JSON.stringify(x))}),
+  loadTodo:()=>fs.existsSync(todoFile)?JSON.parse(fs.readFileSync(todoFile,'utf8')):null,
   runFrozen:minutes=>{refreshNativeLedgers();return runFrozenBacklog(target,{minutes});},
   prepareTodo:()=>{refreshNativeLedgers();return prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext});},
   discover:async scanMinutes=>{

@@ -30,3 +30,21 @@ assert(longBudget>290,'pending work receives the remaining five-hour window rath
 clock=0;let upgrades=0,committed=0;
 const handover=await productionService({deadline:300*60000,checkUpgrade:async()=>false,now:()=>clock,sleep:async ms=>{clock+=ms;},emit:()=>{},intake:async()=>({added:1}),prepareTodo:async()=>({queue:{items:[{state:'PENDING_VALIDATION'}]}}),runTodo:async()=>{committed++;return {upgradeRequested:true,counts:{VERIFIED_WRITTEN:1},providerCalls:1};},runFrozen:async()=>assert.fail('no old-code work after drained upgrade'),discover:async()=>assert.fail('no scan')});
 assert.equal(committed,1);assert.equal(handover.upgradeRequested,true);
+
+// Production successors restore the manifest before optional intake. A slow
+// tail/history transport must not precede already queued work after a restart.
+clock=0;let durablePending=2;const durableOrder=[];
+await runKidsService({deadline:14*60000,now:()=>clock,sleep:async ms=>{clock+=ms;},emit:()=>{},
+ loadTodo:()=>({items:[{state:durablePending?'PENDING_VALIDATION':'VERIFIED_WRITTEN'}]}),
+ intake:async()=>{assert.equal(durablePending,0);durableOrder.push('intake');return {due:false,handled:0};},
+ prepareTodo:async()=>({queue:{items:[{state:'VERIFIED_WRITTEN'}]}}),
+ runTodo:async()=>{durableOrder.push('drain');durablePending--;return {providerCalls:1,counts:{PENDING_VALIDATION:durablePending,VERIFIED_WRITTEN:2-durablePending}};},
+ runFrozen:async()=>({counts:{QUARANTINED:13},providerCalls:0}),discover:async()=>assert.fail('no full scan')});
+assert.deepEqual(durableOrder.slice(0,3),['drain','drain','intake']);
+clock=0;let quarantineIntake=0;
+await runKidsService({deadline:14*60000,now:()=>clock,sleep:async ms=>{clock+=ms;},emit:()=>{},
+ loadTodo:()=>({items:[{state:'QUARANTINED'},{state:'RETRY',nextAt:30*60000}]}),
+ intake:async()=>{quarantineIntake++;return {due:false};},prepareTodo:async()=>({queue:{items:[{state:'QUARANTINED'}]}}),
+ runTodo:async()=>assert.fail('quarantine/cooldown is not due work'),runFrozen:async()=>({counts:{QUARANTINED:13}}),discover:async()=>assert.fail('no full scan')});
+assert(quarantineIntake>0,'isolated and cooling-down old work must not suppress new Form intake');
+console.log('PASS restored due queue drains before Form/history intake; quarantine and cooldown do not block new intake; no real provider calls.');

@@ -4,7 +4,7 @@ import {discoveryAllowed} from './persistent-kids-queue.mjs';
 import {campaignClosed} from './frozen-backlog-policy.mjs';
 const remaining=counts=>Object.entries(counts||{}).filter(([state])=>!campaignClosed(state)).reduce((n,[,v])=>n+v,0);
 const signature=counts=>JSON.stringify(Object.entries(counts||{}).sort());
-export async function runKidsService({deadline,intake,runFrozen,prepareTodo,discover,runTodo,isolate=async()=>{},checkUpgrade=mainRevisionChanged,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),emit=x=>console.log(JSON.stringify(x))}){
+export async function runKidsService({deadline,intake,runFrozen,prepareTodo,discover,runTodo,loadTodo=()=>null,isolate=async()=>{},checkUpgrade=mainRevisionChanged,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),emit=x=>console.log(JSON.stringify(x))}){
  let frozenRemaining=1,nextFrozen=0,nextTodo=0,previousFrozen='',previousTodo='',freshSlices=0,upgradeRequested=false,isolated=false;
  const drainTodo=async()=>{
   const report=await runTodo(serviceMinutes(deadline,now())),fingerprint=signature(report.counts),moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousTodo;
@@ -15,6 +15,14 @@ export async function runKidsService({deadline,intake,runFrozen,prepareTodo,disc
   const cycleStarted=now();
   try{
    if(!isolated){await isolate();isolated=true;} // Before optional intake/history; normal cycle recovery handles failures.
+   // A hosted successor already restored this durable manifest during isolation.
+   // Drain its due work before another Form-tail/history transport. Each worker
+   // still performs the original fresh target/roster/paid-history guards.
+   const durable=await loadTodo(),due=(durable?.items||[]).filter(x=>!campaignClosed(x.state)&&!(x.nextAt>now()));
+   if(due.length){
+    emit({event:'KIDS_DURABLE_QUEUE_BEFORE_INTAKE',remaining:due.length,workers:8,fullClassScans:0});
+    await drainTodo();if(upgradeRequested)return {handover:true,upgradeRequested:true};continue;
+   }
    // Intake is independent of held/uncertain old jobs. It reads Form tails and
    // delegates every pupil/assignment/status decision to the native sweep.
    let incoming;
