@@ -12,7 +12,7 @@ export function quarantineReason(item,job={}){
  return null;
 }
 export function isolateItem(item,job,{now=Date.now(),activeRun}={}){
- if(['VERIFIED_WRITTEN','ALREADY_PRESENT','PROTECTED','SKIPPED_NOT_IN_CURRENT_ROSTER','QUARANTINED'].includes(item.state))return false;
+ if(['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT','PROTECTED','SKIPPED_NOT_IN_CURRENT_ROSTER','QUARANTINED'].includes(item.state))return false;
  // An active hosted owner, even with an old timestamp, must drain its paid call.
  if(item.state==='CLAIMED'&&item.claim?.runId===activeRun)return false;
  if(item.state==='CLAIMED'&&now-Date.parse(item.locked_at||item.claim?.at||new Date(now).toISOString())<CLAIM_TTL_MS)return false;

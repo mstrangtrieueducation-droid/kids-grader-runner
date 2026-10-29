@@ -2,7 +2,7 @@ import {isolateItem,attemptCount} from './queue-isolation.mjs';
 import {centralSheetWriter} from './central-sheet-writer.mjs';
 import {mediaLimiterEnv,retainWorkerMedia} from './ffmpeg-limiter.mjs';
 import {mainRevisionChanged} from './cooperative-upgrade.mjs';
-import {workerAccepts,mediaWorkload,ITEM_MS} from './workload-lanes.mjs';
+import {workerAccepts,queueSelectionCache,ITEM_MS} from './workload-lanes.mjs';
 import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:child_process';import {fileURLToPath} from 'node:url';
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed,cacheFirstItems,resultNativeClaim} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
@@ -37,25 +37,26 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   durable(isolated);console.log(JSON.stringify({event:'QUEUE_QUARANTINE_RECONCILED',isolated:isolated.length,providerCalls:0}));
   if(isolationOnly)return {providerCalls:0,isolated:isolated.length,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};
   const bindingContexts=new Map(),nativeRows=new Map();
-  const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
+  const selections=queueSelectionCache(item=>{const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===item.target.spreadsheetId));if(!cluster)return {};const entries=entriesByControl.get(cluster.controlId),selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];return {cluster,entries,selected,entry};});
+  const completed=x=>['DONE','VERIFIED_WRITTEN'].includes(x.state);
+  const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(completed).length,milestone=Math.floor(verified/50)*50;
   console.log(JSON.stringify({event:'CAMPAIGN_STARTED',workers:workerCount,fastWorkers,heavyWorkers:2,claimBatchSize:1,total:q.total,verified,fullClassScans:0}));
   const choose=slot=>{
    if(Date.now()>deadline-ITEM_MS-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
    const candidates=q.items.filter(item=>(workerCount===8||workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID,false))&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now()));if(!candidates.length)return [];
-    const heavyWaiting=candidates.some(x=>{const c=config.clusters.find(y=>y.classes.some(z=>z.spreadsheetId===x.target.spreadsheetId));const es=c&&entriesByControl.get(c.controlId);const e=es&&selectExisting(x.target,es);return e&&mediaWorkload(e.job).lane==='heavy';});
-   for(const first of cacheFirstItems(candidates)){
-   const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose(slot);}
-   const entries=entriesByControl.get(cluster.controlId),batch=[];
-   for(const item of cacheFirstItems(q.items.filter(x=>(workerCount===8||workerOwnsPreparation(x,slot,process.env.GITHUB_RUN_ID,false))&&x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
-    const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
+   const ordered=cacheFirstItems(candidates);
+   // Native selection is memoized until a worker changes durable history. A
+   // single-item claim needs one pass, not a repeated class-by-class cross join.
+   for(const allowSteal of [false,true])for(const item of ordered){
+    if(attempted.has(item.id))continue;
+    const {cluster,entries,selected,entry}=selections.get(item);
+    if(!cluster){item.state='HELD';item.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(item.id);durable([item]);continue;}
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
-    if(!workerAccepts({...entry.job,attempt_count:attemptCount(item)},slot,{workers:workerCount,fastWorkers,heavyWaiting,ownerSlot:item.claim&&(item.claim.runId===process.env.GITHUB_RUN_ID||process.env.MEDIA_CACHE_RESTORED==='true')?item.claim.worker:undefined})||!claimAllowed(entry.job,busy)){continue;}
+    if(!workerAccepts({...entry.job,attempt_count:attemptCount(item)},slot,{workers:workerCount,fastWorkers,allowSteal,ownerSlot:item.claim&&(item.claim.runId===process.env.GITHUB_RUN_ID||process.env.MEDIA_CACHE_RESTORED==='true')?item.claim.worker:undefined})||!claimAllowed(entry.job,busy)){continue;}
     let nativeRowKey=nativeRows.get(entry.job.id);if(!nativeRowKey){try{let c=bindingContexts.get(cluster.controlId);if(!c){c=buildContext(cluster);bindingContexts.set(cluster.controlId,c);}const cell=c.destination_(entry.job.cls,entry.job.route,entry.job.receipt.student).cell;nativeRowKey=[entry.job.cls.spreadsheetId,cell.sheet.getSheetId(),cell.getA1Notation().match(/\d+$/)[0]].join('|');nativeRows.set(entry.job.id,nativeRowKey);}catch{nativeRowKey='unresolved-class|'+entry.job.cls.spreadsheetId;}}
     if([...active.values()].some(w=>w.batch.some(b=>b.nativeRowKey===nativeRowKey||b.entry.job.cls.spreadsheetId===entry.job.cls.spreadsheetId&&(b.nativeRowKey.startsWith('unresolved-class|')||nativeRowKey.startsWith('unresolved-class|')))))continue;
-    batch.push({item,entry,nativeRowKey,executable:!!selected});if(batch.length===1)break;
-   }
-   if(!batch.length)continue;return {batch,entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
+    return {batch:[{item,entry,nativeRowKey,executable:!!selected}],entries,controlId:cluster.controlId,initial:leases[config.clusters.indexOf(cluster)].initial,deadline};
    }return [];
   };
   await new Promise((resolve,reject)=>{
@@ -79,7 +80,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
      if(m.event==='RESULT_BATCH'){
       const work=active.get(w.pid);for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);if(!work.batch.some(x=>x.item.id===out.itemId))throw Error('WORKER_RESULT_OWNERSHIP_INVALID');const r=out.result;if(r.unstarted){item.state=item.beforeClaimState||'PENDING_VALIDATION';delete item.beforeClaimState;continue;}delete item.beforeClaimState;if(Number.isInteger(r.nativeRow))item.claim=resultNativeClaim(item,r,work.controlId);item.state=r.state;item.resolvedTarget=r.target||item.resolvedTarget;item.verifiedAt=r.verifiedAt;item.nextAt=r.nextAt||0;item.error=r.error||null;if(['HELD','RETRY'].includes(r.state))item.attempt_count=attemptCount(item)+1;isolateItem(item,r.job);item.delivery={jobId:r.job.id,status:r.job.status,rawId:r.job.rawId||null,gradeId:r.job.gradeId||null,resultHash:r.job.resultHash||null,replayProof:r.replayProof||null,calls:r.calls||0};item.attempts.push({runId:process.env.GITHUB_RUN_ID,worker:slot,at:new Date().toISOString(),state:r.state,calls:r.calls||0});const e=work.entries.find(x=>x.job.id===r.job.id);if(e)e.job=r.job;else if(Number.isInteger(r.nativeRow)&&matchesTarget(r.job,item.target)&&r.job.invalidResultRetry)work.entries.push({job:r.job,row:r.nativeRow});else throw Error('WORKER_NATIVE_ENTRY_INVALID');fs.appendFileSync(path.join(root,'private','campaign-deliveries.jsonl'),JSON.stringify(out)+'\n');}
       for(const {item} of work.batch){const job=work.entries.find(x=>x.job.id===item.delivery?.jobId)?.job;if(job&&preparationProgress(job)!==work.before.get(item.id))preparationAdvanced++;}
-      active.delete(w.pid);w.busy=false;restarts.set(slot,0);durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(['RETRY','PENDING_VALIDATION'].includes(item.state)&&item.delivery&&item.nextAt>Date.now()&&progress.allow(work.entries.find(x=>x.job.id===item.delivery.jobId).job,work.before.get(item.id)))attempted.delete(item.id);verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length;
+      active.delete(w.pid);w.busy=false;restarts.set(slot,0);selections.clear();for(const out of m.results){const item=q.items.find(x=>x.id===out.itemId);item.committedAt=out.result.committedAt||item.committedAt||null;item.writeReceipt=out.result.writeReceipt||item.writeReceipt||null;}durable(work.batch.map(x=>x.item));for(const {item} of work.batch)if(['RETRY','PENDING_VALIDATION'].includes(item.state)&&item.delivery&&item.nextAt>Date.now()&&progress.allow(work.entries.find(x=>x.job.id===item.delivery.jobId).job,work.before.get(item.id)))attempted.delete(item.id);verified=q.items.filter(completed).length;
       if(Math.floor(verified/50)*50>milestone){milestone=Math.floor(verified/50)*50;console.log(JSON.stringify({event:'CAMPAIGN_VERIFIED_MILESTONE',verified,total:q.total,providerCalls}));}schedule(w);
      }
     }catch(e){w.retire=true;reject(e);}});
@@ -88,6 +89,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
       // A dead process cannot still issue a call. Refresh durable Jobs before any
       // replacement claims: saved raw wins and uncertain paid requests stay held.
       entriesByControl.set(work.controlId,readNativeQueue(g,work.controlId));
+      selections.clear();
       for(const {item} of work.batch){item.state='HELD';item.error='WORKER_EXIT_RECHECK_NATIVE_LEDGER';if(!item.workerRecoveryRuns?.includes(process.env.GITHUB_RUN_ID)){item.workerRecoveryRuns=[...(item.workerRecoveryRuns||[]),process.env.GITHUB_RUN_ID];attempted.delete(item.id);}}
       durable(work.batch.map(x=>x.item));
      }

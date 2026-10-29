@@ -7,7 +7,7 @@ import {existingUncalledChild} from './campaign-recovery.mjs';
 import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
 export const normalize=s=>String(s||'').normalize('NFC').trim().replace(/\s+/g,' ').toUpperCase();
 export const targetKey=t=>[t.spreadsheetId,t.sheetId,t.cell].join('|');
-export const campaignClosed=state=>['VERIFIED_WRITTEN','ALREADY_PRESENT','SKIPPED_NOT_IN_CURRENT_ROSTER','PROTECTED','QUARANTINED'].includes(state);
+export const campaignClosed=state=>['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT','SKIPPED_NOT_IN_CURRENT_ROSTER','PROTECTED','QUARANTINED'].includes(state);
 export const cacheFirstItems=items=>items.slice().sort((a,b)=>Number(!!(b.savedArtifact||b.delivery?.rawId||b.delivery?.gradeId))-Number(!!(a.savedArtifact||a.delivery?.rawId||a.delivery?.gradeId))||(Number(a.attempt_count)||0)-(Number(b.attempt_count)||0));
 export function validateBacklog(q){
  if(!['kids-frozen-backlog-v1','kids-native-todo-v1'].includes(q.schema)||q.items.length!==q.total||q.workers!==4)throw Error('BACKLOG_SCHEMA_INVALID');

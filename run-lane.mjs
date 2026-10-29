@@ -15,7 +15,7 @@ async function main(){
  runTest('submission-assignment-scope-tests.mjs');runTest('frozen-backlog-tests.mjs');runTest('ingestion-policy-tests.mjs');runTest('core-media-resolver-tests.mjs');runTest('media-source-notice-recovery-tests.mjs');runTest('campaign-recovery-tests.mjs');runTest('persistent-kids-queue-tests.mjs');runTest('continuous-intake-tests.mjs');runTest('continuous-kids-service-tests.mjs');runTest('campaign-saved-replay-tests.mjs');
  runTest('sheet-truth-merge-chunk-tests.mjs');runTest('authorized-invalid-retry-tests.mjs');runTest('kids-apple-input-recovery-tests.mjs');
  runTest('timely-kids-queue-tests.mjs');
- runTest('continuous-dispatcher-tests.mjs');runTest('queue-isolation-tests.mjs');runTest('central-sheet-writer-tests.mjs');runTest('eight-worker-tests.mjs');
+ runTest('continuous-dispatcher-tests.mjs');runTest('queue-isolation-tests.mjs');runTest('central-sheet-writer-tests.mjs');runTest('class-values-commit-tests.mjs');runTest('eight-worker-tests.mjs');
  runTest('universal-media-tests.mjs');runTest('partial-download-resume-tests.mjs');
  runTest('provider-retry-policy-tests.mjs');
  runTest('kids-provider-retry-tests.mjs');

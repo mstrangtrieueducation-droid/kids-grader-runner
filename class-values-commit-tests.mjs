@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {commitClassValues,acknowledgedFeedback,textDigest,planClassValues} from './class-values-commit.mjs';
+import {campaignClosed} from './frozen-backlog-policy.mjs';
+const expected=[{sheetId:7,title:"SYNTHETIC CLASS'S TRACKER",row:4,col:27}],text='Điểm nghe: 13/30 (43%)\n— NHẬN XÉT GV —\nChất lượng: đạt khoảng 85%.',request={updateCells:{range:{sheetId:7,startRowIndex:4,endRowIndex:5,startColumnIndex:27,endColumnIndex:28},rows:[{values:[{userEnteredValue:{stringValue:text},textFormatRuns:[{startIndex:0,format:{bold:true}}],userEnteredFormat:{horizontalAlignment:'LEFT',verticalAlignment:'TOP'}}]}],fields:'userEnteredValue,textFormatRuns,userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment'}};
+const original=JSON.stringify(request),calls=[];
+const g={api(url,method,body){calls.push({url,method,body});assert.equal(method,'POST','no per-cell read-after-write');return url.includes('/values:batchUpdate')?{totalUpdatedCells:1,responses:[{updatedCells:1}]}:{};}};
+const ack=commitClassValues(g,'synthetic-book',[request],expected,{now:()=> '2026-10-30T00:00:00.000Z'});
+assert.equal(calls.length,2);assert(calls[0].url.endsWith('/values:batchUpdate'));assert.equal(calls[0].body.data[0].range,"'SYNTHETIC CLASS''S TRACKER'!AB5");assert.equal(calls[0].body.data[0].values[0][0],text);assert.equal(calls[1].body.requests[0].updateCells.rows[0].values[0].userEnteredValue,undefined);assert(calls[1].body.requests[0].updateCells.rows[0].values[0].textFormatRuns.length);assert.equal(JSON.stringify(request),original);
+assert(acknowledgedFeedback(ack.cells,{sheetId:7,row:4,col:27,text}));assert(!acknowledgedFeedback(ack.cells,{sheetId:7,row:4,col:28,text}));assert(!acknowledgedFeedback(ack.cells,{sheetId:7,row:4,col:27,text:text+'edited'}));assert(campaignClosed('DONE'));
+for(const response of [{totalUpdatedCells:0,responses:[{updatedCells:0}]},{totalUpdatedCells:1,responses:[]}])assert.throws(()=>commitClassValues({api:()=>response},'synthetic',[request],expected),/ACK_UNCONFIRMED/);
+assert.throws(()=>commitClassValues({api:()=>{throw Error('OUTCOME_UNKNOWN');}},'synthetic',[request],expected),/OUTCOME_UNKNOWN/);
+const styleFailed=commitClassValues({api(url){if(url.includes('/values:'))return {totalUpdatedCells:1,responses:[{updatedCells:1}]};throw Error('STYLE_NETWORK');}},'synthetic',[request],expected);assert(styleFailed.formattingPending);assert.equal(styleFailed.cells[0].textHash,textDigest(text));
+assert.throws(()=>planClassValues([request],[]),/TITLE_UNBOUND/);
+const duplicate=structuredClone(request);duplicate.updateCells.rows[0].values[0].userEnteredValue.stringValue=text+' final';assert.equal(planClassValues([request,duplicate],expected).data.length,1);assert.equal(planClassValues([request,duplicate],expected).data[0].values[0][0],text+' final');
+console.log('PASS exact HTTP200 updated-cell receipts, final-value coalescing, prefix/format preservation, zero post-write GETs, failed/partial replies never DONE, formatting failure never triggers a model call.');

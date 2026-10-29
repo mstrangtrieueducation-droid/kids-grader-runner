@@ -29,7 +29,7 @@ export function appendNativeItems(previous,entries,resolve,{now=Date.now(),appro
    const old=q.items.find(x=>x.id===id);
    // Only prepareNativeTodo's fresh native resolver may reopen a closed manifest
    // row. Keep the same job, reservation, artifacts and entire attempt history.
-   if(reopenResolved&&['VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(old.state)){
+   if(reopenResolved&&['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(old.state)){
     let target;try{target=resolve(entry);}catch{continue;}
     if(target&&matchesTarget(j,target)){
      old.readbackRecovery={at:new Date(now).toISOString(),previousState:old.state,previousVerifiedAt:old.verifiedAt||null,providerCalls:0};

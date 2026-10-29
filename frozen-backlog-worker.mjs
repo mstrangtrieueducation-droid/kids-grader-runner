@@ -1,7 +1,7 @@
 import {submitClassWrite} from './central-sheet-writer.mjs';
 import {ITEM_MS} from './workload-lanes.mjs';
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
-import {replaySavedClassBatch} from './campaign-saved-replay.mjs';
+import {acknowledgedFeedback} from './class-values-commit.mjs';
 import {authorizeInvalidRetry,initializeAuthorizedRetryInventory} from './authorized-invalid-retry.mjs';
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
@@ -23,7 +23,8 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   const nativeFresh=c.freshReceipt_;c.freshReceipt_=j=>{Google.prototype.preloadSource.call(g,vm.runInContext('KG.source',c),7,[j.route.sourceTab]);return nativeFresh(j);};
  }
  g.invalidate();g.refreshFileMetadata();
- const ram=beginSheetBatch(g,cluster,path.resolve('private/campaign-journal'),{classOnly:true,commitClass:request=>submitClassWrite(request,path.resolve('private/class-write-acks'))});
+ const receipts=[];
+ const ram=beginSheetBatch(g,cluster,path.resolve('private/campaign-journal'),{classOnly:true,commitClass:request=>{const proof=submitClassWrite(request,path.resolve('private/class-write-acks'));receipts.push(...(proof.cells||[]));return proof;}});
  const results=[];
  try{for(const workItem of batch){let {item,entry,executable}=workItem;
  let result;try{
@@ -74,14 +75,12 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
  results.push({itemId:item.id,target:item.target,result});
  process.send({event:'ITEM_SAVED',itemId:item.id,calls:result.calls||0});
  }}finally{ram.close();}
- // Native batch guard has now checked fresh names, headers and teacher edits.
- // Read the real class grid once, never count the staged RAM value as delivery.
- for(const id of new Set(batch.map(x=>x.item.target.spreadsheetId))){const cls=cluster.classes.find(x=>x.spreadsheetId===id);const book=g.book(id),sheet=book.getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
- for(const id of replaySavedClassBatch(c,g,results,{commitClass:request=>submitClassWrite(request,path.resolve('private/class-write-acks'))})){const cls=cluster.classes.find(x=>x.spreadsheetId===id),sheet=g.book(id).getSheetByName(cls.sheetName);g.preloadSource(id,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);}
+ // The coordinator checked native names/headers/teacher edits BEFORE writing.
+ // Bind completion to the exact HTTP200 value-update receipt, not a class GET.
  for(const out of results){const {result:r,target:t}=out;if(r.state==='STAGED'){
-  const actual=resolveFrozenTarget(c,r.job,t).cell,text=actual.getDisplayValue();
-  const exact=actual.sheet.getSheetId()===r.target.sheetId&&actual.getA1Notation()===r.target.cell;
-  r.state=exact&&text===r.after&&hasTeacherReview(text)?'VERIFIED_WRITTEN':'DELIVERY_CONFLICT';r.verifiedAt=r.state==='VERIFIED_WRITTEN'?new Date().toISOString():null;
+  const match=String(r.target.cell).match(/^([A-Z]+)(\d+)$/);let col=0;for(const letter of match?.[1]||'')col=col*26+letter.charCodeAt(0)-64;
+  const proof=match&&acknowledgedFeedback(receipts,{sheetId:r.target.sheetId,row:Number(match[2])-1,col:col-1,text:r.after});
+  r.state=proof&&hasTeacherReview(r.after)?'DONE':'DELIVERY_CONFLICT';r.verifiedAt=null;r.committedAt=proof?.committedAt||null;r.writeReceipt=proof||null;
  }}
  process.send({event:'RESULT_BATCH',results});
 });
