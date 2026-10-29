@@ -13,7 +13,7 @@ function assessmentEvidence(x,seen=new Set()){
 export function existingUncalledChild(j,matches){
  if(hasRequest(j)||assessmentEvidence(j)||j.presentationResubmissionRequired||j.technicalInputFailure)return false;
  const parents=matches.map(x=>x.job||x);
- return j.dashboardReprocessAuth===DASHBOARD_REPROCESS_AUTH&&parents.some(p=>p.id===j.regradeParentId&&p.supersededByDashboardRegrade===j.id&&!assessmentEvidence(p))&&j.systemGradingFailure?.studentActionRequired===false;
+ return j.dashboardReprocessAuth===DASHBOARD_REPROCESS_AUTH&&parents.some(p=>p.id===j.regradeParentId&&p.supersededByDashboardRegrade===j.id&&!assessmentEvidence(p))&&(j.systemGradingFailure===undefined||j.systemGradingFailure?.studentActionRequired===false);
 }
 export function uncalledTechnicalRecovery(j,matches){
  if(j.presentationResubmissionRequired||j.technicalInputFailure||!legacyAudioNotice(j)&&!/^SYSTEM_AUDIO_INPUT_|^SYSTEM_PROCESSING_ERROR$|^MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT$|^PROVIDER_PREPAYMENT_REQUIRED$/.test(j.error||''))return false;

@@ -6,11 +6,12 @@ import {beginSheetBatch} from './kids-sheet-batch.mjs';
 import {createHash} from 'node:crypto';
 import {readNativeQueue,selectExisting,matchesTarget,validateBacklog,campaignClosed} from './frozen-backlog-policy.mjs';
 import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
-import {hasTeacherReview,receiptOnlyCell} from './teacher-feedback-state.mjs';
+import {hasTeacherReview,receiptOnlyCell,emptyTeacherBody} from './teacher-feedback-state.mjs';
 import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 import {approvalSession} from './teacher-approval-guards.mjs';
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export const NATIVE_TODO_SCHEMA='kids-native-todo-v1';
+export const pendingNativeFeedback=text=>!hasTeacherReview(text)&&(receiptOnlyCell(text)||emptyTeacherBody(text));
 // Partial downloads and prepared media live in the owning worker's directory.
 // A continuation must return there; a new hosted run starts with fresh disks.
 export const workerOwnsPreparation=(item,slot,runId,restored=false)=>!item.claim||item.claim.runId!==runId&&!restored||item.claim.worker===slot;
@@ -69,7 +70,7 @@ export async function prepareNativeTodo(file,{config,google,buildContext}){
   if(c.currentRoster_&&!c.currentRoster_(j.receipt))return null;
   const cell=c.destination_(j.cls,j.route,j.receipt.student).cell,text=cell.getDisplayValue();
   const manual=approved.has(j.id)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(text);
-  if(cell.getFormula()||cell.getDataValidation()||!manual&&(hasTeacherReview(text)||!receiptOnlyCell(text)))return null;
+  if(cell.getFormula()||cell.getDataValidation()||!manual&&!pendingNativeFeedback(text))return null;
   return {spreadsheetId:j.cls.spreadsheetId,sheetId:cell.sheet.getSheetId(),cell:cell.getA1Notation(),className:j.cls.className,student:j.receipt.student,code:j.receipt.code,submissionAt:j.receipt.time};
  },{approved,reopenResolved:true});
  fs.writeFileSync(file,JSON.stringify(result.queue));return {...result,entries:entries.length};

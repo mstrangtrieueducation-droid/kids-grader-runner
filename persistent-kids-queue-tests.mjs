@@ -38,3 +38,6 @@ assert.equal(mergeDurableNativeItem(recovered.queue.items[0],advanced),advanced,
 assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},3,'next',true),true);
 assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},0,'next',true),false);
 assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},0,'next',false),true);
+const {pendingNativeFeedback}=await import('./persistent-kids-queue.mjs');
+assert(pendingNativeFeedback('✅ ĐÃ NỘP THEO MÃ CŨ\nCHƯA TÁCH LOẠI BÀI\nThời gian: 25/10/2026 22:26\n\n— NHẬN XÉT GV —'),'native legacy receipt transport labels cannot prevent the original processor from handling an empty teacher body');
+assert(!pendingNativeFeedback('✅ ĐÃ NỘP\n— NHẬN XÉT GV —\nChất lượng: đạt 0%. Con cần luyện thêm.'),'a genuine teacher assessment including zero remains protected');

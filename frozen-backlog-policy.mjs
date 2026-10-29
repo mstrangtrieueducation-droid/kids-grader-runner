@@ -3,6 +3,8 @@ import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {hasRequest,hasSavedResult,sourceIds} from './universal-media.mjs';
 import {savedDeliveryCandidates} from './saved-delivery-repair.mjs';
 import {authorizedInvalidRetry} from './authorized-invalid-retry.mjs';
+import {existingUncalledChild} from './campaign-recovery.mjs';
+import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
 export const normalize=s=>String(s||'').normalize('NFC').trim().replace(/\s+/g,' ').toUpperCase();
 export const targetKey=t=>[t.spreadsheetId,t.sheetId,t.cell].join('|');
 export const campaignClosed=state=>['VERIFIED_WRITTEN','ALREADY_PRESENT','SKIPPED_NOT_IN_CURRENT_ROSTER','PROTECTED','QUARANTINED'].includes(state);
@@ -28,6 +30,10 @@ export function selectExisting(t,entries,now=Date.now()){
  // A saved result always precedes an uncalled duplicate of the same receipt.
  const saved=matches.filter(x=>x.job.rawId||x.job.gradeId);
  if(saved.length)return saved.find(x=>possible.includes(x))||savedDeliveryCandidates(saved)[0]||saved[0]||null;
+ // The existing, teacher-authorized one-child exception must remain executable
+ // despite its parent's reservation. It is not a reset or a second child.
+ const dashboard=matches.find(x=>possible.includes(x)&&existingUncalledChild(x.job,matches)&&x.job.id===createHash('sha256').update(JSON.stringify([DASHBOARD_REPROCESS_AUTH,x.job.regradeParentId])).digest('hex')&&matches.every(y=>[x.job.id,x.job.regradeParentId].includes(y.job.id)||!hasRequest(y.job)&&!hasSavedResult(y.job)));
+ if(dashboard)return dashboard;
  if(matches.some(x=>hasRequest(x.job)||hasSavedResult(x.job)))return null;
  return possible.sort((a,b)=>b.row-a.row)[0]||null;
 }
