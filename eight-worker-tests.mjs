@@ -4,6 +4,7 @@ for(let slot=0;slot<8;slot++){assert.equal(workerAccepts(fast,slot,opts),slot<6)
 for(const j of [{media:[]},{media:[{size:0}]},{media:[{size:null}]},{receipt:{links:'https://youtu.be/abcdefghijk?si=synthetic'}}]){assert.equal(mediaWorkload(j).lane,'fast');for(let slot=0;slot<6;slot++)assert(workerAccepts(j,slot,opts));}
 assert.equal(mediaWorkload({receipt:{links:'https://drive.google.com/drive/folders/synthetic-folder-id'}}).lane,'heavy');
 assert.equal(mediaWorkload({media:[{id:'synthetic-folder',mime:'application/vnd.google-apps.folder'}]}).lane,'heavy');
+assert.equal(mediaWorkload({media:[{size:60_000_000},{size:null}]}).lane,'heavy','one confirmed large file suffices even before the remaining file is sized');
 function fill(jobs){const waiting=jobs.slice(),owners=[];for(let slot=0;slot<8;slot++){for(const allowSteal of [false,true]){const index=waiting.findIndex(j=>workerAccepts(j,slot,{...opts,allowSteal}));if(index<0)continue;owners.push({slot,job:waiting.splice(index,1)[0]});break;}}return owners;}
 for(const tasks of [Array.from({length:8},()=>({media:[]})),Array.from({length:8},()=>heavy),[...Array.from({length:6},()=>fast),heavy,heavy]])assert.equal(fill(tasks).length,8,'both directions steal only after checking the primary lane');
 let selectionCalls=0,revision=1;const memo=queueSelectionCache(item=>{selectionCalls++;return {id:item.id,revision};});for(let n=0;n<8;n++)for(let i=0;i<200;i++)memo.get({id:'synthetic-'+i});assert.equal(selectionCalls,200);revision=2;memo.clear();assert.equal(memo.get({id:'synthetic-0'}).revision,2);
