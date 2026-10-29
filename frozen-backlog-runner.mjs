@@ -42,12 +42,12 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   const choose=slot=>{
    if(Date.now()>deadline-ITEM_MS-120000)return [];
    const busy=[...active.values()].flatMap(x=>x.batch.map(y=>y.entry.job));
-   const candidates=q.items.filter(item=>workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID,false)&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now()));if(!candidates.length)return [];
+   const candidates=q.items.filter(item=>(workerCount===8||workerOwnsPreparation(item,slot,process.env.GITHUB_RUN_ID,false))&&!attempted.has(item.id)&&!campaignClosed(item.state)&&!(item.nextAt>Date.now()));if(!candidates.length)return [];
     const heavyWaiting=candidates.some(x=>{const c=config.clusters.find(y=>y.classes.some(z=>z.spreadsheetId===x.target.spreadsheetId));const es=c&&entriesByControl.get(c.controlId);const e=es&&selectExisting(x.target,es);return e&&mediaWorkload(e.job).lane==='heavy';});
    for(const first of cacheFirstItems(candidates)){
    const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===first.target.spreadsheetId));if(!cluster){first.state='HELD';first.error='CAMPAIGN_CLASS_BINDING_MISSING';attempted.add(first.id);durable([first]);return choose(slot);}
    const entries=entriesByControl.get(cluster.controlId),batch=[];
-   for(const item of cacheFirstItems(q.items.filter(x=>workerOwnsPreparation(x,slot,process.env.GITHUB_RUN_ID,false)&&x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
+   for(const item of cacheFirstItems(q.items.filter(x=>(workerCount===8||workerOwnsPreparation(x,slot,process.env.GITHUB_RUN_ID,false))&&x.target.spreadsheetId===first.target.spreadsheetId&&!attempted.has(x.id)&&!campaignClosed(x.state)&&!(x.nextAt>Date.now())))){
     const selected=selectExisting(item.target,entries),entry=selected||entries.filter(x=>matchesTarget(x.job,item.target)).sort((a,b)=>b.row-a.row)[0];
     if(!entry){item.state='HELD';item.error='EXACT_NATIVE_QUEUE_RECORD_NOT_FOUND';attempted.add(item.id);durable([item]);continue;}
     if(!workerAccepts({...entry.job,attempt_count:attemptCount(item)},slot,{workers:workerCount,fastWorkers,heavyWaiting,ownerSlot:item.claim&&(item.claim.runId===process.env.GITHUB_RUN_ID||process.env.MEDIA_CACHE_RESTORED==='true')?item.claim.worker:undefined})||!claimAllowed(entry.job,busy)){continue;}
