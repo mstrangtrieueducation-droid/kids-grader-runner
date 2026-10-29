@@ -8,7 +8,7 @@ import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueu
 import {stateStore,localGuard} from './runner-state.mjs';
 import {preparationProgress,retryProgressTracker,NATIVE_TODO_SCHEMA,workerOwnsPreparation,mergeDurableNativeItem} from './persistent-kids-queue.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
-export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}={}){
+export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',isolationOnly=false}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
  const q=validateBacklog(JSON.parse(fs.readFileSync(file))),{runnerGoogle:g,buildContext}=await import('./grader_runner.mjs');
  if(!['FrozenBacklog','KidsTodo'].includes(table)||(table==='KidsTodo')!==(q.schema===NATIVE_TODO_SCHEMA))throw Error('CAMPAIGN_TABLE_SCHEMA_MISMATCH');
@@ -35,6 +35,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog'}=
   const isolated=[];
   for(const item of q.items){const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===item.target.spreadsheetId)),es=cluster&&entriesByControl.get(cluster.controlId),job=es?.find(x=>x.job.id===item.claim?.jobId)?.job||es?.find(x=>matchesTarget(x.job,item.target))?.job||{};if(isolateItem(item,job,{activeRun:process.env.GITHUB_RUN_ID}))isolated.push(item);}
   durable(isolated);console.log(JSON.stringify({event:'QUEUE_QUARANTINE_RECONCILED',isolated:isolated.length,providerCalls:0}));
+  if(isolationOnly)return {providerCalls:0,isolated:isolated.length,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};
   const bindingContexts=new Map(),nativeRows=new Map();
   const attempted=new Set(),progress=retryProgressTracker();let verified=q.items.filter(x=>x.state==='VERIFIED_WRITTEN').length,milestone=Math.floor(verified/50)*50;
   console.log(JSON.stringify({event:'CAMPAIGN_STARTED',workers:workerCount,fastWorkers,heavyWorkers:2,claimBatchSize:1,total:q.total,verified,fullClassScans:0}));

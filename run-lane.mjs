@@ -55,6 +55,13 @@ async function main(){
  const todoFile=path.join(root,'private','native-kids-todo.json');
  const refreshNativeLedgers=()=>{runnerGoogle.invalidate();for(const cluster of config.clusters)runnerGoogle.book(cluster.controlId).refresh();};
  await runKidsService({deadline:workDeadline,
+  isolate:async()=>{
+   refreshNativeLedgers();await runFrozenBacklog(target,{minutes:2,isolationOnly:true});
+   const control=config.clusters[0].controlId,tab=runnerGoogle.book(control).getSheetByName('KidsTodo');
+   if(tab){const rows=runnerGoogle.api('https://sheets.googleapis.com/v4/spreadsheets/'+control+'/values/'+encodeURIComponent("'KidsTodo'!A2:F10000")).values||[];
+    if(rows.length){const items=rows.map(r=>JSON.parse(r[5]));fs.writeFileSync(todoFile,JSON.stringify({schema:'kids-native-todo-v1',campaignId:'native-kids-persistent-4',workers:4,total:items.length,items,membershipHash:rows[0][4]}));await runFrozenBacklog(todoFile,{table:'KidsTodo',minutes:2,isolationOnly:true});}
+   }
+  },
   intake:()=>intakeNewKidsReceipts({config,google:runnerGoogle,buildContext,emit:x=>console.log(JSON.stringify(x))}),
   runFrozen:minutes=>{refreshNativeLedgers();return runFrozenBacklog(target,{minutes});},
   prepareTodo:()=>{refreshNativeLedgers();return prepareNativeTodo(todoFile,{config,google:runnerGoogle,buildContext});},
