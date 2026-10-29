@@ -22,6 +22,10 @@ export function acknowledgeHistory(plan,candidates,chosen){
  const unhandled=candidates.filter(r=>!chosen.includes(r));
  return unhandled.length?Math.max(...unhandled.map(r=>r.row))+1:plan.start;
 }
+// Unselected descending-history rows already have a durable historyBefore
+// watermark. Duplicating every page into the exception queue can fill that
+// queue before a new Form-tail checkpoint is committed.
+export const exceptionReplayRows=(old,plan,history)=>old.filter(r=>plan.replay.includes(r.row)&&!history.includes(r));
 export function tailWindow({cursor,known=1,rowCount,pageSize=50}){
  if(!Number.isInteger(rowCount)||rowCount<1)throw Error('SOURCE_ROW_COUNT_INVALID');
  const acknowledged=Number.isInteger(cursor)&&cursor>=1?cursor:Math.max(1,known);
@@ -98,7 +102,7 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
     const knownReceipts=new Set(all.filter(e=>e.source===source).map(e=>receiptKey(e.job.receipt||{})));
     const history=nonempty.filter(r=>!tail.includes(r)&&!plan.history.empty&&r.row>=plan.history.start&&r.row<=plan.history.end&&members.some(x=>x.c.inAutoScope_(r))&&!knownReceipts.has(receiptKey(r))).sort((a,b)=>b.row-a.row);
     const old=[...history,...nonempty.filter(r=>!tail.includes(r)&&!history.includes(r)&&plan.replay.includes(r.row))];
-    for(const r of old)for(const {cluster,c} of members)if(c.inAutoScope_(r)){const x={source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId,reason:'NATIVE_RECEIPT_RECHECK',nextAt:0},key=deferredKey(x);if(!deferred.has(key))deferred.set(key,x);}
+    for(const r of exceptionReplayRows(old,plan,history))for(const {cluster,c} of members)if(c.inAutoScope_(r)){const x={source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId,reason:'NATIVE_RECEIPT_RECHECK',nextAt:0},key=deferredKey(x);if(!deferred.has(key))deferred.set(key,x);}
     pages.push({plan,tail,old,history,rows:[...tail,...old]});
    }
    const selected=takeIntakeRows(pages);const receipts=[];

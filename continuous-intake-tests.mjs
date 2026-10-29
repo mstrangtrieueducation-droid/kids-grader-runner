@@ -66,3 +66,8 @@ const historicalFailure=fixture({wireRow:50,network:true});
 await assert.rejects(()=>intakeNewKidsReceipts(historicalFailure.options));
 assert.equal(historicalFailure.saved.length,0,'failed source reads cannot certify old coverage');
 console.log('Historical native Form gaps below high watermarks are replayable; separate descending coverage survives handover without a full class scan or local writes.');
+const {exceptionReplayRows}=await import('./continuous-intake.mjs');
+const historyPage=Array.from({length:250},(_,i)=>({row:1000-i})),bootstrap={row:1100};
+assert.deepEqual(exceptionReplayRows([...historyPage,bootstrap],{replay:[1100]},historyPage),[bootstrap]);
+assert.equal(acknowledgeHistory({start:751},historyPage,historyPage.slice(0,6)),995,'all unselected history remains behind the durable watermark');
+assert.equal(exceptionReplayRows(historyPage,{replay:[]},historyPage).length,0,'unselected history cannot multiply exception rows and block fresh Form-tail commits');
