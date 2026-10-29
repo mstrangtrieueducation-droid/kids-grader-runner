@@ -41,3 +41,12 @@ assert.equal(workerOwnsPreparation({claim:{runId:'prior',worker:3}},0,'next',fal
 const {pendingNativeFeedback}=await import('./persistent-kids-queue.mjs');
 assert(pendingNativeFeedback('✅ ĐÃ NỘP THEO MÃ CŨ\nCHƯA TÁCH LOẠI BÀI\nThời gian: 25/10/2026 22:26\n\n— NHẬN XÉT GV —'),'native legacy receipt transport labels cannot prevent the original processor from handling an empty teacher body');
 assert(!pendingNativeFeedback('✅ ĐÃ NỘP\n— NHẬN XÉT GV —\nChất lượng: đạt 0%. Con cần luyện thêm.'),'a genuine teacher assessment including zero remains protected');
+
+const {mayRequeuePreparation:requeuePrepared,preparationRank:rankPrepared}=await import('./persistent-kids-queue.mjs'),{cacheFirstItems}=await import('./frozen-backlog-policy.mjs');
+const cold={id:'synthetic-delayed',status:'WAITING_INPUT',media:[]},warm={...cold,status:'READY',snapshotId:'synthetic-snapshot'},delayed={state:'PENDING_VALIDATION',nextAt:2000,delivery:{jobId:cold.id}};
+assert(requeuePrepared(delayed,warm,preparationProgress(cold),retryProgressTracker(),{now:14000}),'a 12-second native durability delay must not strand already prepared work');
+assert(!requeuePrepared(delayed,warm,preparationProgress(warm),retryProgressTracker(),{now:14000}),'unchanged overdue work is not an infinite immediate retry');
+const retryTracker=retryProgressTracker(),coolingPrepared={...delayed,nextAt:30*60000};assert(requeuePrepared(coolingPrepared,warm,preparationProgress(warm),retryTracker,{now:14000}));assert(requeuePrepared(coolingPrepared,warm,preparationProgress(warm),retryTracker,{now:14000}));assert(!requeuePrepared(coolingPrepared,warm,preparationProgress(warm),retryTracker,{now:14000}));assert(coolingPrepared.nextAt>14000,'re-admission never clears the original cooldown');
+const order=[{id:'cold',preparationRank:rankPrepared(cold)},{id:'snapshot',preparationRank:rankPrepared(warm)},{id:'download',preparationRank:rankPrepared({...warm,media:[{runnerDownloadBytes:100}]})},{id:'raw',savedArtifact:true,preparationRank:rankPrepared({...warm,rawId:'synthetic-raw'})}];
+assert.deepEqual(cacheFirstItems(order).map(x=>x.id),['raw','download','snapshot','cold']);assert.deepEqual(order.map(x=>x.id),['cold','snapshot','download','raw']);
+console.log('PASS prepared work survives an expired short nextAt, warm downloads/snapshots precede cold intake, raw remains first, cooldown and stalled retry bounds retained; 0 API.');

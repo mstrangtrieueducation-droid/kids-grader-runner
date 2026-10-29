@@ -1,6 +1,10 @@
 // Read-only version check. A new revision drains owned work; it never kills a child or provider call.
+import {request} from './google-adapter.mjs';
+// Legacy native calls are synchronous. Fetching in a separate bounded transport
+// prevents their event-loop load from aborting the revision read before delivery.
+export function revisionFetcher(url,options,{transport=request}={}){const r=transport({url,headers:options.headers,timeoutMs:10000});return {ok:r.getResponseCode()===200,json:async()=>JSON.parse(r.getContentText())};}
 let last=0,changed=false;
-export async function mainRevisionChanged(env=process.env,{fetcher=fetch,now=Date.now}={}){
+export async function mainRevisionChanged(env=process.env,{fetcher=revisionFetcher,now=Date.now}={}){
  if(changed)return true;
  if(env.GITHUB_ACTIONS!=='true'||!/^mstrangtrieueducation-droid\/(?:kids|shadowing|ielts)-grader-runner$/.test(env.GITHUB_REPOSITORY||'')||!env.GITHUB_SHA||!env.RUNNER_GITHUB_TOKEN)return false;
  if(now()-last<60000)return false;last=now();

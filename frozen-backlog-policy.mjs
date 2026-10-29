@@ -8,7 +8,7 @@ import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
 export const normalize=s=>String(s||'').normalize('NFC').trim().replace(/\s+/g,' ').toUpperCase();
 export const targetKey=t=>[t.spreadsheetId,t.sheetId,t.cell].join('|');
 export const campaignClosed=state=>['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT','SKIPPED_NOT_IN_CURRENT_ROSTER','PROTECTED','QUARANTINED'].includes(state);
-export const cacheFirstItems=items=>items.slice().sort((a,b)=>Number(!!(b.savedArtifact||b.delivery?.rawId||b.delivery?.gradeId))-Number(!!(a.savedArtifact||a.delivery?.rawId||a.delivery?.gradeId))||(Number(a.attempt_count)||0)-(Number(b.attempt_count)||0));
+export const cacheFirstItems=items=>items.slice().sort((a,b)=>Number(!!(b.savedArtifact||b.delivery?.rawId||b.delivery?.gradeId))-Number(!!(a.savedArtifact||a.delivery?.rawId||a.delivery?.gradeId))||(a.preparationRank??3)-(b.preparationRank??3)||(Number(a.attempt_count)||0)-(Number(b.attempt_count)||0));
 export function validateBacklog(q){
  if(!['kids-frozen-backlog-v1','kids-native-todo-v1'].includes(q.schema)||q.items.length!==q.total||q.workers!==4)throw Error('BACKLOG_SCHEMA_INVALID');
  if(new Set(q.items.map(x=>x.id)).size!==q.total||q.schema==='kids-frozen-backlog-v1'&&new Set(q.items.map(x=>targetKey(x.target))).size!==q.total)throw Error('BACKLOG_DUPLICATE_TARGET');

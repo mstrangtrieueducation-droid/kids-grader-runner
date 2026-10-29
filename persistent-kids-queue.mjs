@@ -52,6 +52,18 @@ export function preparationProgress(j){
  return digest({raw:j.rawId,grade:j.gradeId,status:j.status,requests:j.generateRequests,input:j.snapshotId||j.inputId,transport:j.campaignTransportProgress,
   media:(j.media||[]).map(m=>({id:m.id,download:m.runnerDownloadBytes,upload:m.upload?.offset,runner:m.runnerUpload?.offset,prepared:m.universalAudio?.segments?.map(s=>[s.sha256,s.fileUri])}))});
 }
+export function preparationRank(j){
+ if(j.rawId||j.gradeId)return 0;
+ const media=(j.media||[]).filter(m=>!m.isReference);
+ if(media.some(m=>m.universalAudio?.segments?.some(s=>s.sha256&&s.bytes>0)||m.runnerDownloadBytes>0||m.runnerUpload?.offset>0||m.upload?.offset>0))return 1;
+ return j.snapshotId||j.inputId?2:3;
+}
+export function mayRequeuePreparation(item,job,before,tracker,{now=Date.now()}={}){
+ if(!['RETRY','PENDING_VALIDATION'].includes(item.state)||!item.delivery||!job?.id)return false;
+ // A slow durable write may have consumed a short nextAt delay. Real progress
+ // still makes the same item executable; scheduling retains any future cooldown.
+ return (preparationProgress(job)!==before||Number(item.nextAt)>now)&&tracker.allow(job,before);
+}
 export function retryProgressTracker(){const stalled=new Map();return {allow(j,before){const moved=preparationProgress(j)!==before;if(moved){stalled.delete(j.id);return true;}const count=(stalled.get(j.id)||0)+1;stalled.set(j.id,count);return count<3;}};}
 export async function prepareNativeTodo(file,{config,google,buildContext}){
  const batches=[];
