@@ -138,7 +138,7 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
   }
   more ||= [...deferred.values()].some(x=>x.nextAt<=now());
   next.completedAt=now();next.more=more;next.deferred=[...deferred.values()];
-  if(next.deferred.length>5000)throw Error('NATIVE_DEFERRED_QUEUE_CAPACITY');
+  if(next.deferred.length>100000)throw Error('NATIVE_DEFERRED_QUEUE_CAPACITY');
   const encoded=writeIntakeCheckpoint(next,(parts,sha)=>{const b=g.book(config.clusters[0].controlId),s=b.getSheetByName('[KIDS_INTAKE_CHECKPOINTS]')||b.insertSheet('[KIDS_INTAKE_CHECKPOINTS]');s.appendRows(parts.map((text,i)=>[sha,i,text]));return s.lastAppendRow;});
   // Append and verify the shard binding before committing the small pointer.
   // A failed append/save leaves the previous cursor intact and replayable.
