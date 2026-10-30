@@ -1,3 +1,4 @@
+import {scoredAssessment,explicitDistantAssignment} from './scored-assessment-policy.mjs';
 export const GRADING_FAILURE_VERSION='student-fault-evidence-v1-20261015';
 export const LEGACY_GENERIC_NOTICE='Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.';
 const sections=d=>Array.isArray(d?.roseSections)?d.roseSections:Object.values(d?.sections||{});
@@ -14,7 +15,7 @@ export function assessmentFailure(raw,draft,job={}){
  const finish=raw?.candidates?.[0]?.finishReason;
  if(raw?.promptFeedback?.blockReason||finish&&finish!=='STOP')return {status:'SYSTEM_GRADING_ERROR',code:'PROVIDER_RESPONSE_'+(finish||'BLOCKED')};
  // Complete saved assessments pass to the existing native writer. Media checks are a pre-call gate.
- if(draft?.assessable===true&&nonempty(draft)&&/^\d+(?:\.\d+)?%?$/.test(String(draft.band||'')))return null;
+ if(scoredAssessment(draft))return null;
  const reason=String(draft?.reason||''),media=(job.media||[]).filter(m=>!m.isReference);
  const submitted=media.length||/drive\.google\.com\/(?:open|file)/i.test(job.receipt?.links||'');
  const modalities=raw?.usageMetadata?.promptTokensDetails||[],visualDelivered=job.masterVisualFileIndexes?.length||modalities.some(p=>/^(VIDEO|IMAGE)$/.test(p.modality)&&p.tokenCount>0);
@@ -34,7 +35,7 @@ export function holdSystemFailure(c,job,row,error,decision=null){
 }
 export function wrongAssignmentNotice(draft,job){
  const check=draft?.submissionCheck,wrong=check?.status==='wrong_assignment'||check?.category==='wrong_assignment';
- if(!wrong||!String(check.observedTask||'').trim()||!String(check.basis||'').trim())return null;
+ if(!wrong||!explicitDistantAssignment(draft,job)||!String(check.observedTask||'').trim()||!String(check.basis||'').trim())return null;
  const observed=String(check.observedTask).trim().replace(/[.。]+$/,'');
  return '⚠️ CẦN NỘP LẠI\nCô đã nhận được video của con. Bài cần nộp ở buổi này là '+String(job.receipt?.code||job.route?.code||'bài được giao')+'.\nTrong video, con đang thực hiện: '+observed+'.\nCon kiểm tra lại đúng nội dung của buổi này rồi gửi lại cho cô nhé.';
 }

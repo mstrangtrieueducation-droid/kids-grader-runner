@@ -1,3 +1,4 @@
+import {scoredAssessment,SCORED_ASSESSMENT_INSTRUCTION} from './scored-assessment-policy.mjs';
 import {reviewColumn} from './review-column-resolution.mjs';
 import {requestFeedback} from './provider-generation-policy.mjs';
 import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice,LEGACY_GENERIC_NOTICE} from './grading-failure-policy.mjs';
@@ -5,17 +6,17 @@ import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
 import {MASTER_VERSION,MASTER_MODEL,MASTER_SYSTEM,ASSIGNMENT_TAB,UNCLEAR_AUDIO,masterForm,receiptDate,studentRows,generationConfig,masterSchema,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
 import {savedFeedbackRich} from './saved-feedback.mjs';
-import {routingIndex,localLessonMatch,RESUBMIT_OLD} from './kids-content-routing.mjs';
+
 import {PRESENTATION_RULE,confirmedScriptReading,readingResubmission,READING_RESUBMISSION_STATUS} from './presentation-resubmission.mjs';
 import {decodeSavedDraft} from './saved-draft.mjs';
 import {groundedWebReference} from './screen-grounding.mjs';
 export {decodeSavedDraft} from './saved-draft.mjs';
 export function installMasterKids(c,catalog,{emit=()=>{}}={}){
- const index=routingIndex(catalog),originalGuide=c.guide_,originalStep=c.step_,originalError=c.handleError_,originalRecovery=c.recoverContentRouting_;
+ const originalGuide=c.guide_,originalStep=c.step_,originalError=c.handleError_,originalRecovery=c.recoverContentRouting_;
  c.ensureMasterAssignmentTab_=()=>{const b=c.SpreadsheetApp.openById(c.FLEET_CLUSTER.controlId);let s=b.getSheetByName(ASSIGNMENT_TAB);if(!s){s=b.insertSheet(ASSIGNMENT_TAB);s.appendRow(['Cập nhật','Lớp','Học sinh','Mã bài','Lý do','Dòng Form','Mã hồ sơ','Trạng thái']);}return s;};
  c.masterSnapshot_=j=>{try{return c.guide_(j.route);}catch{return j.snapshotId?c.readArtifact_(j.snapshotId):{kind:j.route?.kind,form:masterForm(j.route?.kind)};}};
  c.guide_=route=>{const entry=catalog.lookup('kids',route.code),s=groundedWebReference(originalGuide(route),entry);return {...s,guide:entry.requirements.submissionText,form:masterForm(s.kind,entry),barem:{...s.barem,masterVersion:MASTER_VERSION},referenceMedia:[],referenceAssets:[]};};
- c.kidsSystemInstruction_=()=>MASTER_SYSTEM+'\n'+PRESENTATION_RULE;
+ c.kidsSystemInstruction_=()=>MASTER_SYSTEM+'\n'+PRESENTATION_RULE+'\n'+SCORED_ASSESSMENT_INSTRUCTION;
  c.kidsEvidencePrompt_=s=>'BAREM TEXT LOCAL:\n'+s.reference+'\nYÊU CẦU BÀI NỘP:\n'+s.guide+'\nTiêu chí đúng thứ tự: '+s.form.join('; ');
  c.prompt_=c.kidsEvidencePrompt_;
  c.kidsEvidenceSchema_=masterSchema;
@@ -58,13 +59,9 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   holdSystemFailure(c,j,row,e);
  }
  function routeSaved(j,row,g){
+  if(scoredAssessment(g))return true;
   const check=g.submissionCheck;if(check?.status!=='wrong_assignment'&&check?.category!=='wrong_assignment')return true;
-  const actual=localLessonMatch(index,g.studentTranscript||check.observedTask||'');
-  if(!actual){const notice=wrongAssignmentNotice(g,j);if(notice)pending(j,row,notice);else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EVIDENCE'));return false;}
-  const route={...structuredClone(actual.route),code:actual.code,className:j.cls.className,sourceTab:j.receipt.sourceTab};
-  const dst=c.destination_(j.cls,route,j.receipt.student).cell;
-  if(c.hasFeedback_(dst.getDisplayValue())||dst.getFormula()||dst.getDataValidation()){pending(j,row,RESUBMIT_OLD);return false;}
-  j.formRoute ||= structuredClone(j.route);j.route=route;j.contentRouting={actualCode:actual.code,method:'LOCAL_MATCH_FROM_SINGLE_SAVED_RESPONSE'};return true;
+  const notice=wrongAssignmentNotice(g,j);if(notice)pending(j,row,notice);else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EXPLICIT_DISTANT_CODE'));return false;
  }
  c.generate_=(j,parts,snapshot)=>{
   if(j.rawId)throw Error('FULL_FEEDBACK_READY');
