@@ -38,7 +38,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   // Restore existing paid assessments under the same coordinator leases,
   // before quarantine or worker selection. This path has no provider API.
   for(const cluster of config.clusters)if(!scoredRepairChecked.has(cluster.controlId)){
-   const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId),heartbeat=()=>{for(const lease of leases)lease.heartbeat();},repair=restoreScoredFeedback(c,g,entries,{heartbeat}),questions=restoreScoredFeedback(c,g,entries,{heartbeat,questionComponents:true});repair.errors.push(...questions.errors);
+   let repairBeat=0;const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId),heartbeat=()=>{if(Date.now()-repairBeat<60000)return;for(const lease of leases)lease.heartbeat();repairBeat=Date.now();},repair=restoreScoredFeedback(c,g,entries,{heartbeat}),questions=restoreScoredFeedback(c,g,entries,{heartbeat,questionComponents:true});repair.errors.push(...questions.errors);
    if(!repair.errors.length)scoredRepairChecked.add(cluster.controlId);
   }
   durable(reconcileScoredTodo(q.items,[...entriesByControl.values()].flat()));

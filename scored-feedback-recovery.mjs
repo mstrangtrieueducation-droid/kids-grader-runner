@@ -57,6 +57,8 @@ export function restoreScoredFeedback(c,g,entries,{emit=()=>{},commit=commitClas
  for(const entry of entries){const j=entry.job;if(!(questionComponents?questionFeedbackCandidate(j):machineMismatchNotice(j))||!j.rawId&&!j.gradeId)continue;
   try{
    heartbeat();
+   // Cheap declared-component selection precedes any raw, roster, Form or class read.
+   if(questionComponents&&c.masterSnapshot_){const declared=c.masterSnapshot_(j);if(!repairQuestionFeedback({roseSections:[{text:j.autoNotice}]},declared).changes.length){report.skipped.push({id:j.id,reason:'NO_DECLARED_QUESTION_FORMAT_PENALTY'});continue;}}
    const raw=c.readArtifact_(j.rawId||j.gradeId),draft=decodeSavedDraft(raw);if(!completeScoredResponse(raw,draft)){report.skipped.push({id:j.id,reason:'NO_COMPLETE_VALID_SCORED_RESPONSE'});continue;}
    if(!c.currentRoster_?.(j.receipt,{fresh:true})){report.skipped.push({id:j.id,reason:'NOT_IN_CURRENT_ROSTER'});continue;}
    let fresh,sourceError;try{fresh=c.freshReceipt_(j);}catch(e){if(e.message!=='STALE_RECEIPT')throw e;sourceError=e.message;}
