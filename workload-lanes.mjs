@@ -5,7 +5,7 @@ export const SERVICE_MS=300*60000;
 export const ITEM_MS=5*60000;
 export function mediaWorkload(job){
  if(job.rawId||job.gradeId)return {lane:'fast',bytes:0,saved:true};
- const media=(job.media||[]).filter(m=>!m.isReference),files=media.length?media:job.sourceIntake?.files||[];
+ const media=(job.media||[]).filter(m=>!m.isReference),files=media.length?media:job.sourceIntake?.metadataFiles?.length?job.sourceIntake.metadataFiles:job.sourceIntake?.files||[];
  if(/\/drive\/folders\//i.test(job.receipt?.links||job.source?.link||'')||files.some(m=>m.mimeType==='application/vnd.google-apps.folder'||m.mime==='application/vnd.google-apps.folder'))return {lane:'heavy',bytes:null,saved:false};
  if(files.length&&files.every(m=>m.nativeYouTube||String(m.id||'').startsWith('yt_')))return {lane:'fast',bytes:0,saved:false};
  const sizes=files.map(m=>Number(m.size??m.bytes));
