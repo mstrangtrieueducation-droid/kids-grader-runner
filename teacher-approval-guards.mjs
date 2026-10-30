@@ -58,7 +58,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
  c.generate_=(j,parts,snapshot)=>{
   if(snapshot?.webPracticeScope)j.verifiedWebPracticeScope=compactWebScope(snapshot.webPracticeScope);
   if(!j.teacherApproval?.approved)throw Error('TEACHER_APPROVAL_REQUIRED');if(j.rawId)return originalGenerate(j,parts,snapshot);
-  if(knownInvalidPresentation(j,c.teacherApprovalJobs_))throw Error('PRESENTATION_FORMAT_RESUBMISSION');const old=oldFile(j);if(old)throw Error('LOCAL_OLD_GRADED_FILE');
+  if(knownInvalidPresentation(j,c.teacherApprovalJobs_,c.masterSnapshot_?.(j)||{}))throw Error('PRESENTATION_FORMAT_RESUBMISSION');const old=oldFile(j);if(old)throw Error('LOCAL_OLD_GRADED_FILE');
   const media=(j.media||[]).filter(m=>!m.isReference);if(!media.length)throw Error('SYSTEM_AUDIO_INPUT_MISSING_STUDENT_AUDIO');
   const positions=parts.flatMap((p,i)=>/^(audio|video)\//.test(p.inlineData?.mimeType||p.fileData?.mimeType||'')?[i]:[]);if(positions.length>media.length)throw Error('SYSTEM_AUDIO_INPUT_EXTRA_MEDIA_PARTS');
   const checked=[...parts];for(const [i,m]of media.entries()){
@@ -73,7 +73,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
  c.step_=(j,row,deadline,options)=>{
   if(MASTER_TERMINAL.has(j.status))return;
   if(!j.teacherApproval?.approved){if(!MASTER_TERMINAL.has(j.status)){j.status='WAITING_TEACHER_APPROVAL';j.nextAt=0;c.persist_(j,row);}return;}
-  try{if(j.rawId){const raw=c.readArtifact_(j.rawId),failure=assessmentFailure(raw,decodeSavedDraft(raw),j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}}const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(j.teacherApprovalOverwrite)c.approvalActiveOverwrite={before:cell.getDisplayValue()};if(knownInvalidPresentation(j,c.teacherApprovalJobs_)||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}const old=oldFile(j);if(old){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
+  try{if(j.rawId){const raw=c.readArtifact_(j.rawId),failure=assessmentFailure(raw,decodeSavedDraft(raw),j);if(failure){holdSystemFailure(c,j,row,Error(failure.code),failure);return;}}const cell=c.destination_(j.cls,j.route,j.receipt.student).cell;if(j.teacherApprovalOverwrite)c.approvalActiveOverwrite={before:cell.getDisplayValue()};if(knownInvalidPresentation(j,c.teacherApprovalJobs_,c.masterSnapshot_?.(j)||{})||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}const old=oldFile(j);if(old){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
    if(j.status==='SYSTEM_AUDIO_ERROR')return;
    if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){const text=wrongAssignmentNotice(decodeSavedDraft(c.readArtifact_(j.rawId)),j);if(text)notice(j,row,text,'COMPLETED_NEEDS_RESUBMISSION');else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EVIDENCE'));return;}
   if(rejectIncomplete(j,row))return;
