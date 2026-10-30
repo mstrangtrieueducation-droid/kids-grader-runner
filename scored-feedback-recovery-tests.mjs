@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {RichBuilder,Style} from './google-adapter.mjs';
-import {restoreScoredFeedback,mayReplaceMachineNotice} from './scored-feedback-recovery.mjs';
+import {restoreScoredFeedback,mayReplaceMachineNotice,reconcileScoredTodo} from './scored-feedback-recovery.mjs';
 const notice='❌ CẦN NỘP LẠI — Con nộp nhầm file của bài cũ đã có điểm rồi. Con kiểm tra và nộp lại đúng bài này nhé!';
 const draft={assessable:true,band:'80%',roseSections:[{label:'Ngữ pháp',text:'Con đọc rõ, con chú ý âm cuối.'}],submissionCheck:{status:'wrong_assignment',observedTask:'Related reading',basis:'A different skill label'}};
 const raw={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(draft)}]}}]};
@@ -19,3 +19,6 @@ const ok=run();assert.equal(ok.report.restored.length,1);assert.equal(ok.job.sta
 for(const opts of [{edited:true},{blocked:true},{roster:false},{conflict:true}]){const r=run(opts);assert.equal(r.report.restored.length,0);assert.equal(r.writes,0);assert.equal(r.persisted,0);assert.equal(r.calls,0);}
 assert.equal(mayReplaceMachineNotice({autoNotice:notice},notice+'\nTeacher note'),false);
 console.log('PASS complete cached grade restored without media or provider; before-image backup and write ACK required; teacher edits, roster removal, blocked raw and concurrent changes protected.');
+
+const todo={id:'todo',target:{spreadsheetId:'book',className:'CLASS',student:'PUPIL A',code:'D1-Tiết 51-Ngữ pháp',submissionAt:'2026-10-17T13:00:00Z'},state:'QUARANTINED',attempts:[{state:'HELD'}]};
+assert.equal(reconcileScoredTodo([todo],[{job:ok.job}]).length,1);assert.equal(todo.state,'DONE');assert.equal(todo.attempts.length,1);assert.equal(reconcileScoredTodo([todo],[{job:ok.job}]).length,0);

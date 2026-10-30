@@ -6,6 +6,7 @@ import {isPhonics,phonicsText,phonicsRich} from './phonics-template.mjs';
 import {oldGradedSubmission} from './zero-cost-gates.mjs';
 import {cellEvidence,expectedBindings,guardClassRequests} from './sheet-truth-write-guard.mjs';
 import {commitClassValues} from './class-values-commit.mjs';
+import {matchesTarget} from './frozen-backlog-policy.mjs';
 export const RECOVERY_VERSION='scored-native-feedback-authority-20261030';
 const marker='— NHẬN XÉT GV —';
 const body=s=>String(s||'').includes(marker)?String(s).slice(String(s).indexOf(marker)+marker.length).trim():String(s||'').trim();
@@ -16,6 +17,17 @@ export function machineMismatchNotice(job,text=job.autoNotice){
  return /^(?:❌|⚠️?|\s)*\s*CẦN NỘP LẠI/iu.test(body(text))&&/nộp nhầm|bài trong video con đã nộp|bài cần nộp ở buổi này|trong video, con đang thực hiện/iu.test(body(text));
 }
 export function mayReplaceMachineNotice(job,text){return machineMismatchNotice(job)&&body(text)===body(job.autoNotice);}
+export function reconcileScoredTodo(items,entries){
+ const changed=[];
+ for(const item of items){
+  const j=entries.map(e=>e.job).find(j=>j.status==='RETURNED'&&j.returnedScoreRepair?.version===RECOVERY_VERSION&&j.returnedScoreRepair.writeReceipt?.updatedCells>0&&matchesTarget(j,item.target));
+  if(!j)continue;const proof=j.returnedScoreRepair.writeReceipt;
+  if(item.state==='DONE'&&item.writeReceipt?.textHash===proof.textHash)continue;
+  item.state='DONE';item.error=null;item.nextAt=0;item.committedAt=proof.committedAt;item.writeReceipt=proof;item.savedScoreRestoration={version:RECOVERY_VERSION,providerCalls:0};item.delivery={...item.delivery,jobId:j.id,status:'RETURNED',rawId:j.rawId||j.gradeId,calls:0};
+  item.resolvedTarget={...item.target,cell:j.cell,sheetId:proof.sheetId};changed.push(item);
+ }
+ return changed;
+}
 export function restoreScoredFeedback(c,g,entries,{emit=()=>{},commit=commitClassValues,guard=guardClassRequests,heartbeat=()=>{}}={}){
  const groups=new Map(),report={version:RECOVERY_VERSION,restored:[],skipped:[],errors:[],providerCalls:0};
  for(const entry of entries){const j=entry.job;if(!machineMismatchNotice(j)||!j.rawId&&!j.gradeId)continue;

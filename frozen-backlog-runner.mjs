@@ -1,4 +1,4 @@
-import {restoreScoredFeedback} from './scored-feedback-recovery.mjs';
+import {restoreScoredFeedback,reconcileScoredTodo} from './scored-feedback-recovery.mjs';
 import {openRecoveryItem} from './quarantine-recovery.mjs';
 import {isolateItem,attemptCount} from './queue-isolation.mjs';
 import {centralSheetWriter} from './central-sheet-writer.mjs';
@@ -39,10 +39,9 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   // before quarantine or worker selection. This path has no provider API.
   for(const cluster of config.clusters)if(!scoredRepairChecked.has(cluster.controlId)){
    const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId),repair=restoreScoredFeedback(c,g,entries,{heartbeat:()=>{for(const lease of leases)lease.heartbeat();}});
-   const restored=new Map(repair.restored.map(x=>[x.id,x]));const changed=[];
-   for(const item of q.items){const proof=restored.get(item.delivery?.jobId||item.claim?.jobId);if(!proof)continue;item.state='DONE';item.error=null;item.nextAt=0;item.committedAt=proof.writeReceipt.committedAt;item.writeReceipt=proof.writeReceipt;item.savedScoreRestoration={version:repair.version,providerCalls:0};item.delivery={...item.delivery,status:'RETURNED',calls:0};changed.push(item);}
-   durable(changed);if(!repair.errors.length)scoredRepairChecked.add(cluster.controlId);
+   if(!repair.errors.length)scoredRepairChecked.add(cluster.controlId);
   }
+  durable(reconcileScoredTodo(q.items,[...entriesByControl.values()].flat()));
   // Isolate old poison before allocating a worker. Paid history is never reset.
   const isolated=[];
   for(const item of q.items){const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===item.target.spreadsheetId)),es=cluster&&entriesByControl.get(cluster.controlId),job=es?.find(x=>x.job.id===item.claim?.jobId)?.job||es?.find(x=>matchesTarget(x.job,item.target))?.job||{};item.preparationRank=preparationRank(job);if(isolateItem(item,job,{activeRun:process.env.GITHUB_RUN_ID}))isolated.push(item);if(openRecoveryItem(item)&&!isolated.includes(item))isolated.push(item);}
