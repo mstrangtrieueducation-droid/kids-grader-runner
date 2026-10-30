@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {RichBuilder,Style} from './google-adapter.mjs';
-import {restoreScoredFeedback,mayReplaceMachineNotice,reconcileScoredTodo,preloadRecoveryClass} from './scored-feedback-recovery.mjs';
+import {restoreScoredFeedback,mayReplaceMachineNotice,reconcileScoredTodo,preloadRecoveryClass,cachedReceiptAuthority} from './scored-feedback-recovery.mjs';
 const notice='❌ CẦN NỘP LẠI — Con nộp nhầm file của bài cũ đã có điểm rồi. Con kiểm tra và nộp lại đúng bài này nhé!';
 const draft={assessable:true,band:'80%',roseSections:[{label:'Ngữ pháp',text:'Con đọc rõ, con chú ý âm cuối.'}],submissionCheck:{status:'wrong_assignment',observedTask:'Related reading',basis:'A different skill label'}};
 const raw={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(draft)}]}}]};
@@ -25,3 +25,11 @@ assert.equal(reconcileScoredTodo([todo],[{job:ok.job}]).length,1);assert.equal(t
 
 let boundedUrl='';const boundedSheet={meta:{properties:{gridProperties:{columnCount:130,rowCount:10000}}},book:{id:'book',cache:new Map()},getName:()=> 'TRACKER',getSheetId:()=>7,getLastRow:()=>35};
 const bounded=preloadRecoveryClass({api:url=>{boundedUrl=url;return {sheets:[{properties:{sheetId:7},data:[{rowData:[]}]}]};}},boundedSheet,15);assert.equal(bounded,"'TRACKER'!A1:DZ35");assert.ok(!decodeURIComponent(boundedUrl).includes('10000'));assert.ok(boundedSheet.book.cache.has('TRACKER|master'));
+
+const archived={receipt:{className:'CLASS',student:'PUPIL A',code:'D1-Tiết 51',sourceTab:'FORM',time:'2026-10-17T13:37:20Z',links:'saved-file'}};
+assert.equal(cachedReceiptAuthority(archived,{...archived.receipt,row:99}).allowed,true);
+assert.equal(cachedReceiptAuthority(archived,{...archived.receipt,time:'2026-10-17T13:26:45Z',links:'older-file'}).allowed,true);
+assert.equal(cachedReceiptAuthority(archived,{...archived.receipt,time:'2026-10-18T13:26:45Z',links:'new-file'}).allowed,false);
+assert.equal(cachedReceiptAuthority(archived,{...archived.receipt,student:'PUPIL B'}).allowed,false);
+assert.equal(cachedReceiptAuthority(archived,null,'STALE_RECEIPT').allowed,true);
+assert.equal(cachedReceiptAuthority(archived,null,'NETWORK_OUTCOME_UNKNOWN').allowed,false);
