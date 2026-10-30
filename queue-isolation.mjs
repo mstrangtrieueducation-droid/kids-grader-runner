@@ -16,6 +16,7 @@ export function isolateItem(item,job,{now=Date.now(),activeRun}={}){
  // An active hosted owner, even with an old timestamp, must drain its paid call.
  if(item.state==='CLAIMED'&&item.claim?.runId===activeRun)return false;
  if(item.state==='CLAIMED'&&now-Date.parse(item.locked_at||item.claim?.at||new Date(now).toISOString())<CLAIM_TTL_MS)return false;
+ if(item.state==='PENDING_VALIDATION'&&item.quarantineRecovery?.authorization==='teacher-quarantine-recovery-20261030')return false;
  const reason=quarantineReason(item,job);
  if(reason){item.queueQuarantine={policy:QUEUE_POLICY,at:new Date(now).toISOString(),reason,previousState:item.state,rawId:job.rawId||null,gradeId:job.gradeId||null,paidHistoryPreserved:true};item.state='QUARANTINED';item.attempt_count=Math.max(1,attemptCount(item));item.error=reason;item.nextAt=0;return true;}
  if(item.state==='CLAIMED'){item.attempt_count=attemptCount(item)+1;item.expiredClaim={...item.claim,releasedAt:new Date(now).toISOString()};item.state='PENDING_VALIDATION';item.nextAt=0;return true;}

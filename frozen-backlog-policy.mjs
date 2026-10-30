@@ -1,3 +1,4 @@
+import {authorizedRecoveryChild} from './quarantine-recovery.mjs';
 import {createHash} from 'node:crypto';
 import {automaticEligible,mayResumeSaved} from './automatic-authorization.mjs';
 import {hasRequest,hasSavedResult,sourceIds} from './universal-media.mjs';
@@ -24,7 +25,7 @@ export function resultNativeClaim(item,result,controlId){
 }
 export function selectExisting(t,entries,now=Date.now()){
  const all=entries.map(x=>x.job),matches=entries.filter(x=>matchesTarget(x.job,t));
- const explicit=matches.find(x=>authorizedInvalidRetry(x.job,all));
+ const explicit=matches.find(x=>authorizedRecoveryChild(x.job,all))||matches.find(x=>authorizedInvalidRetry(x.job,all));
  if(explicit)return Number(explicit.job.nextAt)>now?null:explicit;
  const possible=matches.filter(({job:j})=>!(Number(j.nextAt)>now)&&(automaticEligible(j,all)||mayResumeSaved(j)));
  // A saved result always precedes an uncalled duplicate of the same receipt.

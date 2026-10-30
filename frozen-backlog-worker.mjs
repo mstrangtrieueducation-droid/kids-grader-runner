@@ -1,3 +1,4 @@
+import {prepareQuarantineRecovery} from './quarantine-recovery.mjs';
 import {submitClassWrite} from './central-sheet-writer.mjs';
 import {ITEM_MS} from './workload-lanes.mjs';
 import {prepareCampaignRecovery,confirmedNoAudioNotice,closeRetiredCampaignRecord} from './campaign-recovery.mjs';
@@ -38,12 +39,15 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
   let j=entry.job;
   const {cell,target:resolvedTarget}=resolveFrozenTarget(c,j,item.target);
   const before=cell.getDisplayValue(),beforeNote=cell.getNote();let recovered=false,noAudio=false;
-  const licensed=authorizeInvalidRetry(c,entry,entries,cell,nativePersist);
+  const recovery=prepareQuarantineRecovery(c,{item,entry,entries,cell,persist:nativePersist});
+  if(recovery){entry=recovery.entry;j=entry.job;executable=true;}
+  const licensed=recovery?null:authorizeInvalidRetry(c,entry,entries,cell,nativePersist);
   if(licensed){entry=licensed;j=entry.job;executable=true;}
   initializeAuthorizedRetryInventory(j,entries,()=>c.persist_(j,entry.row));
   const approval=c.teacherApprovalSession_.approved.get(j.id),manual=!!approval&&!approval.automatic&&String(approval.sourceLink).includes('/'+controlId+'/')&&String(approval.sourceLink).includes('A'+entry.row+':F'+entry.row)&&/CẦN NỘP LẠI|CẦN_NỘP_LẠI/iu.test(before);
-  if(!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);if(!noAudio&&j.campaignAudioSourceRecheck?.requiresSavedAssessmentReconciliation)throw Error('HISTORICAL_AUDIO_NOTICE_NOT_CONFIRMED');if(!noAudio)recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});}
-  if(hasTeacherReview(before)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
+  if(recovery?.notice){cell.setRichTextValue(c.coloredFeedback_(cell,recovery.notice,null));j.autoNotice=cell.getDisplayValue();j.status=recovery.terminal;j.error='';j.nextAt=0;c.persist_(j,entry.row);noAudio=true;}
+  if(!noAudio&&!hasTeacherReview(before)&&!cell.getFormula()&&!cell.getDataValidation()){noAudio=confirmedNoAudioNotice(c,j,entry.row,cell);if(!noAudio&&j.campaignAudioSourceRecheck?.requiresSavedAssessmentReconciliation)throw Error('HISTORICAL_AUDIO_NOTICE_NOT_CONFIRMED');if(!noAudio)recovered=prepareCampaignRecovery(c,j,entry.row,{matches:entries.filter(e=>matchesTarget(e.job,item.target)),cell});}
+  if((hasTeacherReview(before)||recovery?.existingFinal)&&!manual)result={state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),before,after:before,job:j};
   else if(cell.getFormula()||cell.getDataValidation())result={state:'PROTECTED',error:'DESTINATION_PROTECTED',before,after:before,job:j};
   else if(noAudio)result={state:'STAGED',verifiedAt:null,before,after:cell.getDisplayValue(),job:j,calls:0,error:null};
   else {

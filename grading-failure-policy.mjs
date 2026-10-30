@@ -13,6 +13,8 @@ export function providerFailure(job,error={}){
 export function assessmentFailure(raw,draft,job={}){
  const finish=raw?.candidates?.[0]?.finishReason;
  if(raw?.promptFeedback?.blockReason||finish&&finish!=='STOP')return {status:'SYSTEM_GRADING_ERROR',code:'PROVIDER_RESPONSE_'+(finish||'BLOCKED')};
+ // Complete saved assessments pass to the existing native writer. Media checks are a pre-call gate.
+ if(draft?.assessable===true&&nonempty(draft)&&/^\d+(?:\.\d+)?%?$/.test(String(draft.band||'')))return null;
  const reason=String(draft?.reason||''),media=(job.media||[]).filter(m=>!m.isReference);
  const submitted=media.length||/drive\.google\.com\/(?:open|file)/i.test(job.receipt?.links||'');
  const modalities=raw?.usageMetadata?.promptTokensDetails||[],visualDelivered=job.masterVisualFileIndexes?.length||modalities.some(p=>/^(VIDEO|IMAGE)$/.test(p.modality)&&p.tokenCount>0);

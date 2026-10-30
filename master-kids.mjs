@@ -1,3 +1,5 @@
+import {reviewColumn} from './review-column-resolution.mjs';
+import {requestFeedback} from './provider-generation-policy.mjs';
 import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice,LEGACY_GENERIC_NOTICE} from './grading-failure-policy.mjs';
 import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
@@ -23,7 +25,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
  const stableDate=r=>{const parsed=receiptDate(r.time,new Date(NaN));if(Number.isFinite(parsed.getTime()))return parsed.toISOString();if(process.env.SHEET_TRUTH_SYNC==='true')return '';const key=[r.sourceTab,r.row].join('|');if(!fallbackDates.has(key)){priorDates ||= new Map(c.loadJobs_().map(x=>[[x.job.receipt?.sourceTab,x.job.receipt?.row].join('|'),x.job.receipt?.time]));fallbackDates.set(key,receiptDate(priorDates.get(key)));}return fallbackDates.get(key).toISOString();};
  const receipt=c.receiptAt_;if(receipt)c.receiptAt_=(values,...rest)=>{const schema=rest[1],copy=[...values];if(copy[schema.time] instanceof Date&&!Number.isFinite(copy[schema.time].getTime()))copy[schema.time]='';const r=receipt(copy,...rest);r.time=stableDate(r);return r;};
  if(sourceRows)c.sourceRows_=(...args)=>sourceRows(...args).map(r=>({...r,time:stableDate(r)}));
- const locateColumn=(headers,route)=>{try{return c.autoColumns_(headers,route);}catch{throw Error('DESTINATION_COLUMN_MISSING');}};
+ const locateColumn=(headers,route)=>{try{return reviewColumn((h,r)=>c.autoColumns_(h,r),headers,route);}catch{throw Error('DESTINATION_COLUMN_MISSING');}};
  c.autoTarget_=(s,route,student)=>{const rows=studentRows(s.values,student);if(rows.length!==1)throw Error('STUDENT_NOT_FOUND_OR_AMBIGUOUS');const column=locateColumn(s.headers,route),row=rows[0];if(s.formulas?.[row-1]?.[column-1])throw Error('DESTINATION_FORMULA');return {row,column,value:s.values[row-1][column-1]};};
  c.destination_=(cls,route,student)=>{const b=c.SpreadsheetApp.openById(cls.spreadsheetId),s=b.getSheetByName(cls.sheetName)||b.getSheetByName('THEO DÕI TOÀN DIỆN')||b.getSheetByName('THEO DÕI');if(!s)throw Error('DESTINATION_COLUMN_MISSING');const rows=studentRows(s.getDataRange().getDisplayValues(),student);if(rows.length!==1)throw Error('STUDENT_NOT_FOUND_OR_AMBIGUOUS');const column=locateColumn(c.expandedHeaders_(s),route),row=rows[0],cell=s.getRange(row,column);return {sheet:s,cell,row,column};};
  const assignment=c.currentAssignment_;c.currentAssignment_=(...args)=>{try{return assignment(...args);}catch(e){if(e.message==='ASSIGNMENT_DATE_MISSING')return true;throw e;}};
@@ -44,6 +46,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   cell.setRichTextValue(c.coloredFeedback_(cell,out,null));j.autoNotice=out;j.cell=cell.getA1Notation();j.status=terminal;j.error='';j.nextAt=0;delete j.pendingMasterFeedback;c.persist_(j,row);
  }
  function exception(j,row,e){
+  if(e.message==='CAMPAIGN_COORDINATOR_STOPPED'&&!j.rawId&&!j.gradeId&&!j.generateRequests&&!j.physicalGenerateRequests&&!j.masterGenerationReserved){j.status='READY';j.error='';j.nextAt=0;j.cooperativePreparationPause={at:new Date().toISOString(),providerCalls:0};c.persist_(j,row);return;}
   const provider=providerFailure(j,e);if(provider){if(provider.httpCode===402)process.env.MODEL_GRADING_AVAILABLE='false';holdSystemFailure(c,j,row,e,provider);return;}
 
   if(/^(?:STUDENT_|DESTINATION_(?:COLUMN|TAB|AMBIGUOUS))/.test(e.message)){
@@ -75,7 +78,7 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);
   c.recordMasterGeneration_?.(j);const started=Date.now();
   try{
-   const response=c.api_('/v1beta/models/'+MASTER_MODEL+':generateContent',apiKey,{method:'post',contentType:'application/json',payload});
+   const response=requestFeedback({job:j,options:{body:payload},send:({body})=>c.api_('/v1beta/models/'+MASTER_MODEL+':generateContent',apiKey,{method:'post',contentType:'application/json',payload:body}),persist:()=>{c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);},saveArtifact:raw=>c.saveArtifact_('recitation-rejected-'+j.id,raw),onRetry:()=>c.recordMasterGeneration_?.(j)});
    const raw=JSON.parse(response.getContentText());j.usageRecordedAt=new Date().toISOString();j.apiUsage=c.kidsUsageReceipt_?.(raw,j.usageRecordedAt);j.rawId=c.saveArtifact_('master-raw-'+j.id,raw);
    // All assessment/formatting uses this paid response, even if ancillary fields are absent.
    throw Error('FULL_FEEDBACK_READY');
