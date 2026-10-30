@@ -50,5 +50,5 @@ export function restoreScoredFeedback(c,g,entries,{emit=()=>{},commit=commitClas
    report.restored.push({id:j.id,rawId:j.rawId||j.gradeId,student:j.receipt.student,className:j.cls.className,code:j.receipt.code,cell:x.cell,score:x.score,writeReceipt:receipt});
   }
  }
- emit({event:'SCORED_FEEDBACK_RESTORED',...report});return report;
+ emit({event:'SCORED_FEEDBACK_RESTORED',version:RECOVERY_VERSION,restored:report.restored.length,skipped:report.skipped.length,errors:report.errors.reduce((a,x)=>(a[x.reason]=(a[x.reason]||0)+1,a),{}),providerCalls:0});return report;
 }
