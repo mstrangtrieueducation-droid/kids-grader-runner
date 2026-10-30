@@ -13,9 +13,14 @@ const same=(a,b)=>recoveryIdentity(a)===recoveryIdentity(b);
 function approval(){try{const x=JSON.parse(fs.readFileSync(process.env.QUARANTINE_RECOVERY_AUTH_FILE,'utf8'));return x.authorization===RECOVERY_AUTH&&Array.isArray(x.records)?x:null;}catch{return null;}}
 export function recoveryRecord(item){const a=approval();return a?.records.find(x=>x.itemId===item.id&&x.targetHash===hash(item.target));}
 export function openRecoveryItem(item,{now=Date.now()}={}){
- const record=recoveryRecord(item);if(!record||item.state!=='QUARANTINED'||item.quarantineRecovery)return false;
- item.quarantineRecovery={authorization:RECOVERY_AUTH,recordHash:hash(record),previous:structuredClone(item.queueQuarantine||{reason:item.error}),openedAt:new Date(now).toISOString(),maxNewAttempts:1};
- item.state='PENDING_VALIDATION';item.nextAt=0;item.error=null;return true;
+ const record=recoveryRecord(item);if(!record||item.state==='CLAIMED')return false;
+ if(item.quarantineRecovery){
+  if(item.quarantineRecovery.authorization!==RECOVERY_AUTH||item.quarantineRecovery.attemptEpochAt||!['QUARANTINED','PENDING_VALIDATION','RETRY'].includes(item.state))return false;
+  item.quarantineRecovery.previousAttemptCount=item.attempt_count||0;item.quarantineRecovery.attemptEpochAt=new Date(now).toISOString();item.attempt_count=0;item.state='PENDING_VALIDATION';item.error=null;item.nextAt=0;return true;
+ }
+ if(item.state!=='QUARANTINED')return false;
+ item.quarantineRecovery={authorization:RECOVERY_AUTH,recordHash:hash(record),previous:structuredClone(item.queueQuarantine||{reason:item.error}),openedAt:new Date(now).toISOString(),attemptEpochAt:new Date(now).toISOString(),previousAttemptCount:item.attempt_count||0,maxNewAttempts:1};
+ item.attempt_count=0;item.state='PENDING_VALIDATION';item.nextAt=0;item.error=null;return true;
 }
 export function recoveryChildId(job){return 'runner:quarantine-recovery:'+hash([RECOVERY_AUTH,identity(job)]);}
 export function authorizedRecoveryChild(job,all){

@@ -18,6 +18,7 @@ import {installFrozenGenerationGuard} from './frozen-generation-guard.mjs';
 import path from 'node:path';
 if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||!process.send||!process.env.FROZEN_BACKLOG_WORKER)throw Error('TRUSTED_CAMPAIGN_REQUIRED');
 const {buildContext,runnerGoogle:g}=await import('./grader_runner.mjs'),config=JSON.parse(process.env.RUNNER_CONFIG),contexts=new Map();
+const handoffSignal=()=>{if(process.env.CAMPAIGN_HALT_FILE)fs.writeFileSync(process.env.CAMPAIGN_HALT_FILE,'COOPERATIVE_WORKER_HANDOFF');if(process.connected)process.send({event:'PREPARATION_HANDOFF'});};process.on('SIGTERM',handoffSignal);process.on('SIGINT',handoffSignal);
 process.on('message',message=>{if(message.stop){process.disconnect();return;}const {batch,entries,controlId,deadline,initial={}}=message;
  const cluster=config.clusters.find(x=>x.controlId===controlId);if(!cluster)throw Error('CAMPAIGN_CLUSTER_INVALID');
  let c=contexts.get(controlId);if(!c){c=buildContext(cluster);for(const [k,v] of Object.entries(initial))c.runnerProperties.set(k,v);installFrozenGenerationGuard(c,g);contexts.set(controlId,c);

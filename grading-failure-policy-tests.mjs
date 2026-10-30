@@ -19,4 +19,4 @@ const unmapped={...job};holdSystemFailure(c,unmapped,4,Error('BAREM_UNAVAILABLE'
 console.log('PASS provider 402/quota/unknown outcome never request student resubmission; blocked output and missing visual evidence held; genuine wrong lesson names expected and observed task; no duplicate generation; no API calls.');
 
 const validCached={assessable:true,band:'85%',roseSections:[{label:'Reading',text:'Con đọc rõ bài.'}]};assert.equal(assessmentFailure({usageMetadata:{promptTokensDetails:[{modality:'TEXT',tokenCount:12}]}},validCached,{...job,rawId:'saved'}),null);
-const paused={...job};c.handleError_(paused,6,Error('CAMPAIGN_COORDINATOR_STOPPED'));assert.equal(paused.status,'READY');assert.equal(paused.error,'');assert.equal(paused.attempt_count,undefined);assert.equal(paused.generateRequests,undefined);
+const paused={...job,attempt_count:5};c.handleError_(paused,6,Error('CAMPAIGN_COORDINATOR_STOPPED'));assert.equal(paused.status,'READY');assert.equal(paused.error,'');assert.equal(paused.attempt_count,5);assert.equal(paused.generateRequests,undefined);

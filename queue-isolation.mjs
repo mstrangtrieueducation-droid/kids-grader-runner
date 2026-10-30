@@ -3,7 +3,7 @@ export const QUEUE_POLICY='teacher-dead-letter-20261029';
 export const COOLDOWN_MS=30*60000, CLAIM_TTL_MS=10*60000;
 const transient=/TIMEOUT|TIMED_OUT|TRANSIENT|HTTP_429|HTTP_50[0234]|CONNECTION|NETWORK|SOURCE_INPUT_PENDING/;
 const invalid=/PROVIDER_RESPONSE_|STUDENT_MEDIA_NOT_IN_PROVIDER_INPUT|RESPONSE_VISUAL_INPUT_CONTRADICTION|NATIVE_HISTORY_REQUIRES_RECONCILIATION|UNCERTAIN_GENERATION|FAILED_NO_RESULT_SINGLE_CALL_LOCKED|PAID_HISTORY_NO_SAVED_RESULT/;
-export function attemptCount(item){return Math.max(Number(item.attempt_count)||0,(item.attempts||[]).filter(a=>['HELD','QUARANTINED'].includes(a.state)||a.failure===true).length);}
+export function attemptCount(item){const epoch=Date.parse(item.quarantineRecovery?.authorization==='teacher-quarantine-recovery-20261030'?item.quarantineRecovery.attemptEpochAt:'');return Math.max(Number(item.attempt_count)||0,(item.attempts||[]).filter(a=>(!Number.isFinite(epoch)||Date.parse(a.at)>=epoch)&&(['HELD','QUARANTINED'].includes(a.state)||a.failure===true)).length);}
 export function quarantineReason(item,job={}){
  const error=String(item.error||job.error||'');
  if(invalid.test(error)||job.status==='FAILED_NO_RESULT_SINGLE_CALL_LOCKED')return error||job.status;
