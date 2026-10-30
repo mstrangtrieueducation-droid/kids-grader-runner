@@ -7,6 +7,7 @@ import {oldGradedSubmission} from './zero-cost-gates.mjs';
 import {cellEvidence,expectedBindings,guardClassRequests} from './sheet-truth-write-guard.mjs';
 import {commitClassValues} from './class-values-commit.mjs';
 import {matchesTarget} from './frozen-backlog-policy.mjs';
+import {gridMaster} from './google-adapter.mjs';
 export const RECOVERY_VERSION='scored-native-feedback-authority-20261030';
 const marker='— NHẬN XÉT GV —';
 const body=s=>String(s||'').includes(marker)?String(s).slice(String(s).indexOf(marker)+marker.length).trim():String(s||'').trim();
@@ -17,6 +18,14 @@ export function machineMismatchNotice(job,text=job.autoNotice){
  return /^(?:❌|⚠️?|\s)*\s*CẦN NỘP LẠI/iu.test(body(text))&&/nộp nhầm|bài trong video con đã nộp|bài cần nộp ở buổi này|trong video, con đang thực hiện/iu.test(body(text));
 }
 export function mayReplaceMachineNotice(job,text){return machineMismatchNotice(job)&&body(text)===body(job.autoNotice);}
+export function preloadRecoveryClass(g,sheet,minimumRow){
+ const width=sheet.meta.properties.gridProperties.columnCount,last=Math.max(minimumRow,sheet.getLastRow());
+ let letters='';for(let n=width;n;n=Math.floor((n-1)/26))letters=String.fromCharCode(65+(n-1)%26)+letters;
+ const range="'"+sheet.getName().replaceAll("'","''")+"'!A1:"+letters+last;
+ const data=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+sheet.book.id+'?ranges='+encodeURIComponent(range)+'&includeGridData=true&fields=sheets(properties(sheetId,title),data(rowData(values(effectiveValue,userEnteredValue,formattedValue,hyperlink,textFormatRuns,userEnteredFormat,dataValidation,note))))');
+ const selected=data.sheets?.find(s=>s.properties.sheetId===sheet.getSheetId());if(!selected)throw Error('NATIVE_RECOVERY_GRID_MISSING');
+ sheet.book.cache.clear();sheet.book.cache.set(sheet.getName()+'|master',gridMaster(selected.data?.[0]?.rowData||[],width));return range;
+}
 export function reconcileScoredTodo(items,entries){
  const changed=[];
  for(const item of items){
@@ -29,7 +38,7 @@ export function reconcileScoredTodo(items,entries){
  return changed;
 }
 export function restoreScoredFeedback(c,g,entries,{emit=()=>{},commit=commitClassValues,guard=guardClassRequests,heartbeat=()=>{}}={}){
- const groups=new Map(),report={version:RECOVERY_VERSION,restored:[],skipped:[],errors:[],providerCalls:0};
+ const groups=new Map(),prepared=new Set(),report={version:RECOVERY_VERSION,restored:[],skipped:[],errors:[],providerCalls:0};
  for(const entry of entries){const j=entry.job;if(!machineMismatchNotice(j)||!j.rawId&&!j.gradeId)continue;
   try{
    heartbeat();
@@ -40,7 +49,7 @@ export function restoreScoredFeedback(c,g,entries,{emit=()=>{},commit=commitClas
    const prior=oldGradedSubmission(work,entries,p=>{try{const text=c.destination_(p.cls,p.route,p.receipt.student).cell.getDisplayValue();return /Chất lượng:\s*đạt(?: khoảng)?\s*\d+(?:[.,]\d+)?\s*%/iu.test(text);}catch{return false;}});
    if(prior){report.skipped.push({id:j.id,reason:'EXACT_PRIOR_GRADED_MEDIA',priorId:prior.id});continue;}
    let {sheet,cell}=c.destination_(work.cls,work.route,work.receipt.student);
-   if(g.preloadSource){g.preloadSource(work.cls.spreadsheetId,sheet.meta.properties.gridProperties.columnCount,[sheet.getName()]);({sheet,cell}=c.destination_(work.cls,work.route,work.receipt.student));}
+   if(g.preloadSource&&!prepared.has(work.cls.spreadsheetId)){preloadRecoveryClass(g,sheet,cell.getRow());prepared.add(work.cls.spreadsheetId);({sheet,cell}=c.destination_(work.cls,work.route,work.receipt.student));}
    const before=cell.getDisplayValue();if(!mayReplaceMachineNotice(j,before)||cell.getFormula()||cell.getDataValidation())throw Error('CURRENT_CELL_NOT_UNCHANGED_MACHINE_NOTICE');
    const snapshot=j.snapshotId?c.readArtifact_(j.snapshotId):{},rendered=isPhonics(work)?null:savedFeedback(draft,work,before,snapshot),text=rendered?.text||phonicsText(draft,work,before,snapshot);
    if(!/Chất lượng:\s*đạt(?: khoảng)?\s*\d+(?:[.,]\d+)?\s*%/iu.test(text))throw Error('SCORED_RENDER_REQUIRED');
