@@ -1,4 +1,4 @@
-import {repairQuestionFeedback} from './presentation-component-policy.mjs';
+import {repairQuestionFeedback,questionCorrectionPrefix} from './presentation-component-policy.mjs';
 import {returnedPercent as percentBand} from './returned-score-policy.mjs';
 import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {publicText,receiptDate} from './master-policy.mjs';
@@ -35,6 +35,7 @@ export function savedSections(g,snapshot={}){
  return sections.filter(s=>publicText(s.text).trim()).map(pedagogicSection);
 }
 export function savedFeedback(g,j,before='',snapshot={}){
+ before=questionCorrectionPrefix(before,j);
  g=applyCompletionPolicy(repairQuestionFeedback(g,snapshot).draft,j);
  const sections=savedSections(g,snapshot);if(!sections.length)throw Error('SAVED_FEEDBACK_EMPTY');
  const marker='— NHẬN XÉT GV —';

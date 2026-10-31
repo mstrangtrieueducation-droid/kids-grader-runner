@@ -44,8 +44,8 @@ export function preloadRecoveryClass(g,sheet,minimumRow){
 export function reconcileScoredTodo(items,entries){
  const changed=[];
  for(const item of items){
-  const j=entries.map(e=>e.job).find(j=>j.status==='RETURNED'&&(j.returnedQuestionRepair?.version===COMPONENT_POLICY||j.returnedScoreRepair?.version===RECOVERY_VERSION)&&(j.returnedQuestionRepair||j.returnedScoreRepair).writeReceipt?.updatedCells>0&&matchesTarget(j,item.target));
-  if(!j)continue;const proof=(j.returnedQuestionRepair||j.returnedScoreRepair).writeReceipt;
+  const j=entries.map(e=>e.job).find(j=>j.status==='RETURNED'&&(j.returnedQuestionRepair?.version===COMPONENT_POLICY||j.returnedScoreRepair?.version===RECOVERY_VERSION||j.questionComponentCorrection?.policy===COMPONENT_POLICY)&&(j.returnedQuestionRepair||j.returnedScoreRepair||j.questionComponentCorrection).writeReceipt?.updatedCells>0&&matchesTarget(j,item.target));
+  if(!j)continue;const proof=(j.returnedQuestionRepair||j.returnedScoreRepair||j.questionComponentCorrection).writeReceipt;
   if(item.state==='DONE'&&item.writeReceipt?.textHash===proof.textHash)continue;
   item.state='DONE';item.error=null;item.nextAt=0;item.committedAt=proof.committedAt;item.writeReceipt=proof;item.savedScoreRestoration={version:RECOVERY_VERSION,providerCalls:0};item.delivery={...item.delivery,jobId:j.id,status:'RETURNED',rawId:j.rawId||j.gradeId,calls:0};
   item.resolvedTarget={...item.target,cell:j.cell,sheetId:proof.sheetId};changed.push(item);

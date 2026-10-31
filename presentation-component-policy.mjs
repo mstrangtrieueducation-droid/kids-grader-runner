@@ -52,3 +52,9 @@ export function repairQuestionFeedback(draft,snapshot={}){
 }
 
 export function questionFeedbackCandidate(job){const s=String(job.autoNotice||'');return /Chất lượng:\s*đạt(?: khoảng)?\s*\d+(?:[.,]\d+)?\s*%/iu.test(s)&&formatComplaint.test(s)&&(/\bvideo\s*\d+/iu.test(s)||/phần (?:trả lời|câu hỏi)|video (?:trả lời|câu hỏi)/iu.test(s));}
+
+export function questionCorrectionPrefix(before,job){
+ if(job.questionComponentCorrection?.policy!==COMPONENT_POLICY)return before;
+ const marker=String(before).indexOf('— NHẬN XÉT GV —');if(marker<0)return before;
+ return String(before).slice(0,marker).replace(/❌\s*CẦN NỘP LẠI\s*/giu,'✅ ĐÃ NỘP ')+'— NHẬN XÉT GV —';
+}

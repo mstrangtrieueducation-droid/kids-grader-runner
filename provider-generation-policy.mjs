@@ -15,7 +15,7 @@ export function requestFeedback({job,options,send,persist,saveArtifact,onRetry=(
  let response=send({...options,body:JSON.stringify(p)});
  if(response.getResponseCode()!==200)return response;
  let raw;try{raw=JSON.parse(response.getContentText());}catch{return response;}
- if(raw?.candidates?.[0]?.finishReason!=='RECITATION'||job.recitationRecovery?.retryReservedAt)return response;
+ if(raw?.candidates?.[0]?.finishReason!=='RECITATION'||job.recitationRecovery?.retryReservedAt||job.questionComponentCorrection)return response;
  const rawId=saveArtifact(raw);if(!rawId)throw Error('RECITATION_RESPONSE_NOT_DURABLE');
  job.recitationRecovery={policy:PROVIDER_POLICY,rawId,usage:raw.usageMetadata||null,retryReservedAt:new Date().toISOString(),maxAdditionalCalls:1};
  job.generateRequests=(Number(job.generateRequests)||1)+1;

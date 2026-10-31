@@ -1,4 +1,5 @@
 import {restoreScoredFeedback,reconcileScoredTodo} from './scored-feedback-recovery.mjs';
+import {recoverQuestionNotices} from './question-notice-recovery.mjs';
 import {openRecoveryItem} from './quarantine-recovery.mjs';
 import {isolateItem,attemptCount} from './queue-isolation.mjs';
 import {centralSheetWriter} from './central-sheet-writer.mjs';
@@ -40,6 +41,10 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   for(const cluster of config.clusters)if(!scoredRepairChecked.has(cluster.controlId)){
    let repairBeat=0;const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId),heartbeat=()=>{if(Date.now()-repairBeat<60000)return;for(const lease of leases)lease.heartbeat();repairBeat=Date.now();},repair=restoreScoredFeedback(c,g,entries,{heartbeat}),questions=restoreScoredFeedback(c,g,entries,{heartbeat,questionComponents:true});repair.errors.push(...questions.errors);
    if(!repair.errors.length)scoredRepairChecked.add(cluster.controlId);
+  }
+  if(!isolationOnly)for(const cluster of config.clusters){
+   const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId);let lastBeat=0;
+   await recoverQuestionNotices(c,g,entries,{root,deadline,stopping:()=>upgradeRequested,heartbeat:()=>{if(Date.now()-lastBeat<60000)return;for(const lease of leases)lease.heartbeat();lastBeat=Date.now();},emit:x=>console.log(JSON.stringify(x))});
   }
   durable(reconcileScoredTodo(q.items,[...entriesByControl.values()].flat()));
   // Isolate old poison before allocating a worker. Paid history is never reset.
