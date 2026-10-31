@@ -32,7 +32,7 @@ export function legacyQuestionVerdict(job,raw,snapshot,current){
  const component=assignmentComponents(snapshot).find(p=>p.role==='question_answers'&&p.partNumber===x.sourceFileIndex+1);
  if(!component||!/câu hỏi|questions?/iu.test(x.basis||'')||/đọc (?:bài viết sẵn|giấy|thoại)|prepared script/iu.test(x.basis||''))return null;
  if(current!==undefined&&(body(current)!==body(job.autoNotice)||score.test(body(current))))return null;
- return {rawId:job.rawId,rawHash:hash(raw),snapshotId:job.snapshotId,snapshotHash:hash(snapshot),sourceFileIndex:x.sourceFileIndex,declaredComponent:component.text,observedQuestionBasis:x.basis};
+ return {legacyRawArtifact:job.rawId,rawHash:hash(raw),legacySnapshotArtifact:job.snapshotId,snapshotHash:hash(snapshot),sourceFileIndex:x.sourceFileIndex,declaredComponent:component.text,observedQuestionBasis:x.basis};
 }
 export function questionCorrectionPlan(parent,raw,snapshot,current,{roster,latest,protectedCell=false,all=[]}={}){
  const proof=legacyQuestionVerdict(parent,raw,snapshot,current);

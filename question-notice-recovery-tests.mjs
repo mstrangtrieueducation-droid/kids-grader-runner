@@ -4,6 +4,8 @@ import {questionNoticeCandidate,legacyQuestionVerdict,questionCorrectionPlan,que
 import {COMPACT_VERSION} from './master-compact-output.mjs';
 import {savedFeedback} from './saved-feedback.mjs';
 import {requestFeedback} from './provider-generation-policy.mjs';
+import {hasSavedResult,hasRequest} from './universal-media.mjs';
+import {providerRetryCandidate} from './provider-retry-policy.mjs';
 const snapshot={barem:{requirements:{contract:{capture:'face',mode:'mindmap_qa'},requiredParts:['Video 1: thuyết trình theo mindmap','Video 2: trả lời đủ 5 câu hỏi']}}};
 const old={id:'synthetic-parent',status:'COMPLETED_PRESENTATION_RESUBMISSION',cls:{spreadsheetId:'synthetic-book',className:'SYNTHETIC CLASS'},route:{kind:'science',code:'SCIENCE-G1-04'},receipt:{student:'PUPIL A',className:'SYNTHETIC CLASS',code:'SCIENCE-G1-04',sourceTab:'FORM',time:'2026-10-30T10:00:00Z',links:'https://example.test/submission'},rawId:'synthetic-raw',snapshotId:'synthetic-input',generateRequests:1,physicalGenerateRequests:1,masterGenerationReserved:true,autoNotice:'❌ CẦN NỘP LẠI 30/10/2026 17:00\n— NHẬN XÉT GV —\nChưa đạt: tệp 2 chỉ quay màn hình câu hỏi.'};
 const compact={v:COMPACT_VERSION,ok:false,score:null,why:'Tệp 2 quay màn hình câu hỏi.',capture:'screen_only',fileIndex:1,visualBasis:'Tệp 2 hiển thị danh sách 5 câu hỏi, không thấy mặt học sinh.',sections:[]};
@@ -11,6 +13,7 @@ const raw={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify
 const args={roster:true,latest:true,all:[old]},original=structuredClone(old);
 assert(questionNoticeCandidate(old));assert(legacyQuestionVerdict(old,raw,snapshot,old.autoNotice));
 const child=questionCorrectionPlan(old,raw,snapshot,old.autoNotice,args);assert(child);assert.equal(child.id,questionCorrectionId(old));assert.equal(child.generateRequests,0);assert(!child.rawId);assert(!child.presentationResubmissionRequired);assert.deepEqual(old,original,'paid parent is immutable');assert(authorizedQuestionCorrection(child,[{job:old},{job:child}]));
+assert.equal(hasSavedResult(child),false,'parent artifact provenance is not the child result');assert.equal(hasRequest(child),false,'parent request is not a child reservation');assert.equal(providerRetryCandidate({...child,status:'WAITING_PROVIDER_QUOTA',generateRequests:1,error:'HTTP_429'}),false,'one new attempt cannot spawn a retry chain');
 assert.equal(questionCorrectionPlan(old,raw,snapshot,old.autoNotice,{...args,all:[old,child]}),null,'one child across reruns');
 for(const options of [{roster:false},{latest:false},{protectedCell:true}])assert.equal(questionCorrectionPlan(old,raw,snapshot,old.autoNotice,{...args,...options}),null);
 assert.equal(questionCorrectionPlan(old,raw,snapshot,old.autoNotice+' Teacher edit.',args),null);

@@ -17,7 +17,7 @@ export function providerRetryFailure(j){
  return null;
 }
 export function providerRetryCandidate(j){
- if(j.invalidResultRetry)return false; // Explicit one-new-attempt approval is not an unlimited retry chain.
+ if(j.invalidResultRetry||j.questionComponentCorrection)return false; // Explicit one-new-attempt approval is not an unlimited retry chain.
  return sourceInMasterScope(j.receipt||j.source)&&!/^IELTS\s*4[0-4]$/i.test(j.cls?.className||j.source?.className||'')&&!/^(RETURNED|DONE|COMPLETED_|SKIPPED_|SUPERSEDED_)/.test(j.status||'')
   &&!j.supersededByProviderRetry&&!j.supersededByDashboardRegrade&&!j.presentationResubmissionRequired&&!j.technicalInputFailure&&attempted(j)&&!hasProviderResult(j)&&!!providerRetryFailure(j);
 }
