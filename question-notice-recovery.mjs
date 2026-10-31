@@ -50,7 +50,7 @@ function checkCell(c,j){const cell=c.destination_(j.cls,j.route,j.receipt.studen
 // Uses the original processor, media validator, immutable raw storage and writer.
 export async function recoverQuestionNotices(c,g,entries,{root,deadline,heartbeat=()=>{},stopping=()=>false,emit=()=>{},sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true'||process.env.AUTOMATIC_GRADING_AUTHORIZED!=='true')throw Error('TRUSTED_QUESTION_RECOVERY_REQUIRED');
- const report={created:0,delivered:[],deferred:[],providerCalls:0},parents=entries.filter(e=>questionNoticeCandidate(e.job));
+ const report={created:0,delivered:[],deferred:[],providerCalls:0},parents=entries.filter(e=>questionNoticeCandidate(e.job)).sort((a,b)=>Date.parse(b.job.receipt.time)-Date.parse(a.job.receipt.time));
  for(const e of parents){if(stopping()||Date.now()>deadline-180000)break;const parent=e.job;
   try{
    heartbeat();const declared=c.masterSnapshot_(parent);if(!hasQuestionComponent(declared))continue;
