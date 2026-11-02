@@ -1,4 +1,5 @@
 import {restoreScoredFeedback,reconcileScoredTodo} from './scored-feedback-recovery.mjs';
+import {writeManifestItems} from './manifest-writer.mjs';
 import {recoverQuestionNotices} from './question-notice-recovery.mjs';
 import {openRecoveryItem} from './quarantine-recovery.mjs';
 import {isolateItem,attemptCount} from './queue-isolation.mjs';
@@ -19,8 +20,8 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
  const deadline=Date.now()+minutes*60000,release=localGuard(path.join(root,'private','runner.lock')),leases=[],workers=[],entriesByControl=new Map(),active=new Map(),haltFile=path.join(root,'private','campaign-halt');
  if(fs.existsSync(haltFile))fs.unlinkSync(haltFile);
  const saveLocal=()=>{const t=file+'.tmp';fs.writeFileSync(t,JSON.stringify(q));fs.renameSync(t,file);};
- const control=config.clusters[0].controlId,tab=table,base='https://sheets.googleapis.com/v4/spreadsheets/'+control;
- const durable=(items)=>{if(!items.length)return;g.api(base+'/values:batchUpdate','POST',{valueInputOption:'RAW',data:items.map(item=>({range:"'"+tab+"'!A"+(q.items.indexOf(item)+2)+':F'+(q.items.indexOf(item)+2),values:[[item.id,item.state,new Date().toISOString(),process.env.GITHUB_RUN_ID||'',q.membershipHash,JSON.stringify(item)]]}))});saveLocal();};
+ const control=config.clusters[0].controlId,tab=table,base='https://sheets.googleapis.com/v4/spreadsheets/'+control;let sheet;
+ const durable=(items)=>writeManifestItems(g,sheet,q,items,{runId:process.env.GITHUB_RUN_ID||'',saveLocal,emit:x=>console.log(JSON.stringify(x))});
  retainWorkerMedia(root);
  const workerCount=8,fastWorkers=6,mediaEnv=mediaLimiterEnv(root),writer=centralSheetWriter(g,{emit:x=>console.log(JSON.stringify(x))});
  let beats,providerCalls=0,preparationAdvanced=0,upgradeRequested=false;
@@ -30,7 +31,7 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   // group. A coordinator owns all native leases; workers never erase/acquire them.
   for(const cluster of config.clusters){const lease=stateStore(g,cluster.controlId);lease.acquire(deadline+60000);leases.push(lease);}
   beats=setInterval(async()=>{try{for(const l of leases)l.heartbeat();if(await mainRevisionChanged()){upgradeRequested=true;fs.writeFileSync(haltFile,'COOPERATIVE_UPGRADE_DRAIN');for(const w of workers)w.retire=true;}}catch(e){fs.writeFileSync(haltFile,'LEASE_CHECK_FAILED');for(const w of workers)w.retire=true;}},60000);
-  const book=g.book(control);let sheet=book.getSheetByName(tab);if(!sheet){sheet=book.insertSheet(tab);sheet.getRange(1,1,1,6).setValues([['itemId','state','updatedAt','runId','membershipHash','itemJson']]);}
+  const book=g.book(control);sheet=book.getSheetByName(tab);if(!sheet){sheet=book.insertSheet(tab);sheet.getRange(1,1,1,6).setValues([['itemId','state','updatedAt','runId','membershipHash','itemJson']]);}
   const existing=g.api(base+'/values/'+encodeURIComponent("'"+tab+"'!A2:F"+(q.total+1))).values||[];
   if(existing.length){const append=table==='KidsTodo'&&existing.length<q.total,oldHash=existing[0][4];if((append?existing.length>q.total:existing.length!==q.total)||existing.some((r,i)=>r[0]!==q.items[i].id||r[4]!==oldHash)||!append&&oldHash!==q.membershipHash||append&&oldHash!==validateBacklog({...q,total:existing.length,items:q.items.slice(0,existing.length),membershipHash:oldHash}).membershipHash)throw Error('DURABLE_BACKLOG_MEMBERSHIP_MISMATCH');const reopened=[];existing.forEach((r,i)=>{const saved=JSON.parse(r[5]);if(saved.id!==q.items[i].id)throw Error('DURABLE_ITEM_INVALID');const merged=table==='KidsTodo'?mergeDurableNativeItem(q.items[i],saved):saved;q.items[i]=merged;if(merged!==saved)reopened.push(merged);});if(append)durable(q.items);else if(reopened.length)durable(reopened);}
   else durable(q.items);
