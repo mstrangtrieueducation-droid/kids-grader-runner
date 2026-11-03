@@ -1,3 +1,4 @@
+import {locateArtifact} from './artifact-read-freshness.mjs';
 import {priorityCandidates,priorityClusters,isPriorityJob,priorityDrainWait,existingKidsCandidates} from './priority-kids-drain.mjs';
 import {savedDeliveryCandidates,reconcileSavedDelivery,savedDeliveryWork} from './saved-delivery-repair.mjs';
 import {prepareKidsDrain,existingSliceEnded,savedPassTracker} from './kids-intake-order.mjs';
@@ -127,7 +128,7 @@ export function buildContext(cluster){
  c.readArtifact_=id=>{
   if(savedArtifacts.has(id))return JSON.parse(savedArtifacts.get(id));
   if(!String(id).startsWith('runner:'))return JSON.parse(google.file(id).getBlob().getDataAsString());
-  let s=google.book(cluster.controlId).getSheetByName('RunnerArtifacts');if(!artifactIndexLoaded||!artifactIndex.has(id))s=indexArtifacts();const rows=artifactIndex.get(id);if(!s||!rows?.length)throw Error('RUNNER_ARTIFACT_MISSING');return JSON.parse(rows.sort((a,b)=>a.part-b.part).map(r=>s.getRange(r.row,3).getValue()).join(''));
+  locateArtifact(id,{has:x=>artifactIndexLoaded&&artifactIndex.has(x),index:indexArtifacts,book:google.book(cluster.controlId)});const s=google.book(cluster.controlId).getSheetByName('RunnerArtifacts'),rows=artifactIndex.get(id);if(!s||!rows?.length)throw Error('RUNNER_ARTIFACT_MISSING');return JSON.parse(rows.sort((a,b)=>a.part-b.part).map(r=>s.getRange(r.row,3).getValue()).join(''));
  };
  const sourceCheck=c.currentSource_;c.currentSource_=job=>{
   google.refreshFileMetadata();
