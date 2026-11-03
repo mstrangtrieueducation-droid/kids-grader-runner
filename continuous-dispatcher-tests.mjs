@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {actionableCount,dispatchDecision,watchLane} from './continuous-dispatcher.mjs';
+import {actionableCount,deadWriter,dispatchDecision,watchLane} from './continuous-dispatcher.mjs';
 const now=Date.parse('2026-10-15T01:30:00Z'),base={enabled:true,workflow:{state:'active'},runs:[{status:'completed',conclusion:'success',created_at:new Date(now-60000).toISOString()}],due:3,now};
 assert.equal(dispatchDecision(base).action,'dispatch');
 for(const status of ['in_progress','queued','pending','waiting','requested'])assert.equal(dispatchDecision({...base,runs:[{status}]}).action,'wait');
@@ -35,3 +35,35 @@ time=now;posts=[];
 await watchLane({...env,WATCH_DURATION_MS:'1'},{fetcher:async(url,options)=>new URL(url).pathname.endsWith('/continuous_dispatch.yml/runs')?response({workflow_runs:[]}):fetcher(url,options),now:()=>time,sleep:async ms=>{time+=ms;},readDue:async()=>3,emit:()=>{}});
 assert.equal(posts.length,1);assert(posts[0].pathname.endsWith('/continuous_dispatch.yml/dispatches'));assert.equal(posts[0].body.ref,'main');
 console.log('No concurrent/duplicate dispatch, fresh-work wakeup, grace period, disabled switch, same-main binding, paid/reserved/archive/retired/date guards and controller handover passed; 0 generation calls.');
+// A lapsed lease names a dead writer only for that exact run while it still looks active.
+{
+ const run={id:7,status:'in_progress'},lapsed={runId:'7',ttlMs:600000,until:now-6*60000};
+ assert.equal(deadWriter([lapsed],[run],now),run);
+ assert.equal(deadWriter([{...lapsed,until:now-4*60000}],[run],now),null,'inside grace');
+ assert.equal(deadWriter([{...lapsed,until:now+60000}],[run],now),null,'renewing');
+ assert.equal(deadWriter([null],[run],now),null,'released lease is idle');
+ assert.equal(deadWriter([{...lapsed,runId:'8'}],[run],now),null,'other run');
+ assert.equal(deadWriter([lapsed],[{id:7,status:'completed'}],now),null,'already closed');
+ assert.equal(deadWriter([lapsed],[{id:7,status:'queued'}],now),null,'not started');
+ assert.equal(deadWriter([{runId:'7',until:now-6*60000}],[run],now),null,'lease without ttl has no renewal promise');
+ let t=now,calls=[],closed=false,successor=false;
+ const f=async(url,options)=>{
+  const p=new URL(url).pathname;assert(!['PUT','PATCH','DELETE'].includes(options.method));
+  if(p.endsWith('/kids-grader-runner'))return response({private:false,owner:{login:'mstrangtrieueducation-droid'},default_branch:'main'});
+  if(p.endsWith('/grade_kids.yml'))return response({state:'active'});
+  if(p.endsWith('/continuous_dispatch.yml/runs'))return response({workflow_runs:[{id:'controller',status:'in_progress'},{id:'other',status:'pending'}]});
+  if(p.endsWith('/grade_kids.yml/runs')){return response({workflow_runs:[successor?{id:9,status:'in_progress'}:closed?{id:7,status:'completed',conclusion:'cancelled',created_at:new Date(t-3600000).toISOString(),updated_at:new Date(t).toISOString()}:run]});}
+  if(options.method==='POST'){calls.push(p.split('/').slice(-2).join('/'));if(p.endsWith('/force-cancel'))closed=true;if(p.endsWith('/grade_kids.yml/dispatches'))successor=true;return response({},p.endsWith('/dispatches')?204:202);}
+  throw Error('UNEXPECTED_ENDPOINT '+p);
+ };
+ await watchLane({...env,WATCH_DURATION_MS:String(20*60000)},{fetcher:f,now:()=>t,sleep:async ms=>{t+=ms;},readDue:async()=>2,readLeases:async()=>[lapsed],emit:()=>{}});
+ assert.deepEqual(calls.filter(c=>/cancel|grade_kids/.test(c)),['7/cancel','7/force-cancel','grade_kids.yml/dispatches'],'cancel, then force, then one successor after it closes');
+ // Healthy lease: nothing cancelled, nothing dispatched alongside the live writer.
+ calls=[];closed=false;successor=false;t=now;
+ await watchLane({...env,WATCH_DURATION_MS:String(20*60000)},{fetcher:f,now:()=>t,sleep:async ms=>{t+=ms;},readDue:async()=>2,readLeases:async()=>[{...lapsed,until:t+60000}],emit:()=>{}});
+ assert.deepEqual(calls.filter(c=>/cancel|grade_kids/.test(c)),[]);
+ // Lanes without a lease reader keep today's behaviour.
+ calls=[];closed=false;successor=false;t=now;
+ await watchLane({...env,WATCH_DURATION_MS:String(20*60000)},{fetcher:f,now:()=>t,sleep:async ms=>{t+=ms;},readDue:async()=>2,emit:()=>{}});
+ assert.deepEqual(calls.filter(c=>/cancel|grade_kids/.test(c)),[]);
+}

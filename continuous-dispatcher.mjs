@@ -19,10 +19,22 @@ export function dispatchDecision({enabled,workflow,runs,due,lastDispatchAt=0,now
  if(!latest||now-Date.parse(latest.created_at)>=scanEveryMs)return {action:'dispatch',reason:'scan_for_new_submissions'};
  return {action:'wait',reason:'idle_until_next_source_scan'};
 }
-export async function watchLane(env,{fetcher=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now,readDue,emit=x=>console.log(JSON.stringify(x))}={}){
+// GitHub can report a lost hosted runner's run as in progress for about an hour.
+// Live writers renew their lease and clear it on exit, so only a lease that lapsed
+// while its exact run still looks active names a dead writer. An empty lease is idle.
+export const DEAD_WRITER_GRACE_MS=5*MINUTE,FORCE_CANCEL_AFTER_MS=5*MINUTE,LEASE_CHECK_EVERY_MS=2*MINUTE;
+export function deadWriter(leases,runs,now=Date.now()){
+ for(const lease of leases){
+  if(!lease?.runId||!Number(lease.ttlMs)||!(Number(lease.until)+DEAD_WRITER_GRACE_MS<now))continue;
+  const run=runs.find(r=>r.status==='in_progress'&&String(r.id)===String(lease.runId));
+  if(run)return run;
+ }
+ return null;
+}
+export async function watchLane(env,{fetcher=fetch,sleep=ms=>new Promise(r=>setTimeout(r,ms)),now=Date.now,readDue,readLeases,emit=x=>console.log(JSON.stringify(x))}={}){
  const lane=env.GRADING_LANE,repo=OWNER+'/'+lane+'-grader-runner';
  if(!['kids','shadowing'].includes(lane)||env.GITHUB_REPOSITORY!==repo||env.GITHUB_ACTIONS!=='true'||!env.GITHUB_TOKEN)throw Error('UNTRUSTED_DISPATCH_RUNTIME');
- const base='https://api.github.com/repos/'+repo,workflow='grade_'+lane+'.yml',started=now(),duration=Number(env.WATCH_DURATION_MS||5*60*MINUTE),state={lastDispatchAt:0},headers={Authorization:'Bearer '+env.GITHUB_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'};
+ const base='https://api.github.com/repos/'+repo,workflow='grade_'+lane+'.yml',started=now(),duration=Number(env.WATCH_DURATION_MS||5*60*MINUTE),state={lastDispatchAt:0,lastLeaseCheckAt:0,dead:null},headers={Authorization:'Bearer '+env.GITHUB_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'};
  async function api(url,method='GET',body){const r=await fetcher(base+url,{method,headers,...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error('DISPATCH_HTTP_'+r.status);return r.status===204?null:r.json();}
  const info=await api('');if(info.private||info.owner?.login!==OWNER||env.GITHUB_REF_NAME!==info.default_branch)throw Error('DISPATCH_REPOSITORY_BINDING_FAILED');
  if(!Number.isFinite(duration)||duration<=0||duration>5*60*MINUTE)throw Error('WATCH_DURATION_INVALID');
@@ -30,6 +42,18 @@ export async function watchLane(env,{fetcher=fetch,sleep=ms=>new Promise(r=>setT
  while(now()-started<duration){
   try{
    const wf=await api('/actions/workflows/'+workflow),runs=(await api('/actions/workflows/'+workflow+'/runs?per_page=100&fresh='+now())).workflow_runs;
+   if(readLeases&&now()-state.lastLeaseCheckAt>=LEASE_CHECK_EVERY_MS&&runs.some(r=>r.status==='in_progress')){
+    state.lastLeaseCheckAt=now();
+    const dead=deadWriter(await readLeases(lane),runs,now());
+    if(dead&&state.dead?.id!==dead.id){
+     // Cancel first: a writer that is somehow alive gets its normal signal handoff.
+     await api('/actions/runs/'+dead.id+'/cancel','POST');state.dead={id:dead.id,at:now(),forced:false};
+     emit({event:'CONTINUOUS_DEAD_WRITER_CANCELLED',lane,runId:dead.id,providerCalls:0});
+    }else if(dead&&!state.dead.forced&&now()-state.dead.at>=FORCE_CANCEL_AFTER_MS){
+     await api('/actions/runs/'+dead.id+'/force-cancel','POST');state.dead.forced=true;
+     emit({event:'CONTINUOUS_DEAD_WRITER_FORCE_CANCELLED',lane,runId:dead.id,providerCalls:0});
+    }
+   }
    // The generation workflow independently evaluates the current repository
    // switch at dispatch time. A stale controller cannot enable or grade while off.
    const due=runs.some(r=>r.status!=='completed')?0:await readDue(lane);
@@ -59,5 +83,6 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
  if(bundle.lane!==lane||bundle.config.approvedRepository!==env.GITHUB_REPOSITORY||bundle.config.serviceAccount!==sa.client_email)throw Error('DISPATCH_PRIVATE_BINDING_FAILED');
  process.env.MASTER_CROSS_CLASS_SWEEP='true';const g=new Google(sa);
  const readDue=async()=>{const jobs=[];for(const id of lane==='kids'?bundle.config.clusters.map(c=>c.controlId):[bundle.config.shadowing.controlId]){const tab=lane==='kids'?'Jobs':'SHADOWING AI',rows=g.api('https://sheets.googleapis.com/v4/spreadsheets/'+id+'/values/'+encodeURIComponent("'"+tab+"'!F2:F5000")).values||[];for(const r of rows)try{jobs.push(JSON.parse(r[0]));}catch{}}return actionableCount(lane,jobs);};
- try{await watchLane(env,{readDue});}catch(e){console.error(JSON.stringify({event:'CONTINUOUS_DISPATCH_FAILED',code:/^[A-Z0-9_]+$/.test(e.message)?e.message:'CONTROLLER_FAILED',providerCalls:0}));process.exitCode=1;}
+ const readLeases=async()=>bundle.config.clusters.map(c=>{try{return JSON.parse(g.api('https://sheets.googleapis.com/v4/spreadsheets/'+c.controlId+'/values/'+encodeURIComponent("'RunnerState'!B1")).values?.[0]?.[0]||'null');}catch{return null;}});
+ try{await watchLane(env,{readDue,...(lane==='kids'?{readLeases}:{})});}catch(e){console.error(JSON.stringify({event:'CONTINUOUS_DISPATCH_FAILED',code:/^[A-Z0-9_]+$/.test(e.message)?e.message:'CONTROLLER_FAILED',providerCalls:0}));process.exitCode=1;}
 }
