@@ -12,7 +12,7 @@ import fs from 'node:fs';import path from 'node:path';import {fork} from 'node:c
 import {validateBacklog,selectExisting,matchesTarget,claimAllowed,readNativeQueue,campaignClosed,cacheFirstItems,resultNativeClaim} from './frozen-backlog-policy.mjs';
 import {stateStore,localGuard} from './runner-state.mjs';
 import {preparationProgress,preparationRank,mayRequeuePreparation,retryProgressTracker,NATIVE_TODO_SCHEMA,workerOwnsPreparation,mergeDurableNativeItem} from './persistent-kids-queue.mjs';
-const scoredRepairChecked=new Set();
+const scoredRepairChecked=new Set(),questionNoticesChecked=new Set();
 const root=path.dirname(fileURLToPath(import.meta.url)),config=JSON.parse(process.env.RUNNER_CONFIG||'{}');
 export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',isolationOnly=false}={}){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!=='mstrangtrieueducation-droid/kids-grader-runner'||process.env.GRADING_ENABLED!=='true')throw Error('TRUSTED_ENABLED_CAMPAIGN_REQUIRED');
@@ -44,9 +44,11 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
    let repairBeat=0;const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId),heartbeat=()=>{if(Date.now()-repairBeat<60000)return;for(const lease of leases)lease.heartbeat();repairBeat=Date.now();},repair=restoreScoredFeedback(c,g,entries,{heartbeat}),questions=restoreScoredFeedback(c,g,entries,{heartbeat,questionComponents:true});repair.errors.push(...questions.errors);
    if(!repair.errors.length)scoredRepairChecked.add(cluster.controlId);
   }
-  if(!isolationOnly)for(const cluster of config.clusters){
+  // Legacy correction only: one pass per run, not one before every drain.
+  if(!isolationOnly)for(const cluster of config.clusters)if(!questionNoticesChecked.has(cluster.controlId)){
    const c=buildContext(cluster),entries=entriesByControl.get(cluster.controlId);let lastBeat=0;
    await recoverQuestionNotices(c,g,entries,{root,deadline,stopping:()=>upgradeRequested,heartbeat:()=>{if(Date.now()-lastBeat<60000)return;for(const lease of leases)lease.heartbeat();lastBeat=Date.now();},emit:x=>console.log(JSON.stringify(x))});
+   questionNoticesChecked.add(cluster.controlId);
   }
   durable(reconcileScoredTodo(q.items,[...entriesByControl.values()].flat()));
   // Isolate old poison before allocating a worker. Paid history is never reset.

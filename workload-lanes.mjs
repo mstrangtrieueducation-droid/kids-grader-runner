@@ -3,6 +3,13 @@ import {sourceIds} from './universal-media.mjs';
 export const FAST_BYTES=50_000_000;
 export const SERVICE_MS=300*60000;
 export const ITEM_MS=5*60000;
+// Keep handovers out of the evening peak (18:30-23:15 Vietnam): a successor needs
+// about 20 minutes before its first claim. Too short a run keeps the normal end.
+const DAY_MS=24*60*60000,RUSH_START_MS=(11*60+30)*60000,RUSH_END_MS=(16*60+15)*60000,MIN_SHORT_SERVICE_MS=45*60000;
+export function serviceDeadline(start=Date.now()){
+ const end=start+SERVICE_MS,day=Math.floor(end/DAY_MS)*DAY_MS,rushStart=day+RUSH_START_MS,rushEnd=day+RUSH_END_MS;
+ return end>rushStart&&end<rushEnd&&rushStart-start>=MIN_SHORT_SERVICE_MS?rushStart:end;
+}
 export function mediaWorkload(job){
  if(job.rawId||job.gradeId)return {lane:'fast',bytes:0,saved:true};
  const media=(job.media||[]).filter(m=>!m.isReference),files=media.length?media:job.sourceIntake?.metadataFiles?.length?job.sourceIntake.metadataFiles:job.sourceIntake?.files||[];
