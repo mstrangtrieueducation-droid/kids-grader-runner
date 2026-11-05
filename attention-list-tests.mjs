@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import {attentionRows,attentionMessage,writeAttentionList,ATTENTION_TAB} from './attention-list.mjs';
+import {historyRecheckDue} from './continuous-intake.mjs';
+import {unattendedJob} from './master-cross-class-sweep.mjs';
+const now=Date.parse('2026-11-04T12:00:00Z'),ago=h=>new Date(now-h*3600000).toISOString();
+const row=(student,code,time,reason,detail)=>({className:'KIDS 1',student,code,time,reason,detail});
+const rows=attentionRows({deferred:[row('A','Peppa-17',ago(30),'NATIVE_ROW_DEFERRED','BAREM_REQUIRES_REVIEW'),row('B','D2-Tiết 21',ago(5),'NATIVE_ASSIGNMENT_PENDING','DESTINATION_COLUMN_MISSING'),row('C','FF1-Tiết 2',ago(1),'NATIVE_ASSIGNMENT_PENDING','DESTINATION_COLUMN_MISSING'),row('D','DE-1',ago(9),'NATIVE_RECEIPT_RECHECK',''),row('B','D2-Tiết 21',ago(20),'NATIVE_ASSIGNMENT_PENDING','DESTINATION_COLUMN_MISSING')],attention:{a:{className:'KIDS 2',student:'E',code:'DE-30',time:ago(40),issue:'PAID_NO_RESULT'},b:{className:'KIDS 2',student:'F',code:'DE-31',time:ago(3),issue:'OPEN_TOO_LONG'},c:{className:'KIDS 2',student:'G',code:'DE-32',time:ago(7),issue:'OPEN_TOO_LONG'}}},{now});
+assert.deepEqual(rows.map(r=>r[1]),['E','A','G','B'],'oldest first; recent, rechecks and superseded rows are not listed');
+assert.equal(rows.find(r=>r[1]==='B')[3],ago(5),'only the newest submission of a task');
+assert.match(attentionMessage('BAREM_REQUIRES_REVIEW')[0],/lời chuẩn/);assert.match(attentionMessage('PAID_NO_RESULT')[1],/không gọi lại Gemini/);
+for(const code of ['BAREM_NOT_FOUND','DESTINATION_COLUMN_MISSING','STUDENT_NOT_FOUND_OR_AMBIGUOUS','SYSTEM_HELD','OPEN_TOO_LONG','WHATEVER'])for(const text of attentionMessage(code))assert.doesNotMatch(text,/nộp lại/i,'the list never asks a family to resubmit');
+const calls=[],g={book:()=>({getSheetByName:name=>{assert.equal(name,ATTENTION_TAB);return {};}}),api:(url,method,body)=>calls.push({url:decodeURIComponent(url),method,body})};
+assert.equal(writeAttentionList(g,'control',[['KIDS 1','A','Peppa-17',ago(1),'x','y','z']],{now,previousCount:3}),1);
+assert.match(calls[0].url,/A3:H4':?.*:clear|A3:H4:clear/);assert.equal(calls[1].method,'PUT');assert.equal(calls[1].body.values.length,2);assert.match(calls[1].url,/valueInputOption=RAW/);
+assert.equal(calls[1].body.values[1][1],'KIDS 1');
+const at=vn=>Date.parse(vn+'+07:00');
+assert(historyRecheckDue({},at('2026-11-05T01:00:00')));assert(!historyRecheckDue({},at('2026-11-05T20:00:00')),'never starts in the evening queue');
+assert(!historyRecheckDue({historyResetAt:at('2026-11-05T00:30:00')},at('2026-11-05T03:00:00')),'once a day');assert(historyRecheckDue({historyResetAt:at('2026-11-04T00:30:00')},at('2026-11-05T03:00:00')));
+const receipt={time:ago(1)},old={time:ago(10)};
+assert.equal(unattendedJob({status:'READY',generateRequests:1},receipt,now),'PAID_NO_RESULT','paid without a saved result: a person must see it');
+assert.equal(unattendedJob({status:'WAITING_MODEL_ACCESS'},receipt,now),'SYSTEM_HELD');
+assert.equal(unattendedJob({status:'SYSTEM_GRADING_ERROR'},receipt,now),'SYSTEM_HELD');
+assert.equal(unattendedJob({status:'READY'},receipt,now),'');assert.equal(unattendedJob({status:'READY'},old,now),'OPEN_TOO_LONG');
+const {mayReopenNotice,resubmittedAfterNotice}=await import('./sheet-truth-state.mjs'),{createMasterSweep}=await import('./master-cross-class-sweep.mjs'),{mediaDuration,screenFrameTimes}=await import('./phonics-frame.mjs');
+const src={className:'KIDS 1',student:'P',code:'DE-1',at:'2026-10-28T12:40:01.346Z',time:'2026-10-28T12:40:01.346Z'},noticeCell='✅ ĐÃ NỘP\n28/10/2026 19:40\n\n— NHẬN XÉT GV —\n❌ CẦN NỘP LẠI — Video/Audio của con không có tiếng đọc bài.',later={...src,at:'2026-10-30T03:00:00.000Z',time:'2026-10-30T03:00:00.000Z'};
+const noticeJob={id:'n',status:'COMPLETED_UNASSESSABLE',receipt:src,autoNotice:noticeCell};
+assert(!resubmittedAfterNotice(src,noticeCell,[]),'seconds on the Form time do not make the noticed submission a resubmission');
+assert(!resubmittedAfterNotice(src,noticeCell,[noticeJob]));assert(resubmittedAfterNotice(later,noticeCell,[noticeJob]));assert(resubmittedAfterNotice(later,noticeCell,[]));
+assert(!resubmittedAfterNotice(later,'✅ ĐÃ NỘP\n28/10/2026 19:40\n\n— NHẬN XÉT GV —\nChất lượng: đạt khoảng 85%.',[]));
+assert(!mayReopenNotice(later,noticeCell,[noticeJob]));assert(mayReopenNotice(later,noticeCell,[noticeJob],true),'the teacher checkbox still decides');
+const priorSweep=process.env.MASTER_CROSS_CLASS_SWEEP,priorTruth=process.env.SHEET_TRUTH_SYNC;process.env.MASTER_CROSS_CLASS_SWEEP='true';process.env.SHEET_TRUTH_SYNC='true';
+for(const cellText of [noticeCell,'❌ CẦN NỘP LẠI 28/10/2026 19:40\n— NHẬN XÉT GV —\nChất lượng: Chưa đạt (Yêu cầu quay lại).\n• Lý do yêu cầu nộp lại: chỉ quay màn hình.']){
+ let enqueued=0,writes=0;const jobsNow=[{job:structuredClone(noticeJob),row:2}],cell={getDisplayValue:()=>cellText,getFormula:()=>'',getDataValidation:()=>null,setRichTextValue:()=>writes++};
+ const sweep=createMasterSweep({google:{book:()=>({cache:new Map(),getSheetByName:()=>null}),preloadSource(){}},lane:'kids',controlId:'control',classes:[{className:'KIDS 1',spreadsheetId:'book'}],entries:[{source:later,cls:{className:'KIDS 1',spreadsheetId:'book'}}],findJob:()=>undefined,resolve:()=>({cell}),hasFeedback:text=>!/Yêu cầu quay lại/.test(text)&&/NHẬN XÉT GV —\n\S/.test(text),enqueue:()=>{enqueued++;throw Error('MUST_NOT_ENQUEUE');},save:()=>{},allJobs:jobsNow,emit:()=>{}});
+ try{sweep.scan();}catch{}
+ const state=[...sweep.states.values()][0];assert.equal(enqueued,0,'a resubmission creates no model job');assert.equal(writes,0,'the notice stays in the class cell');assert.equal(state.attention,'RESUBMITTED_AFTER_NOTICE');assert.equal(state.outcome,'existing');
+}
+process.env.MASTER_CROSS_CLASS_SWEEP=priorSweep;process.env.SHEET_TRUTH_SYNC=priorTruth;
+const listed=attentionRows({attention:{r:{className:'KIDS 1',student:'P',code:'DE-1',time:ago(0.1),issue:'RESUBMITTED_AFTER_NOTICE'}}},{now});assert.equal(listed.length,1,'staff see a resubmission at once');assert.match(listed[0][5],/Nhân viên chấm tay, không gọi Gemini/);
+assert.equal(mediaDuration({ffmpeg:'x',input:'f',known:120,run:()=>{throw Error('unused');}}),120);
+assert.equal(mediaDuration({ffmpeg:'x',input:'f',known:NaN,run:()=>({stderr:'  Duration: 00:03:56.66, start: 0.000000'})}),236.66);
+assert(Number.isNaN(mediaDuration({ffmpeg:'x',input:'f',known:NaN,run:()=>({stderr:'no header'})})));
+assert.equal(screenFrameTimes(mediaDuration({ffmpeg:'x',input:'f',known:NaN,run:()=>({stderr:'Duration: 00:03:56.66'})})).length,4,'a fresh upload gets all frames, not one');
+console.log('PASS attention list shows only overdue unanswered work, oldest first, in plain language, never asks a family to resubmit.');

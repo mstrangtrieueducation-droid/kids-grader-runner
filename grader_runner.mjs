@@ -14,7 +14,7 @@ import {installKidsPreprocessing} from './automatic-preprocessing.mjs';
 import {installCriticalHomeworkPolicy,verifyLiveCriticalTarget,criticalPriorityWork} from './critical-homework-policy.mjs';
 import {installFeedbackAlignment} from './feedback-alignment.mjs';
 import {SCREEN_GROUNDING_VERSION} from './screen-grounding.mjs';
-import {extractScreenFrames,screenFramesReady} from './phonics-frame.mjs';
+import {extractScreenFrames,screenFramesReady,mediaDuration} from './phonics-frame.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue,sourceRepairQueue,deferFleetMaintenance} from './automatic-work-queue.mjs';
 import {installSubmissionAssignmentScope} from './submission-assignment-scope.mjs';
@@ -23,6 +23,7 @@ import {installKidsModelAccessRecovery} from './kids-model-access-recovery.mjs';
 import {installKidsProviderRetry} from './kids-provider-retry.mjs';
 import {installTimelyKidsQueue} from './timely-kids-queue.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
+import {installStampedDestination} from './lesson-stamp-destination.mjs';
 import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
 import {prepareKidsMasterSweep,installMasterScoreProtection,hasHostedKidsCache} from './master-kids-sweep.mjs';
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
@@ -179,6 +180,7 @@ export function buildContext(cluster){
  installContentRouting(c,catalog,{refresh:j=>{google.books.get(j.cls.spreadsheetId)?.cache.clear();},lock:j=>tryFileLock(path.join(cache,'locks','student-'+c.hash_([j.cls.spreadsheetId,c.norm_(j.receipt.student)])+'.lock')),onCall:()=>{paidCalls++;},emit});
  installMasterKids(c,catalog,{emit});
  installLinkedDestinationBindings(c,{google,config});
+ installStampedDestination(c);
  installKidsAppleInputRecovery(c,{g:google,root,ffmpeg,emit});
  installTeacherApprovalGuards(c,{g:google,root,ffmpeg,emit,session:{finish:j=>c.teacherApprovalSession_?.finish(j)}});
  installMasterScoreProtection(c);
@@ -327,12 +329,12 @@ function prepareMedia(c,job,m,save,deadline,originalMedia){
   m.runnerDownloadBytes=offset;save();if(offset<m.size)return null;fs.renameSync(partial,original);
  }
  if(needsScreenFrame&&!screenFramesReady(m)){
-  const duration=Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000;
+  const duration=mediaDuration({ffmpeg,input:original,known:Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000});
   m.runnerScreenFrames=extractScreenFrames({ffmpeg,input:original,output:path.join(cache,tag+'.scope.jpg'),durationSeconds:duration});
   m.screenGroundingCapture={version:SCREEN_GROUNDING_VERSION,sourceId:m.id,modified:m.modified,status:m.runnerScreenFrames.length?'available':'unavailable'};save();
  }
  if(needsFrame&&!frameAvailable()&&!m.visualExtractionFailed){
-  const output=path.join(cache,tag+'.context.jpg'),duration=Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000;
+  const output=path.join(cache,tag+'.context.jpg'),duration=mediaDuration({ffmpeg,input:original,known:Number(google.fileMeta(m.id).videoMediaMetadata?.durationMillis)/1000});
   try{if(job.route.kind==='phonics')m.runnerPdfFrame=extractPhonicsFrame({ffmpeg,input:original,output,durationSeconds:duration});else{m.runnerContextFrames=extractPresentationFrames({ffmpeg,input:original,output,durationSeconds:duration});if(!m.runnerContextFrames.length)m.visualExtractionFailed=true;}}catch{m.visualExtractionFailed=true;}save();
  }
  if(audioFirst){

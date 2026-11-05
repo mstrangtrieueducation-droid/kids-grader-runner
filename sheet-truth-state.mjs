@@ -13,8 +13,14 @@ export function receiptTimeFromCell(text){const m=String(text||'').match(/(\d{1,
 export function mayReopenNotice(source,text,jobs=[],approved=false){
  if(!isResubmissionFeedback(text))return false;if(approved)return true;
  if(jobs.some(j=>sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source)&&canRecheckYouTubeNotice(j,text)))return true;
+ // Teacher05Nov: work resubmitted after any notice is graded by staff, never sent to the model again.
+ return false;
+}
+// Whole minutes: the class stamp carries no seconds, so the noticed submission itself must not look newer.
+export function resubmittedAfterNotice(source,text,jobs=[]){
+ if(!isResubmissionFeedback(text))return false;
  const held=jobs.filter(x=>sourceTask(x.source||x.receipt)===sourceTask(source)&&isResubmissionFeedback(x.autoNotice||'')).map(x=>sourceTime(x.source||x.receipt));
- const previous=held.length?Math.max(...held):receiptTimeFromCell(text);return previous>0&&sourceTime(source)>previous;
+ const previous=held.length?Math.max(...held):receiptTimeFromCell(text),minute=t=>Math.floor(t/60000);return previous>0&&minute(sourceTime(source))>minute(previous);
 }
 export function sourceInputReason(j){
  const s=j.sourceIntake;if(s?.reason==='DRIVE_LINK_UNAVAILABLE'||s?.reason==='DRIVE_ACCESS_DENIED')return 'Link video/file hoặc thư mục hiện không truy cập được. Vui lòng mở quyền “Bất kỳ ai có đường liên kết” hoặc nộp lại link video/file mở được để cô nhận xét.';if(s?.state==='missing')return 'Bài nộp chưa đính kèm link video/file. Vui lòng nộp lại kèm tệp hoặc link bài.';

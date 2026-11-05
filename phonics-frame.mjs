@@ -8,6 +8,11 @@ export function extractPhonicsFrame({ffmpeg,input,output,durationSeconds,timeSec
  if(result.status!==0||!fs.existsSync(output)||!fs.statSync(output).size||fs.statSync(output).size>1024*1024)throw Error('KIDS_PHONICS_FRAME_UNAVAILABLE');
  return {path:output,timeSeconds:time,bytes:fs.statSync(output).size,mime:'image/jpeg'};
 }
+// Drive reports no duration for a just-uploaded video; the downloaded file always has one.
+export function mediaDuration({ffmpeg,input,known,run=spawnSync}){
+ if(Number.isFinite(known)&&known>0)return known;
+ try{const t=String(run(ffmpeg,['-nostdin','-i',input],{encoding:'utf8',timeout:60000,windowsHide:true}).stderr||'').match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);return t?+t[1]*3600+ +t[2]*60+ +t[3]:known;}catch{return known;}
+}
 export function extractPresentationFrames(options){
  const times=Number.isFinite(options.durationSeconds)&&options.durationSeconds>0?[0.15,0.5,0.8].map(n=>Math.round(options.durationSeconds*n*100)/100):[10,40],frames=[];
  for(const [i,timeSeconds] of times.entries())try{const f=extractPhonicsFrame({...options,timeSeconds,output:options.output.replace(/\.jpg$/,`-${i+1}.jpg`)});if(!frames.some(x=>x.timeSeconds===f.timeSeconds))frames.push(f);}catch{}

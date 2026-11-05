@@ -1,8 +1,10 @@
 import {repairMediaSourceNotice} from './media-source-notice-recovery.mjs';
 import {markNotCurrent} from './current-roster-policy.mjs';
-import {isResubmissionFeedback} from './sheet-truth-state.mjs';
+import {isResubmissionFeedback,resubmittedAfterNotice} from './sheet-truth-state.mjs';
 import {cleanupClassWaiting,seedSheetTruth,recoverArchivedRaw,sheetTruthEnabled,mayReopenNotice} from './sheet-truth-sync.mjs';
 import {sourceInMasterScope,MASTER_SUBMISSIONS_SINCE} from './master-submission-scope.mjs';
+import {sourceTime} from './sheet-truth-state.mjs';
+import {ALREADY_REVIEWED} from './lesson-stamp-destination.mjs';
 import {createHash} from 'node:crypto';
 import {generationSpent} from './master-policy.mjs';
 import {Sheet,gridMaster} from './google-adapter.mjs';
@@ -14,6 +16,8 @@ const typed=v=>typeof v==='number'?{numberValue:v}:{stringValue:String(v??'')};
 const cells=rows=>rows.map(row=>({values:row.map(v=>({userEnteredValue:typed(v)}))}));
 const issueError=e=>/STUDENT|DESTINATION|TARGET_(?:COLUMN|TAB)|CLASS_(?:NOT_CONFIGURED|UNCONFIGURED)|SOURCE_HEADER/.test(e.message||'');
 export function cachedOrUnpaid(job){return !!job.rawId||!!job.gradeId||!generationSpent(job)&&!job.approvedGenerateRequests&&!job.apiUsage&&!job.usage&&!job.technicalInputFailure&&!job.presentationResubmissionRequired&&!/SYSTEM_AUDIO_ERROR|WAITING_MODEL_ACCESS/.test(job.status);}
+// An empty class cell behind an existing job: paid work is never called again, so a person must see it.
+export const unattendedJob=(job,source,now=Date.now())=>!cachedOrUnpaid(job)?(generationSpent(job)?'PAID_NO_RESULT':'SYSTEM_HELD'):job.status==='SYSTEM_GRADING_ERROR'?'SYSTEM_HELD':now-sourceTime(source)>=6*3600000?'OPEN_TOO_LONG':'';
 export function createMasterSweep({google,lane,controlId,classes,entries,resolve,hasFeedback,findJob,enqueue,save,readyStatus='READY',freshStatus='READY',allJobs=[],isApproved=()=>false,keepOccupiedJob=()=>false,isCurrentStudent=()=>true,emit=()=>{}}){
  let visibleWrites=0;const batches=new Set(),blankBefore=new Set();
  const issues=new Map(),states=new Map(),summary=new Map(classes.map(x=>[x.className,{className:x.className,newReturned:0,existing:0,assignment:0,pending:0,inactive:0}]));
@@ -27,6 +31,10 @@ export function createMasterSweep({google,lane,controlId,classes,entries,resolve
     if(recovery.recovered){existing=recovery.entry;j=existing.job;item.jobId=j.id;text=dst.cell.getDisplayValue();emit({event:'SOURCE_RESOLVER_NOTICE_REOPENED',lane,providerCalls:0});}
    }
    const formula=dst.cell?.getFormula?.()||dst.formula||'';
+   if(isResubmissionFeedback(text)&&!(j&&isApproved(j,existing?.row))&&(j?.staffResubmission||resubmittedAfterNotice(s,text,allJobs.map(x=>x.job||x)))){
+    if(mutate){item.attention='RESUBMITTED_AFTER_NOTICE';if(j&&!j.staffResubmission&&!j.rawId&&!j.gradeId&&!generationSpent(j)&&['QUEUED','READY','WAITING_INPUT','WAITING_MEDIA','RETRY','NEEDS_REVIEW','BLOCKED'].includes(j.status)){j.staffResubmission={policy:'teacher-staff-resubmission-20261105',at:new Date().toISOString(),previousStatus:j.status,providerCalls:0};j.status='COMPLETED_NEEDS_RESUBMISSION';j.error='';j.nextAt=0;save(j,existing.row);}}
+    return 'existing';
+   }
    if(mutate&&sheetTruthEnabled()&&!String(text||'').trim())blankBefore.add(item.key);
    if(mutate&&sheetTruthEnabled()&&dst.cell&&!formula&&!dst.cell.getDataValidation?.()){
     const approved=!!j&&isApproved(j,existing?.row),reopen=mayReopenNotice(s,text,allJobs.map(x=>x.job||x),approved);
@@ -35,11 +43,11 @@ export function createMasterSweep({google,lane,controlId,classes,entries,resolve
    }if(dst.cell?.sheet?.book?.id&&dst.cell.r&&dst.cell.c)item.targetKey=[dst.cell.sheet.book.id,dst.cell.sheet.getSheetId(),dst.cell.r,dst.cell.c].join('|');
    if(hasFeedback(text,formula)||formula||dst.cell?.getDataValidation?.()){if(mutate&&sheetTruthEnabled()&&j&&!j.rawId&&!j.gradeId&&!keepOccupiedJob(j)&&['QUEUED','READY','WAITING_INPUT','WAITING_MEDIA','RETRY','NEEDS_REVIEW','BLOCKED','PROCESSING'].includes(j.status)){j.status=isResubmissionFeedback(text)?'COMPLETED_NEEDS_RESUBMISSION':'SKIPPED_EXISTING_FEEDBACK';if(isResubmissionFeedback(text))j.autoNotice=text;j.error='';j.nextAt=0;j.sheetTruth={...j.sheetTruth,version:'teacher-sheet-truth-20261023',state:'EXISTING_PROTECTED',actualCellCheckedAt:new Date().toISOString()};save(j,existing.row);}return countable(j,text)?'newReturned':'existing';}
    if(mutate){
-    if(j){if(cachedOrUnpaid(j)){let changed=!j.masterSweep;const nextStatus=j.rawId||j.gradeId?readyStatus:freshStatus;j.masterSweep ||= {version:SWEEP_VERSION,baseline:'EMPTY',mode:j.rawId?'CACHE':'NEW',at:new Date().toISOString()};if((j.rawId||j.gradeId||j.sheetTruth?.reopenedFor||/^(SKIPPED_|NEEDS_ASSIGNMENT|NEEDS_REVIEW|BLOCKED|STALE|RETURNED|DONE)/.test(j.status))&&(j.status!==nextStatus||j.error||j.nextAt)){j.status=nextStatus;j.error='';j.nextAt=0;changed=true;}if(changed)save(j,existing.row);}}
+    if(j){if(cachedOrUnpaid(j)){let changed=!j.masterSweep;const nextStatus=j.rawId||j.gradeId?readyStatus:freshStatus;j.masterSweep ||= {version:SWEEP_VERSION,baseline:'EMPTY',mode:j.rawId?'CACHE':'NEW',at:new Date().toISOString()};if((j.rawId||j.gradeId||j.sheetTruth?.reopenedFor||/^(SKIPPED_|NEEDS_ASSIGNMENT|NEEDS_REVIEW|BLOCKED|STALE|RETURNED|DONE)/.test(j.status))&&(j.status!==nextStatus||j.error||j.nextAt)){j.status=nextStatus;j.error='';j.nextAt=0;changed=true;}if(changed)save(j,existing.row);}item.attention=unattendedJob(j,s);}
     else{const created=enqueue(s,cls);item.jobId=created.job.id;created.job.masterSweep={version:SWEEP_VERSION,baseline:'EMPTY',mode:'NEW',at:new Date().toISOString()};save(created.job,created.row);}
    }
    return 'pending';
-  }catch(e){if(issueError(e)){if(mutate){const bucket=issues.get(cls?.spreadsheetId)||{cls,items:new Map()};bucket.items.set(item.key,{...item,reason:e.message,jobId:j?.id||''});issues.set(cls?.spreadsheetId,bucket);}return 'assignment';}item.error=e.message;return 'pending';}
+  }catch(e){if(issueError(e)){if(mutate&&e.message!==ALREADY_REVIEWED){const bucket=issues.get(cls?.spreadsheetId)||{cls,items:new Map()};bucket.items.set(item.key,{...item,reason:e.message,jobId:j?.id||''});issues.set(cls?.spreadsheetId,bucket);}item.issue=e.message;return 'assignment';}item.error=e.message;return 'pending';}
  }
  function scan(){for(const entry of entries){if(!sourceInMasterScope(entry.source))continue;const item=itemState(entry.source,entry.cls);item.outcome=inspect(item,true);}if(sheetTruthEnabled())cleanupClassWaiting({google,classes,emit});for(const b of batches)try{b.flush();}catch(e){emit({event:'SHEET_TRUTH_FLUSH_DEFERRED',providerCalls:0});}emit({event:'MASTER_SWEEP_SCANNED',lane,classes:summary.size,submissions:states.size,blankBefore:blankBefore.size,visibleWrites,providerCalls:0});return states.size;}
  function refresh(){for(const r of summary.values())Object.assign(r,{newReturned:0,existing:0,assignment:0,pending:0,inactive:0});const unique=new Map(),rank={newReturned:0,existing:1,pending:2,assignment:3,inactive:4};for(const item of states.values()){item.outcome=inspect(item,false);const key=item.targetKey||item.key,prior=unique.get(key);if(!prior||rank[item.outcome]<rank[prior.outcome])unique.set(key,item);}for(const item of unique.values())summary.get(item.source.className)[item.outcome]++;return [...summary.values()];}

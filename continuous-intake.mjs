@@ -7,8 +7,13 @@ import {gridMaster} from './google-adapter.mjs';
 import {stateStore} from './runner-state.mjs';
 import {readNativeQueue} from './frozen-backlog-policy.mjs';
 import {prepareKidsMasterSweep} from './master-kids-sweep.mjs';
+import {ALREADY_REVIEWED} from './lesson-stamp-destination.mjs';
+import {attentionRows} from './attention-list.mjs';
 
 export const INTAKE_INTERVAL=10*60000;
+export const HISTORY_RECHECK=24*3600000;
+// Row-by-row Form re-reading competes with the evening queue; start it overnight only.
+export const historyRecheckDue=(state,now=Date.now())=>now-(state?.historyResetAt||0)>=HISTORY_RECHECK&&new Date(now+7*3600000).getUTCHours()<6;
 export const decodeIntakeState=value=>JSON.parse(value?.startsWith('gz:')?gunzipSync(Buffer.from(value.slice(3),'base64')).toString('utf8'):value||'{"tabs":{}}');
 export function encodeIntakeState(state,{allowLarge=false}={}){const text=JSON.stringify(state),encoded=text.length>12000?'gz:'+gzipSync(text).toString('base64'):text;if(!allowLarge&&encoded.length>32000)throw Error('NATIVE_INTAKE_CURSOR_CAPACITY');return encoded;}
 export function writeIntakeCheckpoint(state,append){const value=encodeIntakeState(state,{allowLarge:true});if(value.length<=32000)return value;const parts=Array.from({length:Math.ceil(value.length/30000)},(_,i)=>value.slice(i*30000,(i+1)*30000)),sha=createHash('sha256').update(value).digest('hex'),start=append(parts,sha);if(!Number.isInteger(start)||start<1)throw Error('INTAKE_CHECKPOINT_APPEND_UNCONFIRMED');return 'parts:v1:'+JSON.stringify({start,count:parts.length,sha});}
@@ -58,6 +63,8 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
   properties=new Map(Object.entries(leases[0].initial));let state;
   try{state=readIntakeCheckpoint(properties.get(cursorKey),(start,count,sha)=>{const s=g.book(config.clusters[0].controlId).getSheetByName('[KIDS_INTAKE_CHECKPOINTS]');if(!s)throw Error('INTAKE_CHECKPOINT_TAB_MISSING');const rows=s.getRange(start,1,count,3).getValues();if(rows.some((r,i)=>r[0]!==sha||Number(r[1])!==i))throw Error('INTAKE_CHECKPOINT_PART_IDENTITY');return rows.map(r=>r[2]);});}catch{throw Error('NATIVE_INTAKE_CURSOR_INVALID');}
   if(!intakeDue(state,now()))return {due:false,providerCalls:0};
+  // A Form row that once looked settled gets one more look each day.
+  if(historyRecheckDue(state,now())){state.historyBefore={};state.historyResetAt=now();}
   // Child workers and the teacher may have written since the previous cycle.
   // Intake must inspect current native class cells, never the parent's old grid.
   g.invalidate();
@@ -74,8 +81,8 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
   const ledgerClasses=Array.from({length:Math.min(2,classOrder.length)},(_,i)=>classOrder[(classStart+i)%classOrder.length]);
   const groups=new Map();for(const item of contexts){if(!groups.has(item.source))groups.set(item.source,[]);groups.get(item.source).push(item);}
   let observed=0,handled=0,added=0,more=false,failures=0;const next=structuredClone(state);next.tabs ||= {};next.historyBefore ||= {};next.ledgerClassCursor=(classStart+ledgerClasses.length)%Math.max(1,classOrder.length);
-  const deferredKey=x=>[x.source,x.tab,x.row,x.controlId].join('|'),deferred=new Map((state.deferred||[]).map(x=>[deferredKey(x),x]));
-  const defer=(source,r,cluster,reason)=>{const x={source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId,reason,nextAt:now()+INTAKE_INTERVAL};deferred.set(deferredKey(x),x);failures++;};
+  const deferredKey=x=>[x.source,x.tab,x.row,x.controlId].join('|'),deferred=new Map((state.deferred||[]).filter(x=>x.reason!=='NATIVE_ISSUE_WRITE_DEFERRED').map(x=>[deferredKey(x),x]));
+  const defer=(source,r,cluster,reason,detail)=>{const x={source,tab:r.sourceTab,row:r.row,controlId:cluster.controlId,reason,nextAt:now()+INTAKE_INTERVAL,className:r.className,student:r.student,code:r.code,time:r.time,detail};deferred.set(deferredKey(x),x);failures++;};
   for(const [source,members] of groups){
    const book=g.book(source);book.refresh?.();
    const tabs=[...new Set(members.flatMap(x=>x.tabs))],plans=[];
@@ -130,14 +137,23 @@ export async function intakeNewKidsReceipts({config,google:g,buildContext,emit=(
      const sweep=makeSweep(c,cluster,g,{emit,receipts:relevant}),issues=sweep.flushIssues();
      batch.flush();
      added+=Number(sweep.intakeAdded)||0;
-     if(issues.failed.length)for(const r of relevant)defer(source,r,cluster,'NATIVE_ISSUE_WRITE_DEFERRED');
-     for(const item of sweep.states.values())if(item.error||item.outcome==='assignment')defer(source,item.source,cluster,item.error?'NATIVE_ROW_DEFERRED':'NATIVE_ASSIGNMENT_PENDING');
+     // The hidden issue tab is a courtesy copy. Its failure says nothing about the receipts themselves.
+     if(issues.failed.length)emit({event:'NATIVE_ISSUE_WRITE_FAILED',classes:issues.failed.map(x=>x.className),errors:issues.failed.map(x=>String(x.error||'').slice(0,80)),providerCalls:0});
+     next.attention ||= {};
+     for(const item of sweep.states.values()){
+      const s=item.source,key=[s.className,s.student,s.code].join('|');
+      if(item.issue===ALREADY_REVIEWED){delete next.attention[key];continue;}
+      if(item.error||item.outcome==='assignment')defer(source,s,cluster,item.error?'NATIVE_ROW_DEFERRED':'NATIVE_ASSIGNMENT_PENDING',item.error||item.issue);
+      if(item.attention)next.attention[key]={className:s.className,student:s.student,code:s.code,time:s.time,issue:item.attention};else delete next.attention[key];
+     }
     }catch{for(const r of relevant)defer(source,r,cluster,'NATIVE_CLUSTER_DEFERRED');}finally{batch?.close();}
     handled+=relevant.length;
    }
   }
   more ||= [...deferred.values()].some(x=>x.nextAt<=now());
   next.completedAt=now();next.more=more;next.deferred=[...deferred.values()];
+  // Staff review held work weekly; only a count goes to the run log, no tab is written.
+  emit({event:'KIDS_ATTENTION_COUNT',items:attentionRows(next,{now:now()}).length,providerCalls:0});
   if(next.deferred.length>100000)throw Error('NATIVE_DEFERRED_QUEUE_CAPACITY');
   const encoded=writeIntakeCheckpoint(next,(parts,sha)=>{const b=g.book(config.clusters[0].controlId),s=b.getSheetByName('[KIDS_INTAKE_CHECKPOINTS]')||b.insertSheet('[KIDS_INTAKE_CHECKPOINTS]');s.appendRows(parts.map((text,i)=>[sha,i,text]));return s.lastAppendRow;});
   // Append and verify the shard binding before committing the small pointer.

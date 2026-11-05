@@ -23,6 +23,8 @@ export function resultNativeClaim(item,result,controlId){
  if(claim.jobId===result.job.id&&claim.row===result.nativeRow)return claim;
  return {...claim,priorNativeBinding:claim.priorNativeBinding||{jobId:claim.jobId,row:claim.row},jobId:result.job.id,row:result.nativeRow};
 }
+// Teacher04Nov, by name: one more attempt for this exact uncalled child after HTTP 503 returned no result.
+export const TEACHER_APPROVED_RETRIES=new Set(['e77cabb97052d30e51e0fbfae312030ddf9527c95abfc030a2ec52a0a694a858']);
 export function selectExisting(t,entries,now=Date.now()){
  const all=entries.map(x=>x.job),matches=entries.filter(x=>matchesTarget(x.job,t));
  const explicit=matches.find(x=>authorizedRecoveryChild(x.job,all))||matches.find(x=>authorizedInvalidRetry(x.job,all));
@@ -35,6 +37,8 @@ export function selectExisting(t,entries,now=Date.now()){
  // despite its parent's reservation. It is not a reset or a second child.
  const dashboard=matches.find(x=>possible.includes(x)&&existingUncalledChild(x.job,matches)&&x.job.id===createHash('sha256').update(JSON.stringify([DASHBOARD_REPROCESS_AUTH,x.job.regradeParentId])).digest('hex')&&matches.every(y=>[x.job.id,x.job.regradeParentId].includes(y.job.id)||!hasRequest(y.job)&&!hasSavedResult(y.job)));
  if(dashboard)return dashboard;
+ const approvedRetry=matches.find(x=>possible.includes(x)&&TEACHER_APPROVED_RETRIES.has(x.job.id)&&!hasRequest(x.job));
+ if(approvedRetry)return approvedRetry;
  if(matches.some(x=>hasRequest(x.job)||hasSavedResult(x.job)))return null;
  return possible.sort((a,b)=>b.row-a.row)[0]||null;
 }
