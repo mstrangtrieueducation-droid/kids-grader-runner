@@ -39,12 +39,19 @@ export function wrongAssignmentNotice(draft,job){
  const observed=String(check.observedTask).trim().replace(/[.。]+$/,'');
  return '⚠️ CẦN NỘP LẠI\nCô đã nhận được video của con. Bài cần nộp ở buổi này là '+String(job.receipt?.code||job.route?.code||'bài được giao')+'.\nTrong video, con đang thực hiện: '+observed+'.\nCon kiểm tra lại đúng nội dung của buổi này rồi gửi lại cho cô nhé.';
 }
+// Teacher06Nov: a machine code is never a sentence for a family.
+export const machineCode=text=>/(?<![\p{L}\p{N}_])[A-Za-z]{2,}(?:_[A-Za-z]{2,})+(?![\p{L}\p{N}_])/u.test(String(text||''));
+const SILENT_REASON='Cô đã nhận được video của con, nhưng chưa nghe rõ phần con đọc hoặc nói bài. Con kiểm tra micro và nghe thử bản quay để chắc chắn có tiếng con, rồi gửi lại giúp cô nhé.';
+export const WRONG_TASK_REASON='Cô đã nhận được bài của con, nhưng nội dung con gửi chưa đúng bài được giao của buổi này.\nCon gửi lại đúng phần bài được giao của buổi này nhé. Cô đợi bài của con.';
 export function studentAssessmentNotice(draft,job){
  const wrong=wrongAssignmentNotice(draft,job);if(wrong)return wrong;
  const reason=String(draft?.reason||'').trim();
  if(!reason||reason===LEGACY_GENERIC_NOTICE)return null;
+ if(/^NO_SPEECH_DETECTED$/i.test(reason))return 'Video/Audio của con không có tiếng đọc bài. Con kiểm tra lại micro và nộp lại để cô nhận xét nhé!';
+ if(/^wrong_assignment$/i.test(reason))return WRONG_TASK_REASON;
+ if(machineCode(reason))return null;
  // Use the actual saved reason, rather than relabelling every non-assessable
  // submission as a silent microphone. Technical reasons are held above.
- if(/im lặng|không (?:ghi nhận|có|nghe).{0,30}(?:giọng|tiếng|nội dung (?:đọc|lồng tiếng))|không tách biệt rõ giọng/iu.test(reason))return 'Cô đã nhận được video của con, nhưng chưa nghe rõ phần con đọc hoặc nói bài. Con kiểm tra micro và nghe thử bản quay để chắc chắn có tiếng con, rồi gửi lại giúp cô nhé.';
+ if(/im lặng|không (?:ghi nhận|có|nghe).{0,30}(?:giọng|tiếng|nội dung (?:đọc|lồng tiếng))|không tách biệt rõ giọng/iu.test(reason))return SILENT_REASON;
  return 'Cô đã nhận được bài của con.\n'+reason.replace(/Học sinh/g,'Con').replace(/học sinh/g,'con').replace(/Tệp âm thanh học sinh nộp/g,'Video con gửi');
 }

@@ -46,3 +46,20 @@ verify(()=>{const sweep={allowsJob:j=>!j.occupied},ready={source,status:'READY',
 verify(()=>{const j={source,status:'READY',sheetTruth:{youtubeNoticeRepair:'teacher-youtube-download-classification-20261023'}},item=job=>({job,row:2});assert.equal(sourceRepairQueue([item(j)]).length,1);for(const more of [{rawId:'saved'},{archives:[{rawId:'saved'}]},{generateRequests:1},{generationReservation:{}},{nextAt:Date.now()+60000},{status:'COMPLETED_NEEDS_RESUBMISSION'}])assert.equal(sourceRepairQueue([item({...j,...more})]).length,0);assert.equal(sourceRepairQueue([item({...j,sheetTruth:{}})]).length,0);});
 if(old===undefined)delete process.env.SHEET_TRUTH_SYNC;else process.env.SHEET_TRUTH_SYNC=old;
 console.log('PASS '+checks+' Sheet-truth regression groups: native-complete/S01 protection, actual timestamps, newer/checkbox notice gating, blank DONE recovery0AI, archive identity, invalid-vs-transient notices, teacher edit guard and 15-minute renewable lease;0API/0Sheet writes.');
+
+// Teacher06Nov: machine codes never reach a family, and a cell that shows one is rebuilt from the saved result.
+{const {studentAssessmentNotice,machineCode}=await import('./grading-failure-policy.mjs'),{mayReopenNotice:reopen,machineCodeNotice}=await import('./sheet-truth-state.mjs'),A=(await import('node:assert/strict')).default;
+ const job={receipt:{code:'Phonics-Video-06'}},LF=String.fromCharCode(10);
+ for(const reason of ['wrong_assignment','NO_SPEECH_DETECTED','no_speech_detected']){const text=studentAssessmentNotice({assessable:false,reason},job);A.ok(text&&!machineCode(text),reason);}
+ A.match(studentAssessmentNotice({assessable:false,reason:'wrong_assignment'},job),/chưa đúng bài được giao/);A.match(studentAssessmentNotice({assessable:false,reason:'NO_SPEECH_DETECTED'},job),/không có tiếng đọc bài/);
+ A.equal(studentAssessmentNotice({assessable:false,reason:'unclear_audio'},job),null,'an unknown code is held for the system, never shown');
+ A.equal(studentAssessmentNotice({assessable:false,reason:'Con đọc bài khác: lỗi partial_reading.'},job),null);
+ A.match(studentAssessmentNotice({assessable:false,reason:'Con đang đọc bài Video 5, chưa phải Video 6.'},job),/Video 5/,'a real sentence is kept as written');
+ const src={className:'KIDS 36',student:'HUGO',code:'Phonics-Video-06',at:'2026-10-31T14:37:44.341Z',time:'2026-10-31T14:37:44.341Z'},head='✅ ĐÃ NỘP'+LF+'31/10/2026 21:37'+LF+LF+'— NHẬN XÉT GV —'+LF;
+ const bad=head+'❌ CẦN NỘP LẠI: Cô đã nhận được bài của con.'+LF+'wrong_assignment',good=head+'❌ CẦN NỘP LẠI: Cô đã nhận được bài của con, nhưng nội dung con gửi chưa đúng bài được giao của buổi này.';
+ const saved={id:'h',status:'COMPLETED_UNASSESSABLE',receipt:src,rawId:'runner:x',autoNotice:bad};
+ A.ok(machineCodeNotice(bad));A.ok(!machineCodeNotice(good));A.ok(!machineCodeNotice(head+'❌ CẦN_NỘP_LẠI — Từ "ice-cream" đọc là /ˈaɪs.kriːm/ (00:12).'));
+ A.ok(reopen(src,bad,[saved]),'rebuilt from the saved result');A.ok(!reopen(src,good,[saved]));
+ A.ok(!reopen(src,bad,[{...saved,rawId:undefined}]),'never without a saved result');A.ok(!reopen(src,bad,[{...saved,status:'SYSTEM_GRADING_ERROR'}]),'a failed rebuild does not loop');
+ A.ok(!reopen({...src,at:'2026-11-02T01:00:00.000Z',time:'2026-11-02T01:00:00.000Z'},bad,[saved]),'a resubmission still goes to staff');
+ console.log('PASS machine codes never reach families; shown ones are rebuilt at zero provider calls.');}

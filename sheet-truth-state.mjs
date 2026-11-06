@@ -10,9 +10,13 @@ export const isResubmissionFeedback=text=>/(?:^|\n)\s*(?:❌\s*)?CẦN[ _]NỘP[
 export const sourceTime=s=>receiptDate(s?.at??s?.time,new Date(0)).getTime();
 export const sourceTask=s=>[s?.className,String(s?.name||s?.student||'').normalize('NFC').trim().toUpperCase(),s?.code].join('|');
 export function receiptTimeFromCell(text){const m=String(text||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);return m?Date.parse(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}T${m[4].padStart(2,'0')}:${m[5]}:${m[6]||'00'}+07:00`):0;}
+const noticeBody=text=>String(text||'').split(/NHẬN XÉT GV\s*[—–-]*/u).slice(1).join('');
+export const machineCodeNotice=text=>/(?<![\p{L}\p{N}_])[A-Za-z]{2,}(?:_[A-Za-z]{2,})+(?![\p{L}\p{N}_])/u.test(noticeBody(text));
 export function mayReopenNotice(source,text,jobs=[],approved=false){
  if(!isResubmissionFeedback(text))return false;if(approved)return true;
  if(jobs.some(j=>sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source)&&canRecheckYouTubeNotice(j,text)))return true;
+ // Teacher06Nov: once, from the saved result only; a failed rebuild leaves the job held, not looping.
+ if(machineCodeNotice(text)&&jobs.some(j=>sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source)&&!!j.rawId&&/^COMPLETED_(?:UNASSESSABLE|NEEDS_RESUBMISSION)$/.test(j.status||'')&&machineCodeNotice(j.autoNotice)))return true;
  // Teacher05Nov: work resubmitted after any notice is graded by staff, never sent to the model again.
  return false;
 }
