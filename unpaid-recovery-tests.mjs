@@ -22,4 +22,12 @@ assert.equal(run(job(),context({validation:{}})).result,false);
 assert.equal(run(job(),context({roster:false})).result,false);
 const newer={row:10,job:job({id:'j2',status:'READY',receipt:{...job().receipt,time:'2026-11-02T01:00:00.000Z'}})};
 assert.equal(run(job(),context(),item(),[newer]).result,false);
+// Teacher06Nov: an unpaid item held only because its stamped column was dropped is reopened once.
+const stamped=(o={})=>job({status:'READY',error:'',systemGradingFailure:undefined,route:{code:'Peppa-22',stampedDestination:{version:'v',fingerprint:'f'}},...o}),heldItem=(reason='DESTINATION_COLUMN_MISSING')=>({...item(),error:reason,queueQuarantine:{reason,rawId:null}});
+r=run(stamped(),context(),heldItem());assert.equal(r.result,true);assert.equal(r.it.state,'PENDING_VALIDATION');assert.equal(r.j.unpaidRecovery.cause,'STAMPED_DESTINATION_LOST');assert.equal(unpaidRecoveryEligible(r.j),false);
+assert.equal(run(stamped({status:'NEEDS_ASSIGNMENT'}),context(),heldItem()).result,true);
+assert.equal(run(stamped(),context(),heldItem('NATIVE_RECONCILIATION_REQUIRED')).result,false,'only the lost-column hold');
+assert.equal(run(stamped({generateRequests:1}),context(),heldItem()).result,false);assert.equal(run(stamped({rawId:'runner:raw'}),context(),heldItem()).result,false);
+assert.equal(run(job({status:'READY',systemGradingFailure:undefined}),context(),heldItem()).result,false,'a job without a stamped column still needs the teacher');
+assert.equal(run(stamped(),context({text:'✅ ĐÃ NỘP\n— NHẬN XÉT GV —\nChất lượng: đạt 80%'}),heldItem()).result,false);
 console.log(JSON.stringify({test:'unpaid-recovery-tests.mjs',passed:true,providerCalls:0}));

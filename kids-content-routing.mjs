@@ -103,7 +103,7 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
     const code=j.contentRouting?.actualCode||j.formCodeCanonical||submittedCode(j.receipt);
     const e=catalog.lookup('kids',code);
     let saved;try{saved=j.snapshotId?c.readArtifact_(j.snapshotId):null;}catch{}
-    if((isPhonics(j)&&saved?.barem?.phonicsTemplateVersion!==PHONICS_VERSION)||!saved?.barem||(j.media||[]).some(m=>m.isReference)||normalizeCode(j.route.code)!==normalizeCode(e.code)||j.route.kind!==e.kind){j.route={...structuredClone(e.route),code:e.code,className:j.receipt.className,sourceTab:j.receipt.sourceTab};const s=c.guide_(j.route);j.previousSnapshotId=j.snapshotId;j.snapshotId=c.saveArtifact_('single-pass-input-'+j.id,s);j.sourceHash=c.hash_(s);j.media=(j.media||[]).filter(m=>!m.isReference);j.studentFileCount=j.media.length;persist(j,row);}
+    if((isPhonics(j)&&saved?.barem?.phonicsTemplateVersion!==PHONICS_VERSION)||!saved?.barem||(j.media||[]).some(m=>m.isReference)||normalizeCode(j.route.code)!==normalizeCode(e.code)||j.route.kind!==e.kind){j.route={...structuredClone(e.route),code:e.code,className:j.receipt.className,sourceTab:j.receipt.sourceTab,...(j.route?.stampedDestination?{stampedDestination:j.route.stampedDestination}:{})};const s=c.guide_(j.route);j.previousSnapshotId=j.snapshotId;j.snapshotId=c.saveArtifact_('single-pass-input-'+j.id,s);j.sourceHash=c.hash_(s);j.media=(j.media||[]).filter(m=>!m.isReference);j.studentFileCount=j.media.length;persist(j,row);}
    }
    step(j,row,deadline,options);
    if(j.status==='SKIPPED_EXISTING_FEEDBACK')stop(j,row,'SKIPPED_ALREADY_GRADED');
