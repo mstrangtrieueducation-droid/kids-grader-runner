@@ -29,7 +29,7 @@ export function oldGradedSubmission(job,jobs,isGraded){
  }return null;
 }
 export const SAME_FILE_NOTICE='❌ CẦN NỘP LẠI — Tệp con vừa nộp lại vẫn là tệp cô đã xem và yêu cầu nộp lại trước đó. Con quay hoặc ghi âm bài mới rồi nộp lại nhé!';
-const linkKeys=text=>[...String(text||'').matchAll(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/live\/)([-\w]{11})/g)].map(m=>'yt:'+m[1]).concat(String(text||'').split(/[\s,;]+/).map(x=>x.trim().toLowerCase().replace(/[?#].*$/,'').replace(/\/+$/,'')).filter(x=>/^https?:\/\//.test(x)).map(x=>'url:'+x));
+const linkKeys=text=>[...String(text||'').matchAll(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/live\/)([-\w]{11})/g)].map(m=>'yt:'+m[1]).concat(String(text||'').split(/[\s,;]+/).map(x=>x.trim().toLowerCase().replace(/[?#].*$/,'').replace(/\/+$/,'')).filter(x=>/^https?:\/\//.test(x)&&!/drive\.google\.com|docs\.google\.com|youtu\.?be/.test(x)).map(x=>'url:'+x));
 const fileKeys=j=>{const s=source(j);return new Set([...ids(j)].concat(linkKeys(s.links||s.link)));};
 // Teacher09Nov: a resubmission that repeats the noticed file is answered from the ledger, with no request.
 export function repeatedNoticedFile(job,jobs){

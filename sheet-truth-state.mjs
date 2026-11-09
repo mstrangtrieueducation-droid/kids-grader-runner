@@ -1,6 +1,7 @@
 import {canRecheckYouTubeNotice} from './submission-source-policy.mjs';
 // Shared, explicit class-cell states. A queue acknowledgement is not a grade.
 import {receiptDate,generationSpent} from './master-policy.mjs';
+import {repeatedNoticedFile} from './zero-cost-gates.mjs';
 export const SHEET_TRUTH_VERSION='teacher-sheet-truth-20261023';
 export const PENDING_BODY='⏳ ĐANG CHỜ CHẤM — Hệ thống đã nhận bài và đang xử lý. Không cần nộp lại.';
 export const TECHNICAL_BODY='⏳ ĐANG CHỜ XỬ LÝ — Hệ thống đang kiểm tra hoặc khôi phục kết quả. Không cần nộp lại.';
@@ -19,6 +20,8 @@ export function mayReopenNotice(source,text,jobs=[],approved=false){
  if(machineCodeNotice(text)&&jobs.some(j=>sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source)&&!!j.rawId&&/^COMPLETED_(?:UNASSESSABLE|NEEDS_RESUBMISSION)$/.test(j.status||'')&&machineCodeNotice(j.autoNotice)))return true;
  // Teacher09Nov: a resubmission goes through the zero-cost gates and then one more request, while the task has fewer than two paid requests; afterwards nothing is graded again.
  if(resubmissionDecision(source,text,jobs).retry)return true;
+ // Teacher09Nov: a same-file notice whose files do not in fact repeat is withdrawn; no request was spent on it.
+ if(/vẫn là tệp/u.test(noticeBody(text))){const own=jobs.map(x=>x.job||x).find(j=>j&&sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source));if(own&&!paidJob(own)&&!repeatedNoticedFile(own,jobs))return true;}
  return false;
 }
 // Whole minutes: the class stamp carries no seconds, so the noticed submission itself must not look newer.
