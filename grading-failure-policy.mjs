@@ -1,5 +1,5 @@
 import {scoredAssessment,explicitDistantAssignment} from './scored-assessment-policy.mjs';
-import {retryNoticeReason} from './resubmission-acknowledgement.mjs';
+import {retryNoticeReason,isGatedRetry} from './resubmission-acknowledgement.mjs';
 export const GRADING_FAILURE_VERSION='student-fault-evidence-v1-20261015';
 export const LEGACY_GENERIC_NOTICE='Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.';
 const sections=d=>Array.isArray(d?.roseSections)?d.roseSections:Object.values(d?.sections||{});
@@ -54,5 +54,6 @@ export function studentAssessmentNotice(draft,job){
  // Use the actual saved reason, rather than relabelling every non-assessable
  // submission as a silent microphone. Technical reasons are held above.
  if(/im lặng|không (?:ghi nhận|có|nghe).{0,30}(?:giọng|tiếng|nội dung (?:đọc|lồng tiếng))|không tách biệt rõ giọng/iu.test(reason))return SILENT_REASON;
- return 'Cô đã nhận được bài của con.\n'+reason.replace(/Học sinh/g,'Con').replace(/học sinh/g,'con').replace(/Tệp âm thanh học sinh nộp/g,'Video con gửi');
+ // Teacher09Nov: a resubmission that still cannot be graded is told so, not treated as a first attempt.
+ return (isGatedRetry(job)?'Cô đã nhận được bài con nộp lại, nhưng lần này cô vẫn chưa chấm được vì:\n':'Cô đã nhận được bài của con.\n')+reason.replace(/Học sinh/g,'Con').replace(/học sinh/g,'con').replace(/Tệp âm thanh học sinh nộp/g,'Video con gửi');
 }

@@ -71,4 +71,6 @@ console.log('PASS resubmissions: free gates first, one more request at most, not
  assert.match(studentAssessmentNotice({assessable:false,reason:'wrong_assignment'},retry),/nộp lại, nhưng nội dung lần này vẫn chưa đúng/);
  assert.equal(studentAssessmentNotice({assessable:false,reason:'wrong_assignment'},first),WRONG_TASK_REASON);
  assert.match(studentAssessmentNotice({assessable:false,reason:'NO_SPEECH_DETECTED'},retry),/vẫn chưa có tiếng/);
+ assert.match(studentAssessmentNotice({assessable:false,reason:'Con đang nói về chủ đề Wood and Metal, trong khi bài được giao là Video 19.'},retry),/^Cô đã nhận được bài con nộp lại, nhưng lần này cô vẫn chưa chấm được vì:\nCon đang nói/);
+ assert.match(studentAssessmentNotice({assessable:false,reason:'Con đang nói về chủ đề Wood and Metal.'},first),/^Cô đã nhận được bài của con\.\n/);
  console.log('PASS resubmission feedback acknowledges the resubmission.');}
