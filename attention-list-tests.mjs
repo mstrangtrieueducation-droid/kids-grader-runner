@@ -23,17 +23,17 @@ assert.equal(unattendedJob({status:'SYSTEM_GRADING_ERROR'},receipt,now),'SYSTEM_
 assert.equal(unattendedJob({status:'READY'},receipt,now),'');assert.equal(unattendedJob({status:'READY'},old,now),'OPEN_TOO_LONG');
 const {mayReopenNotice,resubmittedAfterNotice}=await import('./sheet-truth-state.mjs'),{createMasterSweep}=await import('./master-cross-class-sweep.mjs'),{mediaDuration,screenFrameTimes}=await import('./phonics-frame.mjs');
 const src={className:'KIDS 1',student:'P',code:'DE-1',at:'2026-10-28T12:40:01.346Z',time:'2026-10-28T12:40:01.346Z'},noticeCell='✅ ĐÃ NỘP\n28/10/2026 19:40\n\n— NHẬN XÉT GV —\n❌ CẦN NỘP LẠI — Video/Audio của con không có tiếng đọc bài.',later={...src,at:'2026-10-30T03:00:00.000Z',time:'2026-10-30T03:00:00.000Z'};
-const noticeJob={id:'n',status:'COMPLETED_UNASSESSABLE',receipt:src,autoNotice:noticeCell};
+const noticeJob={id:'n',status:'COMPLETED_UNASSESSABLE',receipt:src,autoNotice:noticeCell,rawId:'raw-n'},secondPaid={id:'n2',status:'COMPLETED_UNASSESSABLE',receipt:{...src,at:'2026-10-29T03:00:00.000Z',time:'2026-10-29T03:00:00.000Z'},autoNotice:noticeCell,rawId:'raw-n2'};
 assert(!resubmittedAfterNotice(src,noticeCell,[]),'seconds on the Form time do not make the noticed submission a resubmission');
 assert(!resubmittedAfterNotice(src,noticeCell,[noticeJob]));assert(resubmittedAfterNotice(later,noticeCell,[noticeJob]));assert(resubmittedAfterNotice(later,noticeCell,[]));
 assert(!resubmittedAfterNotice(later,'✅ ĐÃ NỘP\n28/10/2026 19:40\n\n— NHẬN XÉT GV —\nChất lượng: đạt khoảng 85%.',[]));
-assert(!mayReopenNotice(later,noticeCell,[noticeJob]));assert(mayReopenNotice(later,noticeCell,[noticeJob],true),'the teacher checkbox still decides');
+assert(mayReopenNotice(later,noticeCell,[noticeJob]),'Teacher09Nov: one paid request, graded once more after the free gates');assert(!mayReopenNotice(later,noticeCell,[noticeJob,secondPaid]),'two paid requests: closed');assert(mayReopenNotice(later,noticeCell,[noticeJob,secondPaid],true),'the teacher checkbox still decides');
 const priorSweep=process.env.MASTER_CROSS_CLASS_SWEEP,priorTruth=process.env.SHEET_TRUTH_SYNC;process.env.MASTER_CROSS_CLASS_SWEEP='true';process.env.SHEET_TRUTH_SYNC='true';
 for(const cellText of [noticeCell,'❌ CẦN NỘP LẠI 28/10/2026 19:40\n— NHẬN XÉT GV —\nChất lượng: Chưa đạt (Yêu cầu quay lại).\n• Lý do yêu cầu nộp lại: chỉ quay màn hình.']){
- let enqueued=0,writes=0;const jobsNow=[{job:structuredClone(noticeJob),row:2}],cell={getDisplayValue:()=>cellText,getFormula:()=>'',getDataValidation:()=>null,setRichTextValue:()=>writes++};
+ let enqueued=0,writes=0;const jobsNow=[{job:structuredClone(noticeJob),row:2},{job:structuredClone(secondPaid),row:3}],cell={getDisplayValue:()=>cellText,getFormula:()=>'',getDataValidation:()=>null,setRichTextValue:()=>writes++};
  const sweep=createMasterSweep({google:{book:()=>({cache:new Map(),getSheetByName:()=>null}),preloadSource(){}},lane:'kids',controlId:'control',classes:[{className:'KIDS 1',spreadsheetId:'book'}],entries:[{source:later,cls:{className:'KIDS 1',spreadsheetId:'book'}}],findJob:()=>undefined,resolve:()=>({cell}),hasFeedback:text=>!/Yêu cầu quay lại/.test(text)&&/NHẬN XÉT GV —\n\S/.test(text),enqueue:()=>{enqueued++;throw Error('MUST_NOT_ENQUEUE');},save:()=>{},allJobs:jobsNow,emit:()=>{}});
  try{sweep.scan();}catch{}
- const state=[...sweep.states.values()][0];assert.equal(enqueued,0,'a resubmission creates no model job');assert.equal(writes,0,'the notice stays in the class cell');assert.equal(state.attention,'RESUBMITTED_AFTER_NOTICE');assert.equal(state.outcome,'existing');
+ const state=[...sweep.states.values()][0];assert.equal(enqueued,0,'a third attempt creates no model job');assert.equal(writes,0,'the notice stays in the class cell');assert.equal(state.attention,'RESUBMISSION_CLOSED');assert.equal(state.outcome,'existing');
 }
 process.env.MASTER_CROSS_CLASS_SWEEP=priorSweep;process.env.SHEET_TRUTH_SYNC=priorTruth;
 const listed=attentionRows({attention:{r:{className:'KIDS 1',student:'P',code:'DE-1',time:ago(0.1),issue:'RESUBMITTED_AFTER_NOTICE'}}},{now});assert.equal(listed.length,1,'staff see a resubmission at once');assert.match(listed[0][5],/Nhân viên chấm tay, không gọi Gemini/);

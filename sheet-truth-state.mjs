@@ -1,6 +1,6 @@
 import {canRecheckYouTubeNotice} from './submission-source-policy.mjs';
 // Shared, explicit class-cell states. A queue acknowledgement is not a grade.
-import {receiptDate} from './master-policy.mjs';
+import {receiptDate,generationSpent} from './master-policy.mjs';
 export const SHEET_TRUTH_VERSION='teacher-sheet-truth-20261023';
 export const PENDING_BODY='⏳ ĐANG CHỜ CHẤM — Hệ thống đã nhận bài và đang xử lý. Không cần nộp lại.';
 export const TECHNICAL_BODY='⏳ ĐANG CHỜ XỬ LÝ — Hệ thống đang kiểm tra hoặc khôi phục kết quả. Không cần nộp lại.';
@@ -17,7 +17,8 @@ export function mayReopenNotice(source,text,jobs=[],approved=false){
  if(jobs.some(j=>sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source)&&canRecheckYouTubeNotice(j,text)))return true;
  // Teacher06Nov: once, from the saved result only; a failed rebuild leaves the job held, not looping.
  if(machineCodeNotice(text)&&jobs.some(j=>sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source)&&!!j.rawId&&/^COMPLETED_(?:UNASSESSABLE|NEEDS_RESUBMISSION)$/.test(j.status||'')&&machineCodeNotice(j.autoNotice)))return true;
- // Teacher05Nov: work resubmitted after any notice is graded by staff, never sent to the model again.
+ // Teacher09Nov: a resubmission goes through the zero-cost gates and then one more request, while the task has fewer than two paid requests; afterwards nothing is graded again.
+ if(resubmissionDecision(source,text,jobs).retry)return true;
  return false;
 }
 // Whole minutes: the class stamp carries no seconds, so the noticed submission itself must not look newer.
@@ -25,6 +26,26 @@ export function resubmittedAfterNotice(source,text,jobs=[]){
  if(!isResubmissionFeedback(text))return false;
  const held=jobs.filter(x=>sourceTask(x.source||x.receipt)===sourceTask(source)&&isResubmissionFeedback(x.autoNotice||'')).map(x=>sourceTime(x.source||x.receipt));
  const previous=held.length?Math.max(...held):receiptTimeFromCell(text),minute=t=>Math.floor(t/60000);return previous>0&&minute(sourceTime(source))>minute(previous);
+}
+// Teacher09Nov: owner decision. Link, silence and old-file notices are re-checked for free by the worker before any request;
+// wrong-task and presentation notices get one more request; a task never receives a third paid request.
+export const GATED_RESUBMISSION_POLICY='teacher-gated-resubmission-20261109';
+export const MAX_TASK_PROVIDER_CALLS=2;
+const paidJob=j=>!!(j.rawId||j.gradeId||j.apiUsage||j.usage||j.generateRequests||j.approvedGenerateRequests||j.physicalGenerateRequests||j.masterGenerationReserved||j.generationAttempt?.calls||j.providerResponseReceived?.httpStatus===200||generationSpent(j));
+export const taskProviderCalls=(source,jobs=[])=>jobs.map(x=>x.job||x).filter(j=>j&&sourceTask(j.source||j.receipt)===sourceTask(source)&&paidJob(j)).length;
+export function noticeKind(text){
+ const b=noticeBody(text)||String(text||'');
+ if(/quyền xem|không hợp lệ|chưa đính kèm|không truy cập|rỗng|không còn tồn tại|riêng tư|đã bị xóa/iu.test(b))return 'link';
+ if(/không có tiếng|chưa nghe rõ/iu.test(b))return 'silent';
+ if(/nhầm file của bài cũ|đã dùng cho bài cũ|vẫn là tệp/iu.test(b))return 'old_file';
+ if(/chưa đúng bài được giao|sai bài|nhầm bài/iu.test(b))return 'wrong_task';
+ if(/quay lại|trực diện|thuyết trình|quay màn hình|thấy người/iu.test(b))return 'presentation';
+ return 'other';
+}
+export function resubmissionDecision(source,text,jobs=[]){
+ if(!resubmittedAfterNotice(source,text,jobs))return {resubmission:false,retry:false,closed:false};
+ const calls=taskProviderCalls(source,jobs),closed=calls>=MAX_TASK_PROVIDER_CALLS;
+ return {resubmission:true,kind:noticeKind(text),calls,retry:!closed,closed,policy:GATED_RESUBMISSION_POLICY};
 }
 export function sourceInputReason(j){
  const s=j.sourceIntake;if(s?.reason==='DRIVE_LINK_UNAVAILABLE'||s?.reason==='DRIVE_ACCESS_DENIED')return 'Link video/file hoặc thư mục hiện không truy cập được. Vui lòng mở quyền “Bất kỳ ai có đường liên kết” hoặc nộp lại link video/file mở được để cô nhận xét.';if(s?.state==='missing')return 'Bài nộp chưa đính kèm link video/file. Vui lòng nộp lại kèm tệp hoặc link bài.';
@@ -36,5 +57,6 @@ export function sourceInputReason(j){
  // A model's assessable=false is NOT evidence of acoustic silence or a bad video.
  if((j.media||[]).filter(m=>!m.isReference).length&&(j.media||[]).filter(m=>!m.isReference).every(m=>m.localSilence?.silent===true))return 'Tệp không có tiếng nói theo kiểm tra âm thanh trực tiếp. Vui lòng kiểm tra micro và nộp lại bản có tiếng.';
  if(e==='LOCAL_OLD_GRADED_FILE')return 'Tệp này đã dùng cho bài cũ được nhận xét trước đó. Vui lòng nộp đúng tệp của bài hiện tại.';
+ if(e==='LOCAL_SAME_FILE_RESUBMITTED')return 'Tệp con vừa nộp lại vẫn là tệp cô đã xem và yêu cầu nộp lại trước đó. Con quay hoặc ghi âm bài mới rồi nộp lại nhé.';
  return null;
 }

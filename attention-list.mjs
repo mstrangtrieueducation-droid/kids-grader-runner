@@ -6,6 +6,7 @@ const OVERDUE=2*3600000,OPEN_OVERDUE=6*3600000,LIMIT=900;
 export function attentionMessage(code){
  const c=String(code||'');
  if(c==='RESUBMITTED_AFTER_NOTICE')return ['Học sinh đã nộp lại sau thông báo CẦN NỘP LẠI','Nhân viên chấm tay, không gọi Gemini'];
+ if(c==='RESUBMISSION_CLOSED')return ['Học sinh gửi bài này lần thứ ba, bài đã dùng hết 2 lượt chấm tự động','Theo quyết định 9/11: không chấm thêm, không gọi Gemini; ô lớp giữ thông báo cũ'];
  if(c==='PAID_NO_RESULT')return ['Đã dùng lượt Gemini nhưng không có nhận xét','Nhân viên chấm tay, không gọi lại Gemini'];
  if(c==='SYSTEM_HELD')return ['Hệ thống đang giữ bài do lỗi kỹ thuật','Nhân viên chấm tay hoặc kỹ thuật kiểm tra'];
  if(c==='OPEN_TOO_LONG')return ['Bài nằm trong hàng chấm quá lâu','Kỹ thuật kiểm tra'];
@@ -19,7 +20,7 @@ const taskKey=x=>[x.className,String(x.student||'').normalize('NFC').trim().toUp
 export function attentionRows(state,{now=Date.now()}={}){
  const latest=new Map(),offer=x=>{const at=Date.parse(x.time);if(!x.className||!Number.isFinite(at))return;const p=latest.get(taskKey(x));if(!p||at>Date.parse(p.time))latest.set(taskKey(x),x);};
  for(const d of state.deferred||[])if(['NATIVE_ASSIGNMENT_PENDING','NATIVE_ROW_DEFERRED'].includes(d.reason)&&now-Date.parse(d.time)>=OVERDUE)offer({...d,issue:d.detail||d.reason});
- for(const x of Object.values(state.attention||{}))if(now-Date.parse(x.time)>=(x.issue==='OPEN_TOO_LONG'?OPEN_OVERDUE:x.issue==='RESUBMITTED_AFTER_NOTICE'?0:OVERDUE))offer(x);
+ for(const x of Object.values(state.attention||{}))if(now-Date.parse(x.time)>=(x.issue==='OPEN_TOO_LONG'?OPEN_OVERDUE:x.issue==='RESUBMITTED_AFTER_NOTICE'||x.issue==='RESUBMISSION_CLOSED'?0:OVERDUE))offer(x);
  return [...latest.values()].sort((a,b)=>Date.parse(a.time)-Date.parse(b.time)).slice(0,LIMIT).map(x=>[x.className,x.student,x.code,x.time,...attentionMessage(x.issue),x.issue]);
 }
 export function writeAttentionList(g,controlId,rows,{now=Date.now(),previousCount=0}={}){

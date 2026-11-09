@@ -5,7 +5,7 @@ import {SPEECH_CLASSIFICATION_INSTRUCTION,wrongLessonWithoutFeedback,WRONG_LESSO
 import {screenGroundingSchema,SCREEN_OUTPUT_INSTRUCTION,compactWebScope} from './screen-grounding.mjs';
 import fs from 'node:fs';import path from 'node:path';import {randomUUID} from 'node:crypto';
 import {MASTER_TERMINAL,MASTER_MODEL,generationSpent} from './master-policy.mjs';import {STUDENT_VOICE_INSTRUCTION,voiceOrigin,audioDigest} from './student-voice-origin.mjs';
-import {SILENT_NOTICE,OLD_FILE_NOTICE,oldGradedSubmission,noSpeech,inspectSilence} from './zero-cost-gates.mjs';
+import {SILENT_NOTICE,OLD_FILE_NOTICE,SAME_FILE_NOTICE,oldGradedSubmission,repeatedNoticedFile,noSpeech,inspectSilence} from './zero-cost-gates.mjs';
 import {request} from './google-adapter.mjs';import {extractStudentAudio} from './student-audio.mjs';import {decodeSavedDraft} from './saved-draft.mjs';
 import {STRICT_PRESENTATION_RULE,knownInvalidPresentation,confirmedPresentationMismatch,presentationNotice} from './teacher-presentation-policy.mjs';import {savedFeedbackRich,savedFeedback} from './saved-feedback.mjs';
 import {prepareAudioWithRepair,validateAudioPart,assertAudioPayload} from './audio-payload-guard.mjs';
@@ -58,7 +58,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
  c.generate_=(j,parts,snapshot)=>{
   if(snapshot?.webPracticeScope)j.verifiedWebPracticeScope=compactWebScope(snapshot.webPracticeScope);
   if(!j.teacherApproval?.approved)throw Error('TEACHER_APPROVAL_REQUIRED');if(j.rawId)return originalGenerate(j,parts,snapshot);
-  if(knownInvalidPresentation(j,c.teacherApprovalJobs_,c.masterSnapshot_?.(j)||{}))throw Error('PRESENTATION_FORMAT_RESUBMISSION');const old=oldFile(j);if(old)throw Error('LOCAL_OLD_GRADED_FILE');
+  if(knownInvalidPresentation(j,c.teacherApprovalJobs_,c.masterSnapshot_?.(j)||{}))throw Error('PRESENTATION_FORMAT_RESUBMISSION');const old=oldFile(j);if(old)throw Error('LOCAL_OLD_GRADED_FILE');if(repeatedNoticedFile(j,c.teacherApprovalJobs_||[]))throw Error('LOCAL_SAME_FILE_RESUBMITTED');
   const media=(j.media||[]).filter(m=>!m.isReference);if(!media.length)throw Error('SYSTEM_AUDIO_INPUT_MISSING_STUDENT_AUDIO');
   const positions=parts.flatMap((p,i)=>/^(audio|video)\//.test(p.inlineData?.mimeType||p.fileData?.mimeType||'')?[i]:[]);if(positions.length>media.length)throw Error('SYSTEM_AUDIO_INPUT_EXTRA_MEDIA_PARTS');
   const checked=[...parts];for(const [i,m]of media.entries()){
@@ -91,6 +91,7 @@ export function installTeacherApprovalGuards(c,{g,root,ffmpeg,session,emit=()=>{
   if(e.message==='TEACHER_APPROVAL_REQUIRED'){j.status='WAITING_TEACHER_APPROVAL';j.nextAt=0;c.persist_(j,row);return;}
   if(['LOCAL_SILENT_AUDIO','AUDIO_NO_STREAM'].includes(e.message)){notice(j,row,SILENT_NOTICE,'COMPLETED_UNASSESSABLE');return;}
   if(e.message==='LOCAL_OLD_GRADED_FILE'){notice(j,row,OLD_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
+  if(e.message==='LOCAL_SAME_FILE_RESUBMITTED'){notice(j,row,SAME_FILE_NOTICE,'COMPLETED_NEEDS_RESUBMISSION');return;}
   if(e.message==='PRESENTATION_FORMAT_RESUBMISSION'||j.rawId&&confirmedPresentationMismatch(decodeSavedDraft(c.readArtifact_(j.rawId)),j,c.masterSnapshot_?.(j))){rejectPresentation(j,row);return;}
   if(j.rawId&&wrongLessonWithoutFeedback(decodeSavedDraft(c.readArtifact_(j.rawId)))){const text=wrongAssignmentNotice(decodeSavedDraft(c.readArtifact_(j.rawId)),j);if(text)notice(j,row,text,'COMPLETED_NEEDS_RESUBMISSION');else holdSystemFailure(c,j,row,Error('ASSIGNMENT_MISMATCH_WITHOUT_EVIDENCE'));return;}
   if(rejectIncomplete(j,row))return;

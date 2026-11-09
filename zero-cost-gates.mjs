@@ -28,5 +28,18 @@ export function oldGradedSubmission(job,jobs,isGraded){
   if([...ids(prior)].some(id=>current.has(id))&&isGraded(prior))return prior;
  }return null;
 }
+export const SAME_FILE_NOTICE='❌ CẦN NỘP LẠI — Tệp con vừa nộp lại vẫn là tệp cô đã xem và yêu cầu nộp lại trước đó. Con quay hoặc ghi âm bài mới rồi nộp lại nhé!';
+const linkKeys=text=>[...String(text||'').matchAll(/(?:youtu\.be\/|[?&]v=|\/shorts\/|\/live\/)([-\w]{11})/g)].map(m=>'yt:'+m[1]).concat(String(text||'').split(/[\s,;]+/).map(x=>x.trim().toLowerCase().replace(/[?#].*$/,'').replace(/\/+$/,'')).filter(x=>/^https?:\/\//.test(x)).map(x=>'url:'+x));
+const fileKeys=j=>{const s=source(j);return new Set([...ids(j)].concat(linkKeys(s.links||s.link)));};
+// Teacher09Nov: a resubmission that repeats the noticed file is answered from the ledger, with no request.
+export function repeatedNoticedFile(job,jobs){
+ const s=source(job),name=normalizeName(s.student||s.name),cls=job.cls?.className||s.className,code=job.route?.code||s.code,current=fileKeys(job);
+ if(!current.size)return null;const now=Date.parse(s.time||s.timestamp||'');
+ for(const item of jobs){const prior=item.job||item,p=source(prior);if(!prior||prior.id===job.id||(prior.cls?.className||p.className)!==cls||normalizeName(p.student||p.name)!==name||(prior.route?.code||p.code)!==code)continue;
+  if(!/CẦN[ _]NỘP[ _]LẠI|BÀI CHƯA HỢP LỆ/u.test(String(prior.autoNotice||'')))continue;
+  const before=Date.parse(p.time||p.timestamp||'');if(Number.isFinite(before)&&Number.isFinite(now)&&before>=now)continue;
+  if([...fileKeys(prior)].some(k=>current.has(k)))return prior;
+ }return null;
+}
 export const noSpeech=g=>!studentSpeechDetected(g)&&(g.speechStatus==='NO_SPEECH_DETECTED'||g.reason==='NO_SPEECH_DETECTED');
 export function hasExistingFeedback(value){const text=String(value||'').trim(),marker='— NHẬN XÉT GV —';if(!text)return false;if(text.includes(marker))return !!text.slice(text.indexOf(marker)+marker.length).trim();return text.split('\n').some(line=>{const s=line.trim();return s&&!/^(?:✅\s*(?:ĐÃ NỘP|ĐÃ GHI NHẬN)(?:\s*·.*)?|⚠️?\s*(?:ĐÃ NỘP MUỘN|NỘP MUỘN)(?:\s*·.*)?|❌\s*CHƯA NỘP|\[?\d{1,2}\/\d{1,2}\/\d{4}[^\n]*\]?|Lượt \d+:.*|— CHƯA GHI NHẬN.*)$/i.test(s);});}

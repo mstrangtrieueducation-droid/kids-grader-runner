@@ -1,6 +1,6 @@
 import {repairMediaSourceNotice} from './media-source-notice-recovery.mjs';
 import {markNotCurrent} from './current-roster-policy.mjs';
-import {isResubmissionFeedback,resubmittedAfterNotice} from './sheet-truth-state.mjs';
+import {isResubmissionFeedback,resubmissionDecision,GATED_RESUBMISSION_POLICY} from './sheet-truth-state.mjs';
 import {cleanupClassWaiting,seedSheetTruth,recoverArchivedRaw,sheetTruthEnabled,mayReopenNotice} from './sheet-truth-sync.mjs';
 import {sourceInMasterScope,MASTER_SUBMISSIONS_SINCE} from './master-submission-scope.mjs';
 import {sourceTime} from './sheet-truth-state.mjs';
@@ -31,10 +31,13 @@ export function createMasterSweep({google,lane,controlId,classes,entries,resolve
     if(recovery.recovered){existing=recovery.entry;j=existing.job;item.jobId=j.id;text=dst.cell.getDisplayValue();emit({event:'SOURCE_RESOLVER_NOTICE_REOPENED',lane,providerCalls:0});}
    }
    const formula=dst.cell?.getFormula?.()||dst.formula||'';
-   if(isResubmissionFeedback(text)&&!(j&&isApproved(j,existing?.row))&&(j?.staffResubmission||resubmittedAfterNotice(s,text,allJobs.map(x=>x.job||x)))){
-    if(mutate){item.attention='RESUBMITTED_AFTER_NOTICE';if(j&&!j.staffResubmission&&!j.rawId&&!j.gradeId&&!generationSpent(j)&&['QUEUED','READY','WAITING_INPUT','WAITING_MEDIA','RETRY','NEEDS_REVIEW','BLOCKED'].includes(j.status)){j.staffResubmission={policy:'teacher-staff-resubmission-20261105',at:new Date().toISOString(),previousStatus:j.status,providerCalls:0};j.status='COMPLETED_NEEDS_RESUBMISSION';j.error='';j.nextAt=0;save(j,existing.row);}}
+   const decision=resubmissionDecision(s,text,allJobs.map(x=>x.job||x));
+   if(isResubmissionFeedback(text)&&!(j&&isApproved(j,existing?.row))&&(j?.staffResubmission||j?.resubmissionClosed||decision.closed)){
+    // Teacher09Nov: after two paid requests on one task nothing is graded again; the class cell keeps the last notice.
+    if(mutate){item.attention=j?.staffResubmission?'RESUBMITTED_AFTER_NOTICE':'RESUBMISSION_CLOSED';if(j&&!j.staffResubmission&&!j.resubmissionClosed&&!j.rawId&&!j.gradeId&&!generationSpent(j)&&['QUEUED','READY','WAITING_INPUT','WAITING_MEDIA','RETRY','NEEDS_REVIEW','BLOCKED'].includes(j.status)){j.resubmissionClosed={policy:GATED_RESUBMISSION_POLICY,at:new Date().toISOString(),previousStatus:j.status,taskProviderCalls:decision.calls,kind:decision.kind,providerCalls:0};j.status='COMPLETED_NEEDS_RESUBMISSION';j.error='';j.nextAt=0;save(j,existing.row);}}
     return 'existing';
    }
+   if(decision.retry&&mutate)emit({event:'RESUBMISSION_GATED_RETRY',lane,kind:decision.kind,taskProviderCalls:decision.calls,providerCalls:0});
    if(mutate&&sheetTruthEnabled()&&!String(text||'').trim())blankBefore.add(item.key);
    if(mutate&&sheetTruthEnabled()&&dst.cell&&!formula&&!dst.cell.getDataValidation?.()){
     const approved=!!j&&isApproved(j,existing?.row),reopen=mayReopenNotice(s,text,allJobs.map(x=>x.job||x),approved);

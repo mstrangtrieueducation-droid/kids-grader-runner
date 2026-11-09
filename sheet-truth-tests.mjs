@@ -61,5 +61,6 @@ console.log('PASS '+checks+' Sheet-truth regression groups: native-complete/S01 
  A.ok(machineCodeNotice(bad));A.ok(!machineCodeNotice(good));A.ok(!machineCodeNotice(head+'❌ CẦN_NỘP_LẠI — Từ "ice-cream" đọc là /ˈaɪs.kriːm/ (00:12).'));
  A.ok(reopen(src,bad,[saved]),'rebuilt from the saved result');A.ok(!reopen(src,good,[saved]));
  A.ok(!reopen(src,bad,[{...saved,rawId:undefined}]),'never without a saved result');A.ok(!reopen(src,bad,[{...saved,status:'SYSTEM_GRADING_ERROR'}]),'a failed rebuild does not loop');
- A.ok(!reopen({...src,at:'2026-11-02T01:00:00.000Z',time:'2026-11-02T01:00:00.000Z'},bad,[saved]),'a resubmission still goes to staff');
+ A.ok(reopen({...src,at:'2026-11-02T01:00:00.000Z',time:'2026-11-02T01:00:00.000Z'},bad,[saved]),'Teacher09Nov: one paid request so far, the resubmission is graded once more');
+ A.ok(!reopen({...src,at:'2026-11-03T01:00:00.000Z',time:'2026-11-03T01:00:00.000Z'},bad,[saved,{...saved,id:'h2',receipt:{...src,at:'2026-11-02T01:00:00.000Z',time:'2026-11-02T01:00:00.000Z'}}]),'after two paid requests nothing is graded again');
  console.log('PASS machine codes never reach families; shown ones are rebuilt at zero provider calls.');}
