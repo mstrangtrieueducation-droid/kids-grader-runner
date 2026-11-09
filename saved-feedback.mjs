@@ -3,17 +3,17 @@ import {returnedPercent as percentBand} from './returned-score-policy.mjs';
 import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {publicText,receiptDate} from './master-policy.mjs';
 import {applyCompletionPolicy} from './content-completion-policy.mjs';
-import {pedagogicSection} from './pedagogical-language.mjs';
+import {pedagogicSection,varietySeed} from './pedagogical-language.mjs';
 export const SAVED_FEEDBACK_VERSION='kids-saved-feedback-v1';
 const array=x=>Array.isArray(x)?x:Object.values(x||{});
 const tone=text=>/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→|Con (?:cần|chú ý|nhớ|luyện)|cần sửa|lưu ý/i.test(text)&&!(/(?:rất tốt|phát âm (?:đúng|rõ|tốt)|đọc (?:đúng|rõ|tốt))/i.test(text)&&!/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→/i.test(text))?'correction':'praise';
 const parts=text=>String(text).split(/(?<=\n)|(?<=[.!?])(?=\s+(?:Con|Cô|Tuy nhiên)\b)/u).filter(Boolean).map(text=>({text,tone:tone(text)}));
 const valid=s=>s.spans?.length&&s.spans.every(p=>['praise','correction','neutral'].includes(p.tone))&&s.spans.map(p=>p.text).join('')===s.text;
-export function savedSections(g,snapshot={}){
+export function savedSections(g,snapshot={},seed){
  const supplied=array(g.roseSections||g.sections).filter(s=>typeof s.text==='string'&&publicText(s.text).trim());
  // Keep the complete model-authored reply when one exists. Missing ancillary
  // evidence fields must not remove or downgrade any of its corrections.
- if(supplied.length)return supplied.map(s=>{const text=publicText(s.text);return pedagogicSection({...s,text,spans:text===s.text&&valid(s)?s.spans:parts(text)});});
+ if(supplied.length)return supplied.map(s=>{const text=publicText(s.text);return pedagogicSection({...s,text,spans:text===s.text&&valid(s)?s.spans:parts(text)},seed);});
  const findings=array(g.rubricFindings),labels=snapshot.form?.length?snapshot.form:findings.map(f=>f.label).filter(Boolean);
  const sections=(labels.length?labels:['Nội dung','Phát âm & ngữ pháp','Cách luyện']).map(label=>({label,text:'',spans:[]}));
  const add=(s,text,t='neutral')=>{text=publicText(text);if(!text?.trim()||s.spans.some(p=>p.text.trim()===text.trim()))return;s.spans.push({text:(s.spans.length?'\n':'')+text.trim(),tone:t});s.text=s.spans.map(p=>p.text).join('');};
@@ -32,12 +32,12 @@ export function savedSections(g,snapshot={}){
  for(const o of g.presentation?.observations||[])add(matching(/phong thái|biểu cảm|trình bày/i)||sections.at(-1),o.assessment||o.correction||o.observation,o.tone||'neutral');
  for(const r of array(g.recordingChecks))if(r.feedback?.trim())add(sections.at(-1),r.feedback,'correction');
  if(!sections.some(s=>s.text)&&g.reason)add(sections[0],g.reason,tone(g.reason));
- return sections.filter(s=>publicText(s.text).trim()).map(pedagogicSection);
+ return sections.filter(s=>publicText(s.text).trim()).map(s=>pedagogicSection(s,seed));
 }
 export function savedFeedback(g,j,before='',snapshot={}){
  before=questionCorrectionPrefix(before,j);
  g=applyCompletionPolicy(repairQuestionFeedback(g,snapshot).draft,j);
- const sections=savedSections(g,snapshot);if(!sections.length)throw Error('SAVED_FEEDBACK_EMPTY');
+ const sections=savedSections(g,snapshot,varietySeed(j.receipt));if(!sections.length)throw Error('SAVED_FEEDBACK_EMPTY');
  const marker='— NHẬN XÉT GV —';
  let date=receiptDate(j.receipt?.time);
  const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date).replace(',','');

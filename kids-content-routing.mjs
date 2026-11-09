@@ -5,6 +5,7 @@ import {phonicsSequenceColumn} from './phonics-destination-repair.mjs';
 import {isPhonics,PHONICS_VERSION,PHONICS_LABELS,PHONICS_PROMPT,phonicsText,phonicsRich,sectionsFromText} from './phonics-template.mjs';
 import {networkRetry} from './kids-fault-tolerance.mjs';
 import {SAVED_FEEDBACK_VERSION,savedSections,savedFeedback,savedFeedbackRich} from './saved-feedback.mjs';
+import {varietySeed} from './pedagogical-language.mjs';
 import {normalizeCode} from './master-barem.mjs';
 
 export const ROUTING_VERSION='kids-single-pass-v3';
@@ -78,7 +79,7 @@ export function installContentRouting(c,catalog,{refresh,lock,emit=()=>{}}){
   message=mergeTeacherMessage(before,message);
   if(process.env.RUNNER_SHEET_BATCH!=='1')j.noticeBackupId=c.saveArtifact_('single-pass-before-'+j.id,{value:cell.getValue(),note:cell.getNote(),cell:cell.getA1Notation(),output:message,rawId:j.rawId});
   refresh(j);if(occupied(cell)||cell.getDisplayValue()!==before)throw Error('DESTINATION_CHANGED');
-  const sections=!isPhonics(j)&&status==='RETURNED'&&j.rawId?(j.pendingFeedbackRender?.sections||savedSections(draft(j),j.snapshotId?c.readArtifact_(j.snapshotId):{})):null;
+  const sections=!isPhonics(j)&&status==='RETURNED'&&j.rawId?(j.pendingFeedbackRender?.sections||savedSections(draft(j),j.snapshotId?c.readArtifact_(j.snapshotId):{},varietySeed(j.receipt))):null;
   cell.setRichTextValue(isPhonics(j)?phonicsRich(c,cell,message):sections?savedFeedbackRich(c,cell,message,sections):c.coloredFeedback_(cell,message,null));if(process.env.RUNNER_SHEET_BATCH!=='1'){refresh(j);if(cell.getDisplayValue()!==message)throw Error('WRITE_READBACK_FAILED');}
   if(isPhonics(j))j.phonicsTemplateVersion=PHONICS_VERSION;else if(sections)j.savedFeedbackVersion=SAVED_FEEDBACK_VERSION;delete j.pendingFeedback;delete j.pendingFeedbackRender;j.cell=cell.getA1Notation();j.autoNotice=message;j.manualReviewRequired=false;stop(j,row,status);c.audit_(j.id,'SINGLE_PASS_FEEDBACK',message);
  }

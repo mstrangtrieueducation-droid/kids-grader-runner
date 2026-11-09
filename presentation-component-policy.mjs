@@ -1,3 +1,4 @@
+import {isBridgeLine} from './pedagogical-language.mjs';
 // The assignment's declared components, never a pupil name or source ID, own
 // the recording requirement. A Q&A component is not a second presentation.
 export const COMPONENT_POLICY='presentation-and-question-components-20261030';
@@ -29,7 +30,7 @@ export function presentationApplies(check={},job={},snapshot={}){
  return check.componentRole==='presentation';
 }
 const formatComplaint=/quay (?:chính diện|màn hình|trực diện)|khuôn mặt|nhìn (?:vào )?camera|hướng mặt|cử chỉ|thấy (?:mặt|người)|mở bài|kết bài|dàn ý|thuyết trình/iu;
-const bridge=/^\s*Tuy nhiên, để bài nói\/bài đọc được hoàn thiện và chuẩn xác hơn, con chú ý một số điểm sau đây nhé:\s*$/u;
+const bridge={test:line=>isBridgeLine(line)};
 export function repairQuestionFeedback(draft,snapshot={}){
  const components=assignmentComponents(snapshot),numbers=new Set(components.filter(x=>x.role==='question_answers'&&x.partNumber).map(x=>x.partNumber));
  if(!hasQuestionComponent(snapshot))return {draft,changes:[]};

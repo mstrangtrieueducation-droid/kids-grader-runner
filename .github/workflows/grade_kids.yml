@@ -49,6 +49,7 @@ jobs:
           SHEET_TRUTH_SYNC: 'false'
         run: |
           node master-compact-output-tests.mjs
+          node pedagogical-variety-tests.mjs
           node completed-lease-owner-tests.mjs
           node sheet-truth-tests.mjs
           node sheet-truth-quota-tests.mjs
