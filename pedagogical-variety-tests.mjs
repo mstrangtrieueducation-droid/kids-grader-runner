@@ -39,6 +39,8 @@ const draft={roseSections:[{label:'Phát âm',text:'Con đọc rõ.\n'+PEDAGOGIC
 const repaired=repairQuestionFeedback(draft,snapshot);
 if(repaired.changes.length)assert.ok(!repaired.draft.roseSections[0].text.includes(PEDAGOGIC_BRIDGES[2]),'hanging bridge removed');
 // The model is told to vary its wording, in every runner that shares the instruction.
-assert.ok(PEDAGOGY_INSTRUCTION.includes('không dùng mãi một mẫu câu'));assert.ok(PEDAGOGY_INSTRUCTION.includes('mỗi bài chỉ một lời động viên kết'));
+assert.ok(PEDAGOGY_INSTRUCTION.includes('không dùng mãi một mẫu câu'));assert.ok(PEDAGOGY_INSTRUCTION.includes('không viết theo khuôn mẫu'));assert.ok(PEDAGOGY_INSTRUCTION.includes('quan tâm thật'));assert.ok(PEDAGOGY_INSTRUCTION.includes('không khen chung chung'));
+// Shadowing pieces are seeded from their source row (className, name, code, time).
+assert.ok(varietySeed({className:'SHADOWING L1',name:'Minh Anh',code:'Unit 3',time:'2026-11-09T12:00:00.000Z'}));assert.ok(PEDAGOGY_INSTRUCTION.includes('mỗi bài chỉ một lời động viên kết'));
 assert.ok(!PEDAGOGY_INSTRUCTION.includes('BẮT BUỘC có câu dẫn: "'),'no single mandatory formula');
 console.log('PASS feedback wording varies by pupil and lesson; old renders unchanged; authored transitions never doubled.');
