@@ -21,7 +21,7 @@ export function mayReopenNotice(source,text,jobs=[],approved=false){
  // Teacher09Nov: a resubmission goes through the zero-cost gates and then one more request, while the task has fewer than two paid requests; afterwards nothing is graded again.
  if(resubmissionDecision(source,text,jobs).retry)return true;
  // Teacher09Nov: a same-file notice whose files do not in fact repeat is withdrawn; no request was spent on it.
- if(/vẫn là tệp/u.test(noticeBody(text))){const own=jobs.map(x=>x.job||x).find(j=>j&&sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source));if(own&&!paidJob(own)&&!repeatedNoticedFile(own,jobs))return true;}
+ if(/vẫn là tệp/u.test(noticeBody(text)||String(text||''))){const own=jobs.map(x=>x.job||x).find(j=>j&&sourceTask(j.source||j.receipt)===sourceTask(source)&&sourceTime(j.source||j.receipt)===sourceTime(source));if(own&&!paidJob(own)&&!repeatedNoticedFile(own,jobs))return true;}
  return false;
 }
 // Whole minutes: the class stamp carries no seconds, so the noticed submission itself must not look newer.
