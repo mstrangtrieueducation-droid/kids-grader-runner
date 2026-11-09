@@ -4,6 +4,7 @@ import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {publicText,receiptDate} from './master-policy.mjs';
 import {applyCompletionPolicy} from './content-completion-policy.mjs';
 import {pedagogicSection,varietySeed} from './pedagogical-language.mjs';
+import {resubmissionAcknowledgement} from './resubmission-acknowledgement.mjs';
 export const SAVED_FEEDBACK_VERSION='kids-saved-feedback-v1';
 const array=x=>Array.isArray(x)?x:Object.values(x||{});
 const tone=text=>/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→|Con (?:cần|chú ý|nhớ|luyện)|cần sửa|lưu ý/i.test(text)&&!(/(?:rất tốt|phát âm (?:đúng|rõ|tốt)|đọc (?:đúng|rõ|tốt))/i.test(text)&&!/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→/i.test(text))?'correction':'praise';
@@ -43,7 +44,9 @@ export function savedFeedback(g,j,before='',snapshot={}){
  const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(date).replace(',','');
  const current=before.match(/Chất lượng:\s*(?:đạt(?: khoảng)?\s*)?(\d+(?:[.,]\d+)?)\s*%/i),raw=String(g.rubricBand||g.band||'').match(/^(\d+(?:[.,]\d+)?)\s*%$/),value=Number((raw||current)?.[1]?.replace(',','.')??NaN),score=percentBand(value);
  const heading=j.route?.kind==='ielts_speaking'?'IELTS Speaking: Band ước tính '+g.band+'.\n':(score===null?'':'Chất lượng: đạt khoảng '+score+'%.\n')+(score!==null&&(score<75||g.forceAttention)?'⚠️ Cần theo dõi\n':'');
- const text=teacherFeedbackPrefix(before,'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+heading+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
+ // Teacher09Nov: a resubmission is acknowledged first, naming what the pupil put right.
+ const ack=resubmissionAcknowledgement(j);
+ const text=teacherFeedbackPrefix(before,'✅ ĐÃ NỘP '+stamp+'\n')+marker+'\n'+heading+(ack?ack+'\n':'')+sections.map(s=>'• '+s.label+': '+s.text).join('\n');
  return {text,sections,score,version:SAVED_FEEDBACK_VERSION};
 }
 export function savedFeedbackRich(c,cell,text,sections){

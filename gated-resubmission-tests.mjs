@@ -7,6 +7,9 @@ import {WRONG_TASK_REASON} from './grading-failure-policy.mjs';
 import {PRESENTATION_PRACTICE} from './teacher-presentation-policy.mjs';
 import {attentionMessage} from './attention-list.mjs';
 import {createMasterSweep} from './master-cross-class-sweep.mjs';
+import {savedFeedback} from './saved-feedback.mjs';
+import {studentAssessmentNotice} from './grading-failure-policy.mjs';
+import {resubmissionAcknowledgement,isGatedRetry} from './resubmission-acknowledgement.mjs';
 const head='✅ ĐÃ NỘP\n28/10/2026 19:40\n\n— NHẬN XÉT GV —\n';
 assert.equal(MAX_TASK_PROVIDER_CALLS,2);
 // Notice kinds.
@@ -50,3 +53,16 @@ const closed=run(withLink(third,'https://youtu.be/yyyyyyyyyyy'),[{job:structured
 assert.equal(closed.enqueued,0,'no job after two paid requests');assert.equal(closed.writes,0,'the class cell keeps the last notice');assert.equal(closed.state.attention,'RESUBMISSION_CLOSED');assert.equal(closed.state.outcome,'existing');
 process.env.MASTER_CROSS_CLASS_SWEEP=priorSweep;process.env.SHEET_TRUTH_SYNC=priorTruth;
 console.log('PASS resubmissions: free gates first, one more request at most, nothing graded after two paid requests; the same file again costs nothing.');
+
+// Feedback on a resubmission says so and names what was put right; a still-wrong resubmission is told so.
+{const retry={receipt:{className:'KIDS 11',student:'BUSH',code:'SCIENCE-G1-20',time:'2026-11-09T15:48:11.947Z'},route:{kind:'kids'},sheetTruth:{reopenedBy:'newer_form_timestamp',previousNotice:head+'❌ CẦN NỘP LẠI: Tệp không có tiếng nói theo kiểm tra âm thanh trực tiếp. Vui lòng kiểm tra micro và nộp lại bản có tiếng.'}};
+ assert.ok(isGatedRetry(retry));assert.match(resubmissionAcknowledgement(retry),/nộp lại|có tiếng/);
+ const g={assessable:true,band:'85%',rubricBand:'85%',roseSections:[{label:'Nội dung',text:'Con kể đủ ý.\nCon thiếu câu kết bài.',spans:[{text:'Con kể đủ ý.',tone:'praise'},{text:'\nCon thiếu câu kết bài.',tone:'correction'}]}]};
+ const fb=savedFeedback(structuredClone(g),retry,'');const lines=fb.text.split('\n');const i=lines.findIndex(l=>/Chất lượng/.test(l));
+ assert.match(lines[i+1],/có tiếng/,'the acknowledgement follows the score line');assert.ok(fb.text.includes('• Nội dung: Con kể đủ ý.'));
+ for(const kind of ['link','wrong_task','presentation','old_file'])assert.ok(resubmissionAcknowledgement({...retry,sheetTruth:{reopenedBy:'newer_form_timestamp',previousNotice:head+{link:YOUTUBE_NOTICE,wrong_task:'❌ CẦN NỘP LẠI: '+WRONG_TASK_REASON,presentation:'❌ CẦN NỘP LẠI: Chất lượng: Chưa đạt (Yêu cầu quay lại). '+PRESENTATION_PRACTICE,old_file:OLD_FILE_NOTICE}[kind]}}).length>20,kind);
+ const first={receipt:retry.receipt,route:{kind:'kids'}};assert.equal(resubmissionAcknowledgement(first),'');assert.ok(!/nộp lại/.test(savedFeedback(structuredClone(g),first,'').text),'a first attempt gets no acknowledgement');
+ assert.match(studentAssessmentNotice({assessable:false,reason:'wrong_assignment'},retry),/nộp lại, nhưng nội dung lần này vẫn chưa đúng/);
+ assert.equal(studentAssessmentNotice({assessable:false,reason:'wrong_assignment'},first),WRONG_TASK_REASON);
+ assert.match(studentAssessmentNotice({assessable:false,reason:'NO_SPEECH_DETECTED'},retry),/vẫn chưa có tiếng/);
+ console.log('PASS resubmission feedback acknowledges the resubmission.');}

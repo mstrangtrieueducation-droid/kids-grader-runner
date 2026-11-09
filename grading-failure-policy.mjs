@@ -1,4 +1,5 @@
 import {scoredAssessment,explicitDistantAssignment} from './scored-assessment-policy.mjs';
+import {retryNoticeReason} from './resubmission-acknowledgement.mjs';
 export const GRADING_FAILURE_VERSION='student-fault-evidence-v1-20261015';
 export const LEGACY_GENERIC_NOTICE='Con gửi lại phần bài được giao để cô nhận xét nhé. Cô đợi bài của con.';
 const sections=d=>Array.isArray(d?.roseSections)?d.roseSections:Object.values(d?.sections||{});
@@ -47,8 +48,8 @@ export function studentAssessmentNotice(draft,job){
  const wrong=wrongAssignmentNotice(draft,job);if(wrong)return wrong;
  const reason=String(draft?.reason||'').trim();
  if(!reason||reason===LEGACY_GENERIC_NOTICE)return null;
- if(/^NO_SPEECH_DETECTED$/i.test(reason))return 'Video/Audio của con không có tiếng đọc bài. Con kiểm tra lại micro và nộp lại để cô nhận xét nhé!';
- if(/^wrong_assignment$/i.test(reason))return WRONG_TASK_REASON;
+ if(/^NO_SPEECH_DETECTED$/i.test(reason))return retryNoticeReason(job,'silent')||'Video/Audio của con không có tiếng đọc bài. Con kiểm tra lại micro và nộp lại để cô nhận xét nhé!';
+ if(/^wrong_assignment$/i.test(reason))return retryNoticeReason(job,'wrong_task')||WRONG_TASK_REASON;
  if(machineCode(reason))return null;
  // Use the actual saved reason, rather than relabelling every non-assessable
  // submission as a silent microphone. Technical reasons are held above.
