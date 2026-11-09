@@ -18,6 +18,10 @@ const a=pedagogicSection({label:'Phát âm',spans:spans()},seed).spans[1].text,b
 assert.ok(isBridgeLine(a)&&isBridgeLine(b));
 let labels=new Set();for(const label of ['Phát âm','Nội dung','Ngữ pháp','Trôi chảy','Thuộc bài','Phong thái'])labels.add(pedagogicSection({label,spans:spans()},seed).spans[1].text);
 assert.ok(labels.size>=2,'criteria of one piece do not all share one bridge');
+// Encouragement without a fault gets no bridge; a real correction gets one with no blank line (new renders only).
+{const enc=pedagogicSpans([{text:'Con nhớ từ rất nhanh.',tone:'praise'},{text:'\nCon tiếp tục duy trì việc ôn tập tốt như thế này nhé.',tone:'correction'}],seed);assert.equal(enc.length,2,'no bridge before pure encouragement');
+ const fix=pedagogicSpans([{text:'Con nhớ từ rất nhanh.',tone:'praise'},{text:'\nCon chú ý từ ship /ʃɪp/.',tone:'correction'}],seed);assert.equal(fix.length,3);assert.ok(!/\n\n/.test(fix.map(s=>s.text).join('')),'no blank line between bridge and correction');
+ const legacy=pedagogicSpans([{text:'Con nhớ từ rất nhanh.',tone:'praise'},{text:'\nCon tiếp tục duy trì việc ôn tập tốt như thế này nhé.',tone:'correction'}]);assert.equal(legacy.length,3,'old renders unchanged');}
 // The model's own transition is kept, never doubled.
 for(const own of ['Tuy nhiên, con đọc thiếu âm cuối ở từ cat.','Bên cạnh đó, cô muốn con chú ý từ ship.','Để bài đọc tròn hơn, con sửa từ ship nhé.','Cô có một gợi ý nhỏ: con đọc lại từ ship.','Chỉ còn từ ship con đọc thành sheep.']){
  const out=pedagogicSpans([{text:'Con đọc rõ.',tone:'praise'},{text:'\n'+own,tone:'correction'}],seed);assert.equal(out.length,2,'authored transition kept: '+own);}
