@@ -63,7 +63,10 @@ export function hasRequest(x,seen=new Set()){
 export function retryPreparation(job,save,now=Date.now()){
  const previous=job.error||job.internalDiagnostic||'';
  job.preprocessRetry={version:PREPROCESS_VERSION,lastError:previous,failedAt:new Date(now).toISOString(),attempts:(job.preprocessRetry?.attempts||0)+1};
- job.status='RETRY';job.error='';job.nextAt=now+60000;job.retryAt=new Date(job.nextAt).toISOString();save();
+ // Teacher10Nov: the first three retries stay one minute apart; a file that keeps failing
+ // backs off (2, 4, 8 ... minutes, at most 6 hours) instead of holding the heavy worker every minute.
+ const attempts=job.preprocessRetry.attempts,delay=attempts<=3?60000:Math.min(60000*2**(attempts-3),6*3600000);
+ job.status='RETRY';job.error='';job.nextAt=now+delay;job.retryAt=new Date(job.nextAt).toISOString();save();
 }
 export function preprocessingRecoverable(j){
  return !hasSavedResult(j)&&!hasRequest(j)&&!j.presentationResubmissionRequired&&
