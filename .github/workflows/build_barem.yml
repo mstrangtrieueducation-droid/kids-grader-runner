@@ -6,7 +6,7 @@ on:
       - 'barem-requests/**'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 concurrency:
   group: kids-barem-build
   cancel-in-progress: false
@@ -14,14 +14,22 @@ jobs:
   build:
     if: github.repository == 'mstrangtrieueducation-droid/kids-grader-runner' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: '24'
+      - name: Install the production media tools
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            python3 -m pip install --quiet 'imageio-ffmpeg==0.6.0'
+            media_bin="$RUNNER_TEMP/barem-tools"
+            mkdir -p "$media_bin"
+            ffmpeg_exe=$(python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')
+            ln -sf "$ffmpeg_exe" "$media_bin/ffmpeg"
+            echo "$media_bin" >> "$GITHUB_PATH"
+          fi
       - name: Validate the builder without secrets
         run: |
           node hosted-bootstrap.mjs
@@ -31,4 +39,13 @@ jobs:
           BAREM_BUILDER_RUN: '1'
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           PRIVATE_BUNDLE_KEY: ${{ secrets.PRIVATE_BUNDLE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_KEY_KIDS }}
         run: node barem-builder.mjs
+      - name: Save the re-locked bundle
+        run: |
+          if git diff --quiet -- approved-policy.enc; then echo "bundle unchanged"; exit 0; fi
+          git config user.name "Grading Runner"
+          git config user.email "grading-runner@users.noreply.github.com"
+          git add approved-policy.enc
+          git commit -m "Barem Peppa 17/28 compiled from the original videos (owner 10/11)"
+          git push origin HEAD:main

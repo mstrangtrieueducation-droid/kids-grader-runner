@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import {describe,peppaSummary} from './barem-builder.mjs';
+import {describe,peppaSummary,validCues,readyEntry,encryptBundle,decryptBytes} from './barem-builder.mjs';
+import {MasterBaremCatalog,BAREM_VERSION,digest} from './master-barem.mjs';import {randomBytes} from 'node:crypto';
 const script='Peppa: secret script line that must never be printed.';
 const bundle={barem:{schema:'s',entries:[{subject:'kids',code:'Peppa-16',kind:'dubbing',status:'READY',review:{approved:true},content:{text:script,transcript:script,timedCues:[{t:1,text:script}]},requirements:{submissionText:'Con lồng tiếng đoạn 1, 2, 3.'}},{subject:'kids',code:'Peppa-17',kind:'dubbing',status:'DRAFT',missing:['COMPLETE_TRANSCRIPT'],content:{text:script},requirements:{submissionText:'x'}}]}};
 const out=JSON.stringify(peppaSummary(bundle));
@@ -7,3 +8,13 @@ assert(!out.includes('secret script'),'episode text never leaves the bundle');
 assert.match(out,/PEPPA-17:DRAFT\(COMPLETE_TRANSCRIPT\)/);assert.match(out,/transcript:str\(\d+\)/);assert.match(out,/timedCues:arr\(1\)\[\{t:number=1, text:str/);
 assert.equal(describe('abc'),'str(3)');
 console.log('PASS barem inspection reports structure only, never episode text');
+{const cues=Array.from({length:60},(_,i)=>({startSeconds:3+i*5,endSeconds:5+i*5,speaker:'Peppa',text:'Line '+i}));
+ assert.equal(validCues(cues,305),null);assert.equal(validCues(cues.slice(0,10),305),'TOO_FEW_CUES');assert.equal(validCues(cues,600),'TRANSCRIPT_TRUNCATED');assert.equal(validCues([...cues].reverse(),305),'CUES_OUT_OF_ORDER');
+ const draftBody={subject:'kids',code:'Peppa-17',kind:'peppa',status:'DRAFT',review:{approved:false,sourceStatus:'SOURCE_HELD',teacherGradingApproval:false},missing:['COMPLETE_TRANSCRIPT'],content:{words:[],sentences:[],transcript:'',questions:[],text:'Peppa 17 page text'},requirements:{submissionText:'Con mở bản tách giọng, dùng giọng của con lồng tiếng đủ lời, đúng nhịp theo bài.'},provenance:{sources:[]},sourceUrl:'u',route:{code:'PEPPA-17'}};
+ const draft={...draftBody,sha256:digest(draftBody)};
+ const ready=readyEntry(draft,{topic:'The School Fete',outline:[{point:'a',sourceQuote:'b'}],timedCues:cues},{videos:['v1','v2'],model:'gemini-3.8-flash',durationSeconds:305,meta:{id:'v1'}});
+ const cat=new MasterBaremCatalog({schema:BAREM_VERSION,entries:[ready]});const e=cat.lookup('kids','PEPPA-17');assert.equal(e.content.timedCues.length,60);assert.match(e.content.transcript,/^Peppa: Line 0\n/);assert.equal(e.review.previousHash,draft.sha256);assert.deepEqual(e.provenance.practiceMedia,['v2']);
+ assert.equal(ready.content.timedCues[0].speaker,undefined,'cues keep the approved shape');
+ const key=randomBytes(32),bundle={schema:'private-grading-bundle-v1',barem:{schema:BAREM_VERSION,entries:[ready]}};assert.deepEqual(decryptBytes(encryptBundle(bundle,key,'repo'),key,'repo'),bundle);
+ assert.throws(()=>decryptBytes(encryptBundle(bundle,key,'repo'),key,'other'),'bound to the repository');
+ console.log('PASS compiled barem keeps the approved shape, passes the catalog review gate, and the bundle round-trips');}
