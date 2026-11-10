@@ -37,7 +37,7 @@ export function installKidsPreprocessing(c,{g,service,isLatest,emit=()=>{}}){
  };
  const handle=c.handleError_;c.handleError_=(j,row,e)=>{
   if(e.message==='YOUTUBE_UNAVAILABLE')e=Error('TRANSIENT_MEDIA_YOUTUBE_OUTPUT_MISSING');
-  if(isTransient(e)&&!hasRequest(j)&&!hasSavedResult(j)){j.error=e.message;retryPreparation(j,()=>c.persist_(j,row));return;}
+  if(isTransient(e)&&!hasRequest(j)&&!hasSavedResult(j)){j.error=e.message;if(e.detail)j.preprocessDetail=e.detail;retryPreparation(j,()=>c.persist_(j,row));return;}
   return handle(j,row,e);
  };
  c.recoverUniversalPreprocessing_=()=>{let recovered=0;for(const {job:j,row}of c.loadJobs_()){

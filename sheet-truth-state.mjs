@@ -47,8 +47,10 @@ export function noticeKind(text){
 }
 export function resubmissionDecision(source,text,jobs=[]){
  if(!resubmittedAfterNotice(source,text,jobs))return {resubmission:false,retry:false,closed:false};
- const calls=taskProviderCalls(source,jobs),closed=calls>=MAX_TASK_PROVIDER_CALLS;
- return {resubmission:true,kind:noticeKind(text),calls,retry:!closed,closed,policy:GATED_RESUBMISSION_POLICY};
+ // Teacher10Nov: after a no-sound (or link) notice the pupil may resubmit as often as needed;
+ // the free local sound check decides first and a request is spent only on a file with sound.
+ const kind=noticeKind(text),calls=taskProviderCalls(source,jobs),closed=!['silent','link'].includes(kind)&&calls>=MAX_TASK_PROVIDER_CALLS;
+ return {resubmission:true,kind,calls,retry:!closed,closed,policy:GATED_RESUBMISSION_POLICY};
 }
 export function sourceInputReason(j){
  const s=j.sourceIntake;if(s?.reason==='DRIVE_LINK_UNAVAILABLE'||s?.reason==='DRIVE_ACCESS_DENIED')return 'Link video/file hoặc thư mục hiện không truy cập được. Vui lòng mở quyền “Bất kỳ ai có đường liên kết” hoặc nộp lại link video/file mở được để cô nhận xét.';if(s?.state==='missing')return 'Bài nộp chưa đính kèm link video/file. Vui lòng nộp lại kèm tệp hoặc link bài.';

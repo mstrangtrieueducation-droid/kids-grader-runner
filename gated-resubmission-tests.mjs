@@ -79,3 +79,10 @@ console.log('PASS resubmissions: free gates first, one more request at most, not
  const first=presentationNotice(base).text,again=presentationNotice({...base,sheetTruth:{reopenedBy:'newer_form_timestamp',previousNotice:'❌ CẦN NỘP LẠI: Bài nộp chưa đính kèm link'}}).text;
  if(first.includes(RETRY_PRESENTATION_LINE))throw Error('FIRST_ATTEMPT_CALLED_RETRY');if(!again.includes('— NHẬN XÉT GV —\n'+RETRY_PRESENTATION_LINE+'\nChất lượng'))throw Error('RETRY_LINE_MISSING '+again);
  console.log('PASS a resubmitted video that is still not a presentation is told it was a resubmission');}
+{const {resubmissionDecision:rd}=await import('./sheet-truth-state.mjs');
+ const src={className:'KIDS 11',name:'BUSH',code:'SCIENCE-G1-21',at:'2026-11-12T10:00:00.000Z'},paid=(id,at)=>({id,rawId:'r'+id,receipt:{className:'KIDS 11',student:'BUSH',code:'SCIENCE-G1-21',time:at},route:{code:'SCIENCE-G1-21'},cls:{className:'KIDS 11'}});
+ const jobs=[paid('a','2026-11-01T10:00:00.000Z'),paid('b','2026-11-05T10:00:00.000Z')];
+ const silent='✅ ĐÃ NỘP 05/11/2026 17:00\n— NHẬN XÉT GV —\n❌ CẦN NỘP LẠI: Tệp không có tiếng nói theo kiểm tra âm thanh trực tiếp.';
+ const d=rd(src,silent,jobs);if(d.resubmission&&(d.closed||!d.retry))throw Error('SILENT_CLOSED '+JSON.stringify(d));
+ const wrong='✅ ĐÃ NỘP 05/11/2026 17:00\n— NHẬN XÉT GV —\n❌ CẦN NỘP LẠI: Con nộp chưa đúng bài được giao.';const w=rd(src,wrong,jobs);if(w.resubmission&&!w.closed)throw Error('WRONG_TASK_NOT_CLOSED');
+ console.log('PASS a no-sound notice never closes the task; wrong-task still closes after two paid calls');}

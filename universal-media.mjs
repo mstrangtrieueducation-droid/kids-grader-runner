@@ -62,7 +62,7 @@ export function hasRequest(x,seen=new Set()){
 }
 export function retryPreparation(job,save,now=Date.now()){
  const previous=job.error||job.internalDiagnostic||'';
- job.preprocessRetry={version:PREPROCESS_VERSION,lastError:previous,failedAt:new Date(now).toISOString(),attempts:(job.preprocessRetry?.attempts||0)+1};
+ job.preprocessRetry={version:PREPROCESS_VERSION,lastError:previous,failedAt:new Date(now).toISOString(),attempts:(job.preprocessRetry?.attempts||0)+1,...(job.preprocessDetail?{detail:job.preprocessDetail}:{})};delete job.preprocessDetail;
  // Teacher10Nov: the first three retries stay one minute apart; a file that keeps failing
  // backs off (2, 4, 8 ... minutes, at most 6 hours) instead of holding the heavy worker every minute.
  const attempts=job.preprocessRetry.attempts,delay=attempts<=3?60000:Math.min(60000*2**(attempts-3),6*3600000);
@@ -118,16 +118,25 @@ export function decodedSampleClockArgs(selected){
 export function transcodeUniversal({input,output,ffmpeg=process.env.FFMPEG_PATH||'ffmpeg',run=spawnSync,sourceId,modified,sourceSize}){
  fs.mkdirSync(path.dirname(output),{recursive:true});const manifest=output+'.universal.json';
  if(fs.existsSync(manifest))try{const m=JSON.parse(fs.readFileSync(manifest));if(m.version===PREPROCESS_VERSION&&m.modified===modified&&m.sourceSize===sourceSize&&[m.fullFile,...m.segments.map(s=>s.file)].every(f=>fs.existsSync(f))&&m.segments.every(s=>fs.statSync(s.file).size===s.bytes&&s.bytes>10240&&s.bytes<MAX_PART_BYTES&&sha(fs.readFileSync(s.file))===s.sha256))return m;}catch{}
- const before=probe(ffmpeg,input,run),chosen=selection(before.stderr),working=output+'.working.mp3';
- const r=run(ffmpeg,['-nostdin','-v','error','-i',input,...chosen.args,'-vn','-ar','16000','-ac','1','-c:a','libmp3lame','-b:a','64k','-y',working],{encoding:'utf8',windowsHide:true,timeout:20*60000});
- if(r.status!==0||!fs.existsSync(working)||fs.statSync(working).size<=10240)throw Error('TRANSIENT_MEDIA_TRANSCODE');
+ const before=probe(ffmpeg,input,run),working=output+'.working.mp3';let chosen=selection(before.stderr);
+ // Teacher10Nov: a file that does not convert the normal way is read more tolerantly before
+ // giving up (Vicky K18), and the converter's own reason is kept for the teacher's ledger.
+ const convert=(pre,sel)=>run(ffmpeg,['-nostdin','-v','error',...pre,'-i',input,...sel,'-vn','-ar','16000','-ac','1','-c:a','libmp3lame','-b:a','64k','-y',working],{encoding:'utf8',windowsHide:true,timeout:20*60000});
+ const converted=x=>x.status===0&&fs.existsSync(working)&&fs.statSync(working).size>10240;
+ const first=convert([],chosen.args);
+ if(!converted(first)){
+  const tolerant=['-fflags','+genpts+discardcorrupt','-err_detect','ignore_err'],tries=[['tolerant',tolerant,chosen.args]];
+  if(chosen.args.join(' ')!=='-map 0:a:0')tries.push(['first_audio_track',tolerant,['-map','0:a:0']]);
+  let done=false;for(const [name,pre,args] of tries){try{fs.rmSync(working,{force:true});}catch{}if(converted(convert(pre,args))){chosen={...chosen,args,pre,fallback:name};done=true;break;}}
+  if(!done){const e=Error('TRANSIENT_MEDIA_TRANSCODE');e.detail=String(first.stderr||first.error?.message||'status '+first.status).trim().split('\n').filter(Boolean).slice(-3).join(' | ').slice(0,400);throw e;}
+ }
  const after=probe(ffmpeg,working,run);if(!Number.isFinite(after.seconds))throw Error('TRANSIENT_MEDIA_INCOMPLETE_AUDIO');
  // Container/video duration and decoded packet timestamps may include a late
  // audio start or timestamp gaps. Measure consumed samples from zero instead;
  // comparing their final source PTS falsely rejects a complete normalized MP3.
  // Only the validation clock changes. Conversion bytes/stream selection stay.
  if(Number.isFinite(before.seconds)&&after.seconds+0.25<before.seconds){
-  const decoded=run(ffmpeg,['-nostdin','-v','error','-nostats','-progress','pipe:1','-i',input,...decodedSampleClockArgs(chosen.args),'-vn','-f','null','-'],{encoding:'utf8',windowsHide:true,timeout:20*60000});
+  const decoded=run(ffmpeg,['-nostdin','-v','error','-nostats','-progress','pipe:1',...(chosen.pre||[]),'-i',input,...decodedSampleClockArgs(chosen.args),'-vn','-f','null','-'],{encoding:'utf8',windowsHide:true,timeout:20*60000});
   const times=[...String(decoded.stdout||'').matchAll(/out_time_us=(\d+)/g)].map(x=>Number(x[1])/1e6),audioSeconds=times.at(-1);
   if(decoded.status!==0||!Number.isFinite(audioSeconds)||after.seconds+0.25<audioSeconds)throw Error('TRANSIENT_MEDIA_INCOMPLETE_AUDIO');
  }
