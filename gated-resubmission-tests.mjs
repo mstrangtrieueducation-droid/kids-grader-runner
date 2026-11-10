@@ -86,3 +86,7 @@ console.log('PASS resubmissions: free gates first, one more request at most, not
  const d=rd(src,silent,jobs);if(d.resubmission&&(d.closed||!d.retry))throw Error('SILENT_CLOSED '+JSON.stringify(d));
  const wrong='✅ ĐÃ NỘP 05/11/2026 17:00\n— NHẬN XÉT GV —\n❌ CẦN NỘP LẠI: Con nộp chưa đúng bài được giao.';const w=rd(src,wrong,jobs);if(w.resubmission&&!w.closed)throw Error('WRONG_TASK_NOT_CLOSED');
  console.log('PASS a no-sound notice never closes the task; wrong-task still closes after two paid calls');}
+{const {receiptOnlyCell,hasTeacherReview}=await import('./teacher-feedback-state.mjs');
+ const bare='✅ ĐÃ NỘP THEO MÃ CŨ\nCHƯA TÁCH LOẠI BÀI\nThời gian: 09/11/2026 21:21\n\n— NHẬN XÉT GV —';if(!receiptOnlyCell(bare))throw Error('OLD_CODE_RECEIPT_NOT_EMPTY');
+ const graded=bare+'\nChất lượng: đạt khoảng 85%.\n• Đọc đúng: Con đọc đầy đủ.';if(receiptOnlyCell(graded)||!hasTeacherReview(graded))throw Error('OLD_CODE_GRADED_TAKEN_AS_EMPTY');
+ console.log('PASS an old-code receipt with no feedback is an empty cell; graded ones stay protected');}
