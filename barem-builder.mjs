@@ -33,7 +33,7 @@ function decrypt(){
 }
 async function main(){
  if(process.env.GITHUB_ACTIONS!=='true'||process.env.GITHUB_REPOSITORY!==repository||process.env.GITHUB_REF!=='refs/heads/main')throw Error('TRUSTED_RUNNER_REQUIRED');
- const request=JSON.parse(fs.readFileSync('barem-requests/peppa-17-28.json','utf8'));
+ const request=JSON.parse(fs.readFileSync('barem-requests/peppa-17-28.request','utf8'));
  const bundle=decrypt(),summary=peppaSummary(bundle);
  const {Google}=await import('./google-adapter.mjs');const g=new Google(JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON));
  const control=bundle.config.clusters[0].controlId,tab='BAREM BUILD';
