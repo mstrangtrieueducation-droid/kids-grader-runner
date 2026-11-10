@@ -18,7 +18,7 @@ export function describe(value,depth=0){
 // Teacher-written metadata only (never episode content).
 const metadata=e=>({code:e.code,subject:e.subject,kind:e.kind,status:e.status,missing:e.missing||[],review:e.review||null,
  requirements:e.requirements?Object.fromEntries(Object.entries(e.requirements).map(([k,v])=>[k,typeof v==='string'?v.slice(0,400):describe(v)])):null,
- contentShape:describe(e.content||{}),topLevel:Object.keys(e).join(',')});
+ contentShape:describe(e.content||{}),topLevel:Object.keys(e).join(','),provenance:describe(e.provenance),provenanceScalars:Object.fromEntries(Object.entries(e.provenance||{}).filter(([k,v])=>typeof v!=='object'||v===null).map(([k,v])=>[k,String(v).slice(0,160)])),sourceUrl:String(e.sourceUrl||'').slice(0,200),route:describe(e.route),cueSpan:(e.content?.timedCues||[]).length?[e.content.timedCues[0].startSeconds,e.content.timedCues.at(-1).endSeconds]:null,textMinusTranscript:(e.content?.text||'').length-(e.content?.transcript||'').length});
 export function peppaSummary(bundle){
  const entries=bundle.barem?.entries||[],peppa=entries.filter(e=>e.subject==='kids'&&/^PEPPA-\d+$/.test(normalizeCode(e.code)));
  const pick=new Set(['PEPPA-16','PEPPA-17','PEPPA-18','PEPPA-27','PEPPA-28','PEPPA-29']);
