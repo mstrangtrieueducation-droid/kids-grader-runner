@@ -20,6 +20,7 @@ import {authorizeFairKidsWork,authorizedWorkQueue,authorizedPhaseQueue,sourceRep
 import {installSubmissionAssignmentScope} from './submission-assignment-scope.mjs';
 import {installKidsAppleInputRecovery} from './kids-apple-input-recovery.mjs';
 import {installKidsModelAccessRecovery} from './kids-model-access-recovery.mjs';
+import {installNamedRegrades} from './teacher-named-regrades.mjs';
 import {installKidsProviderRetry} from './kids-provider-retry.mjs';
 import {installTimelyKidsQueue} from './timely-kids-queue.mjs';
 import {installLinkedDestinationBindings} from './linked-destination-binding.mjs';
@@ -192,6 +193,7 @@ export function buildContext(cluster){
  installSubmissionAssignmentScope(c);
  installTimelyKidsQueue(c,cluster);
  installKidsModelAccessRecovery(c,{emit});
+ installNamedRegrades(c,{emit});
  installKidsProviderRetry(c,{emit});
  c.runnerUniversalMedia_=universalMedia;
  const scopedLatest=j=>{const fresh=c.freshReceipt_(j);return fresh&&fresh.row===j.receipt.row&&fresh.time===j.receipt.time&&fresh.links===j.receipt.links;};

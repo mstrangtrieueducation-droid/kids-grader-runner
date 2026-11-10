@@ -6,6 +6,7 @@ import {savedDeliveryCandidates} from './saved-delivery-repair.mjs';
 import {authorizedInvalidRetry} from './authorized-invalid-retry.mjs';
 import {existingUncalledChild} from './campaign-recovery.mjs';
 import {DASHBOARD_REPROCESS_AUTH} from './dashboard-reprocess.mjs';
+import {isNamedRegrade} from './teacher-named-regrades.mjs';
 export const normalize=s=>String(s||'').normalize('NFC').trim().replace(/\s+/g,' ').toUpperCase();
 export const targetKey=t=>[t.spreadsheetId,t.sheetId,t.cell].join('|');
 export const campaignClosed=state=>['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT','SKIPPED_NOT_IN_CURRENT_ROSTER','PROTECTED','QUARANTINED'].includes(state);
@@ -38,6 +39,7 @@ export function selectExisting(t,entries,now=Date.now()){
  const dashboard=matches.find(x=>possible.includes(x)&&existingUncalledChild(x.job,matches)&&x.job.id===createHash('sha256').update(JSON.stringify([DASHBOARD_REPROCESS_AUTH,x.job.regradeParentId])).digest('hex')&&matches.every(y=>[x.job.id,x.job.regradeParentId].includes(y.job.id)||!hasRequest(y.job)&&!hasSavedResult(y.job)));
  if(dashboard)return dashboard;
  const approvedRetry=matches.find(x=>possible.includes(x)&&TEACHER_APPROVED_RETRIES.has(x.job.id)&&!hasRequest(x.job));
+ const named=matches.find(x=>possible.includes(x)&&isNamedRegrade(x.job)&&!hasRequest(x.job)&&!hasSavedResult(x.job));if(named)return named;
  if(approvedRetry)return approvedRetry;
  if(matches.some(x=>hasRequest(x.job)||hasSavedResult(x.job)))return null;
  return possible.sort((a,b)=>b.row-a.row)[0]||null;

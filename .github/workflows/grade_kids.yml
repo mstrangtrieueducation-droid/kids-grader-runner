@@ -51,6 +51,7 @@ jobs:
           node master-compact-output-tests.mjs
           node pedagogical-variety-tests.mjs
           node gated-resubmission-tests.mjs
+          node teacher-named-regrades-tests.mjs
           node completed-lease-owner-tests.mjs
           node sheet-truth-tests.mjs
           node sheet-truth-quota-tests.mjs

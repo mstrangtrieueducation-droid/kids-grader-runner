@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {releaseNamedRegrade,namedRegradeReleasable,isNamedRegrade,installNamedRegrades,NAMED_REGRADES} from './teacher-named-regrades.mjs';
+import {selectExisting} from './frozen-backlog-policy.mjs';
+import {hasRequest,hasSavedResult} from './universal-media.mjs';
+const [ella]=[...NAMED_REGRADES.keys()];
+const receipt={className:'KIDS 22',student:'ELLA',code:'DE-11',time:'2026-10-04T03:30:26.231Z',links:'x'};
+const parent={id:'parent',status:'SUPERSEDED_BY_APPROVED_DASHBOARD_REPROCESS',cls:{className:'KIDS 22',spreadsheetId:'book'},route:{code:'DE-11'},receipt,generateRequests:1,error:'NO_ASSESSMENT_EVIDENCE'};
+const child={id:ella,status:'WAITING_MODEL_ACCESS',error:'MODEL_NOT_AVAILABLE_FOR_THIS_PROJECT',cls:parent.cls,route:parent.route,receipt,model:'gemini-3.5-flash-lite',networkHistory:[{error:'UNCERTAIN_GENERATION',generateRequests:1}],autoNotice:'✅ ĐÃ NỘP 04/10/2026 10:30',regradeParentId:'parent'};
+assert(namedRegradeReleasable(child));assert(!namedRegradeReleasable({...child,id:'other'}),'only named records');assert(!namedRegradeReleasable({...child,generateRequests:1}),'never a record that spent a request');assert(!namedRegradeReleasable({...child,rawId:'r'}),'never a record with a result');
+const j=structuredClone(child);assert(releaseNamedRegrade(j,new Date(0)));assert.equal(j.status,'READY');assert.equal(j.model,undefined);assert(!hasRequest(j)&&!hasSavedResult(j),'copied parent history is kept as text only');assert.match(j.namedRegrade.previousRecord,/UNCERTAIN_GENERATION/);assert(isNamedRegrade(j));assert(!releaseNamedRegrade(j),'released once');
+const t={spreadsheetId:'book',className:'KIDS 22',student:'ELLA',code:'DE-11',submissionAt:receipt.time};
+process.env.MASTER_CROSS_CLASS_SWEEP='true';
+assert.equal(selectExisting(t,[{row:2,job:parent},{row:3,job:j}])?.row,3,'the released record is selected beside its paid parent');
+assert.equal(selectExisting(t,[{row:2,job:parent},{row:3,job:structuredClone(child)}]),null,'nothing is selected before release');
+let saved=0;const c={recoverContentRouting_:()=>({}),loadJobs_:()=>[{job:structuredClone(child),row:3}],destination_:()=>({cell:{getDisplayValue:()=>'✅ ĐÃ NỘP 04/10/2026 10:30\n— NHẬN XÉT GV —',getFormula:()=>'',getDataValidation:()=>null}}),hasFeedback_:()=>false,persist_:()=>saved++};
+installNamedRegrades(c);assert.equal(c.recoverContentRouting_().namedRegradesReleased,1);assert.equal(saved,1);
+const busy={...c,loadJobs_:()=>[{job:structuredClone(child),row:3}],destination_:()=>({cell:{getDisplayValue:()=>'✅ ĐÃ NỘP\n— NHẬN XÉT GV —\nChất lượng: đạt khoảng 80%.',getFormula:()=>'',getDataValidation:()=>null}}),hasFeedback_:()=>true};installNamedRegrades(busy);assert.equal(busy.recoverContentRouting_().namedRegradesReleased,0,'never over feedback already in the cell');
+console.log('PASS named regrades release once, only uncalled, only over a receipt-only cell, and are selected beside a paid parent; 0 AI');
