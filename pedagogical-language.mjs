@@ -20,6 +20,8 @@ export const bridgeFor=seed=>seed==null?PEDAGOGIC_BRIDGE:PEDAGOGIC_BRIDGES[hash(
 // earlier renders keep their exact text.
 export const PEDAGOGIC_DISTINCT_FROM=Date.UTC(2026,10,10,6);
 const distinct=seed=>seed!=null&&Number(String(seed).split('|')[3])>=PEDAGOGIC_DISTINCT_FROM;
+// Teacher10Nov: a short line that ends with ':' and names no error is the model's own lead-in.
+const leadIn=text=>{const first=String(text||'').trim().split('\n')[0];return first.length<=140&&/:\s*$/u.test(first)&&!/\/[^\/\n]+\/|→|"/u.test(first);};
 export const isBridgeLine=text=>PEDAGOGIC_BRIDGES.includes(String(text||'').trim());
 // A transition the model wrote itself counts; the runner never stacks a second one on it.
 const authoredBridge=/Tuy nhiên,\s*để bài (?:nói|đọc)(?:\/bài đọc)?\b/iu;
@@ -35,7 +37,7 @@ export function pedagogicSpans(spans,seed,used=new Set()){
  if(rotate)for(const s of spans)for(const b of PEDAGOGIC_BRIDGES)if(s.text?.includes(b))used.add(b);
  const out=[];let praise=false,bridged=false;for(const p of spans){
   if(p.text?.includes('• ')){praise=false;bridged=false;}
-  if(PEDAGOGIC_BRIDGES.some(b=>p.text?.includes(b))||authoredBridge.test(p.text||'')||p.tone==='correction'&&praise&&authoredTransition.test(p.text||''))bridged=true;
+  if(PEDAGOGIC_BRIDGES.some(b=>p.text?.includes(b))||authoredBridge.test(p.text||'')||p.tone==='correction'&&praise&&(authoredTransition.test(p.text||'')||rotate&&leadIn(p.text)))bridged=true;
   if(p.tone==='correction'&&praise&&!bridged&&!(seed!=null&&pureEncouragement(p.text))){out.push({text:'\n'+pick()+(seed!=null&&String(p.text||'').startsWith('\n')?'':'\n'),tone:'neutral'});bridged=true;}
   out.push(p);if(p.tone==='praise')praise=true;
  }return out;

@@ -74,3 +74,8 @@ console.log('PASS resubmissions: free gates first, one more request at most, not
  assert.match(studentAssessmentNotice({assessable:false,reason:'Con đang nói về chủ đề Wood and Metal, trong khi bài được giao là Video 19.'},retry),/^Cô đã nhận được bài con nộp lại, nhưng lần này cô vẫn chưa chấm được vì:\nCon đang nói/);
  assert.match(studentAssessmentNotice({assessable:false,reason:'Con đang nói về chủ đề Wood and Metal.'},first),/^Cô đã nhận được bài của con\.\n/);
  console.log('PASS resubmission feedback acknowledges the resubmission.');}
+{const {presentationNotice,RETRY_PRESENTATION_LINE}=await import('./teacher-presentation-policy.mjs');
+ const base={route:{code:'DE-13'},receipt:{time:'2026-11-09T15:23:07.725Z',student:'JAMES',className:'KIDS 22',code:'DE-13'},media:[]};
+ const first=presentationNotice(base).text,again=presentationNotice({...base,sheetTruth:{reopenedBy:'newer_form_timestamp',previousNotice:'❌ CẦN NỘP LẠI: Bài nộp chưa đính kèm link'}}).text;
+ if(first.includes(RETRY_PRESENTATION_LINE))throw Error('FIRST_ATTEMPT_CALLED_RETRY');if(!again.includes('— NHẬN XÉT GV —\n'+RETRY_PRESENTATION_LINE+'\nChất lượng'))throw Error('RETRY_LINE_MISSING '+again);
+ console.log('PASS a resubmitted video that is still not a presentation is told it was a resubmission');}

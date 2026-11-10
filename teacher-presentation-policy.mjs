@@ -1,11 +1,19 @@
 import {presentationApplies,hasQuestionComponent,QUESTION_COMPONENT_INSTRUCTION} from './presentation-component-policy.mjs';
-import {receiptDate,publicText} from './master-policy.mjs';import {confirmedScriptReading,readingResubmission} from './presentation-resubmission.mjs';
+import {receiptDate,publicText} from './master-policy.mjs';import {isGatedRetry} from './resubmission-acknowledgement.mjs';import {confirmedScriptReading,readingResubmission} from './presentation-resubmission.mjs';
 export const PRESENTATION_RESUBMISSION_STATUS='COMPLETED_PRESENTATION_RESUBMISSION';
 export const PRESENTATION_KINDS=new Set(['de','scienceK','science','critical','project']);
 export const PRESENTATION_REASON='Bài học yêu cầu con tự thuyết trình trực diện (thấy rõ khuôn mặt, ánh mắt nhìn camera và cử chỉ tay tương tác). Video của con đang chỉ quay màn hình/chĩa vào máy tính/đọc bài viết sẵn, chưa đạt yêu cầu thuyết trình.';
 export const PRESENTATION_PRACTICE='Con hãy nhìn vào hình ảnh/mindmap, tập nói thành câu hoàn chỉnh và nhờ bố mẹ quay trực diện thấy người con nộp lại cho cô nhé!';
 export const STRICT_PRESENTATION_RULE='QUY TẮC ƯU TIÊN CAO NHẤT CHO BÀI THUYẾT TRÌNH D.E, Science K/G1–G3, Critical, Project: nếu ảnh xác nhận chỉ quay màn hình/chĩa vào laptop/TV không thấy mặt con, hoặc đọc bài viết sẵn, phải assessable=false, band rỗng, roseSections=[]; không cho 75%, 80%, 65%, không chữa chi tiết phát âm/từ vựng. presentationVisualCheck confirmed=true, studentVisible=false, capture=screen_only hoặc filming_screen, basis quan sát cụ thể, sourceFileIndex đúng. Nếu đọc bài viết sẵn thì presentationReadingCheck ghi đúng bằng chứng. Không suy đọc giấy từ giọng yếu/chậm hoặc một lần nhìn xuống. Không áp quy tắc này cho Shadowing/Peppa/bài đọc hay bài cho phép đọc văn bản.'+'\n'+QUESTION_COMPONENT_INSTRUCTION;
+// Teacher10Nov: a resubmission that is still not a presentation is told so (James K22 DE-13).
+export const RETRY_PRESENTATION_LINE='Cô đã nhận được video con nộp lại, nhưng lần này cô vẫn chưa chấm được vì:';
 export function presentationNotice(j,draft=null,snapshot={}){
+ const out=basePresentationNotice(j,draft,snapshot);
+ if(!isGatedRetry(j)||typeof out?.text!=='string'||out.text.includes(RETRY_PRESENTATION_LINE))return out;
+ const at=out.text.indexOf('— NHẬN XÉT GV —\n');if(at<0)return out;const cut=at+'— NHẬN XÉT GV —\n'.length;
+ return {...out,text:out.text.slice(0,cut)+RETRY_PRESENTATION_LINE+'\n'+out.text.slice(cut)};
+}
+function basePresentationNotice(j,draft=null,snapshot={}){
  if(draft&&confirmedScriptReading(draft,j,snapshot)&&!(draft.presentationVisualCheck?.confirmed===true&&draft.presentationVisualCheck.studentVisible===false&&['screen_only','filming_screen'].includes(draft.presentationVisualCheck.capture)))return {...readingResubmission(draft,j),status:PRESENTATION_RESUBMISSION_STATUS};
  const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Bangkok',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(receiptDate(j.receipt?.time||j.source?.time||j.source?.at)).replace(',','');
  const reason=draft?.presentationVisualCheck?.confirmed===true&&draft.presentationVisualCheck.studentVisible===false&&['screen_only','filming_screen'].includes(draft.presentationVisualCheck.capture)?'Bài này yêu cầu con tự thuyết trình trước camera, nhưng video chỉ quay màn hình và chưa thấy người trình bày. '+publicText(draft.presentationVisualCheck.basis||'').trim():PRESENTATION_REASON;

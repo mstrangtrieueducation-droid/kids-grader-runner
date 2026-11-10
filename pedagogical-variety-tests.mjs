@@ -55,3 +55,10 @@ console.log('PASS feedback wording varies by pupil and lesson; old renders uncha
  for(let k=0;k<200;k++){const seed=vs({className:'KIDS 9'+k%9,student:'PUPIL '+k,code:'SCIENCE-G1-'+k%40,time:new Date(F+k*61000).toISOString()});const used=new Set();const text=labels.map(l=>sec(mk(l),seed,used).text).join('\n');const hits=B.map(b=>text.split(b).length-1);if(hits.some(h=>h>1))throw Error('REPEATED_BRIDGE '+k);if(hits.reduce((a,b)=>a+b,0)<8)throw Error('MISSING_BRIDGE '+k);}
  const old=vs({className:'KIDS 9',student:'A',code:'X',time:new Date(F-60000).toISOString()});const u=new Set();const a=labels.map(l=>sec(mk(l),old,u).text).join('\n'),b=labels.map(l=>sec(mk(l),old).text).join('\n');if(a!==b)throw Error('OLD_RENDER_CHANGED');
  console.log('PASS one piece of feedback never repeats a transition from 10/11; earlier renders unchanged');}
+{const {pedagogicSpans:ps,PEDAGOGIC_BRIDGES:B,PEDAGOGIC_DISTINCT_FROM:F,varietySeed:vs}=await import('./pedagogical-language.mjs');
+ const seed=vs({className:'KIDS 11',student:'BUSH',code:'SCIENCE-G1-20',time:new Date(F+60000).toISOString()});
+ const spans=[{text:'• Nội dung: Con trả lời đúng 5/5 câu.',tone:'praise'},{text:'\nĐể câu trả lời khoa học hơn, con lưu ý thêm điểm này nhé:',tone:'correction'},{text:'\nỞ câu 2, con nên nói đầy đủ: "When water vapor cools..."',tone:'correction'}];
+ const out=ps(spans,seed).map(x=>x.text).join('');if(B.some(b=>out.includes(b)))throw Error('BRIDGE_BEFORE_AUTHORED_LEADIN');
+ const fault=[{text:'• Con đọc rõ.',tone:'praise'},{text:'\nTừ cloud con đọc thành /klaʊn/:',tone:'correction'}];if(!B.some(b=>ps(fault,seed).map(x=>x.text).join('').includes(b)))throw Error('FAULT_LINE_TAKEN_AS_LEADIN');
+ const old=vs({className:'KIDS 11',student:'BUSH',code:'SCIENCE-G1-20',time:'2026-11-09T15:48:11.947Z'});if(!B.some(b=>ps(spans,old).map(x=>x.text).join('').includes(b)))throw Error('OLD_RENDER_CHANGED');
+ console.log('PASS the model\'s own lead-in line is never doubled by a bridge (from 10/11)');}
