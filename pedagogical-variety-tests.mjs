@@ -48,3 +48,10 @@ assert.ok(PEDAGOGY_INSTRUCTION.includes('không dùng mãi một mẫu câu'));a
 assert.ok(varietySeed({className:'SHADOWING L1',name:'Minh Anh',code:'Unit 3',time:'2026-11-09T12:00:00.000Z'}));assert.ok(PEDAGOGY_INSTRUCTION.includes('mỗi bài chỉ một lời động viên kết'));
 assert.ok(!PEDAGOGY_INSTRUCTION.includes('BẮT BUỘC có câu dẫn: "'),'no single mandatory formula');
 console.log('PASS feedback wording varies by pupil and lesson; old renders unchanged; authored transitions never doubled.');
+// Teacher10Nov: one piece never repeats a transition (new receipts only).
+{const {PEDAGOGIC_BRIDGES:B,PEDAGOGIC_DISTINCT_FROM:F,pedagogicSection:sec,varietySeed:vs}=await import('./pedagogical-language.mjs');
+ const mk=label=>({label,spans:[{text:'• Con đọc rõ từ apple. ',tone:'praise'},{text:'Con đọc thành /æpu/, cần sửa âm cuối.',tone:'correction'},{text:'\n• Con nói đúng nhịp. ',tone:'praise'},{text:'Con còn thiếu âm /s/.',tone:'correction'}]});
+ const labels=['PHÁT ÂM','NGỮ ĐIỆU','TRÔI CHẢY','NỘI DUNG'];
+ for(let k=0;k<200;k++){const seed=vs({className:'KIDS 9'+k%9,student:'PUPIL '+k,code:'SCIENCE-G1-'+k%40,time:new Date(F+k*61000).toISOString()});const used=new Set();const text=labels.map(l=>sec(mk(l),seed,used).text).join('\n');const hits=B.map(b=>text.split(b).length-1);if(hits.some(h=>h>1))throw Error('REPEATED_BRIDGE '+k);if(hits.reduce((a,b)=>a+b,0)<8)throw Error('MISSING_BRIDGE '+k);}
+ const old=vs({className:'KIDS 9',student:'A',code:'X',time:new Date(F-60000).toISOString()});const u=new Set();const a=labels.map(l=>sec(mk(l),old,u).text).join('\n'),b=labels.map(l=>sec(mk(l),old).text).join('\n');if(a!==b)throw Error('OLD_RENDER_CHANGED');
+ console.log('PASS one piece of feedback never repeats a transition from 10/11; earlier renders unchanged');}

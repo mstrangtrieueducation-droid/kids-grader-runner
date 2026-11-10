@@ -11,10 +11,11 @@ const tone=text=>/chưa|nhầm|thiếu|sai|nuốt|nghe:|đọc thành|→|Con (?
 const parts=text=>String(text).split(/(?<=\n)|(?<=[.!?])(?=\s+(?:Con|Cô|Tuy nhiên)\b)/u).filter(Boolean).map(text=>({text,tone:tone(text)}));
 const valid=s=>s.spans?.length&&s.spans.every(p=>['praise','correction','neutral'].includes(p.tone))&&s.spans.map(p=>p.text).join('')===s.text;
 export function savedSections(g,snapshot={},seed){
+ const used=new Set();
  const supplied=array(g.roseSections||g.sections).filter(s=>typeof s.text==='string'&&publicText(s.text).trim());
  // Keep the complete model-authored reply when one exists. Missing ancillary
  // evidence fields must not remove or downgrade any of its corrections.
- if(supplied.length)return supplied.map(s=>{const text=publicText(s.text);return pedagogicSection({...s,text,spans:text===s.text&&valid(s)?s.spans:parts(text)},seed);});
+ if(supplied.length)return supplied.map(s=>{const text=publicText(s.text);return pedagogicSection({...s,text,spans:text===s.text&&valid(s)?s.spans:parts(text)},seed,used);});
  const findings=array(g.rubricFindings),labels=snapshot.form?.length?snapshot.form:findings.map(f=>f.label).filter(Boolean);
  const sections=(labels.length?labels:['Nội dung','Phát âm & ngữ pháp','Cách luyện']).map(label=>({label,text:'',spans:[]}));
  const add=(s,text,t='neutral')=>{text=publicText(text);if(!text?.trim()||s.spans.some(p=>p.text.trim()===text.trim()))return;s.spans.push({text:(s.spans.length?'\n':'')+text.trim(),tone:t});s.text=s.spans.map(p=>p.text).join('');};
@@ -33,7 +34,7 @@ export function savedSections(g,snapshot={},seed){
  for(const o of g.presentation?.observations||[])add(matching(/phong thái|biểu cảm|trình bày/i)||sections.at(-1),o.assessment||o.correction||o.observation,o.tone||'neutral');
  for(const r of array(g.recordingChecks))if(r.feedback?.trim())add(sections.at(-1),r.feedback,'correction');
  if(!sections.some(s=>s.text)&&g.reason)add(sections[0],g.reason,tone(g.reason));
- return sections.filter(s=>publicText(s.text).trim()).map(s=>pedagogicSection(s,seed));
+ return sections.filter(s=>publicText(s.text).trim()).map(s=>pedagogicSection(s,seed,used));
 }
 export function savedFeedback(g,j,before='',snapshot={}){
  before=questionCorrectionPrefix(before,j);
