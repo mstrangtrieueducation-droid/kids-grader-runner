@@ -11,6 +11,12 @@ import {masterScopeAllowsJob} from './master-submission-scope.mjs';
 import {approvalSession} from './teacher-approval-guards.mjs';
 const digest=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export const NATIVE_TODO_SCHEMA='kids-native-todo-v1';
+// Teacher10Nov: a dead-lettered item that never spent a request is released when the
+// sweep has withdrawn the cell notice and reopened the same native job (Bush K11, Linda/James K22).
+export function releasableQuarantine(item,j){
+ if(item?.state!=='QUARANTINED'||item.savedArtifact||item.delivery?.rawId||item.delivery?.gradeId||item.queueQuarantine?.rawId||item.queueQuarantine?.gradeId||(item.attempts||[]).some(a=>Number(a.calls)>0))return false;
+ return !!(j&&j.sheetTruth?.reopenedBy&&j.sheetTruth?.previousNotice&&['READY','RETRY'].includes(j.status)&&!j.rawId&&!j.gradeId&&!j.generateRequests&&!j.masterGenerationReserved&&!j.runnerGenerationStarted&&!j.generationReservation&&!j.generationAttempt?.calls&&!j.apiUsage&&!j.usage);
+}
 export const pendingNativeFeedback=text=>!hasTeacherReview(text)&&(receiptOnlyCell(text)||emptyTeacherBody(text));
 // Partial downloads and prepared media live in the owning worker's directory.
 // A continuation must return there; a new hosted run starts with fresh disks.
@@ -29,7 +35,7 @@ export function appendNativeItems(previous,entries,resolve,{now=Date.now(),appro
    const old=q.items.find(x=>x.id===id);
    // Only prepareNativeTodo's fresh native resolver may reopen a closed manifest
    // row. Keep the same job, reservation, artifacts and entire attempt history.
-   if(reopenResolved&&['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(old.state)){
+   if(reopenResolved&&(['DONE','VERIFIED_WRITTEN','ALREADY_PRESENT'].includes(old.state)||releasableQuarantine(old,j))){
     let target;try{target=resolve(entry);}catch{continue;}
     if(target&&matchesTarget(j,target)){
      old.readbackRecovery={at:new Date(now).toISOString(),previousState:old.state,previousVerifiedAt:old.verifiedAt||null,providerCalls:0};

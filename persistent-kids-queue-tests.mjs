@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed,workerOwnsPreparation,mergeDurableNativeItem} from './persistent-kids-queue.mjs';
+import {releasableQuarantine,appendNativeItems,preparationProgress,retryProgressTracker,discoveryAllowed,workerOwnsPreparation,mergeDurableNativeItem} from './persistent-kids-queue.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';
 import {pedagogicSpans} from './pedagogical-language.mjs';
 const job={id:'synthetic-1',status:'READY',cls:{className:'KIDS 90',spreadsheetId:'synthetic-class'},receipt:{className:'KIDS 90',student:'SYNTHETIC PUPIL',code:'SCIENCE-G1-01',time:'2026-10-25T10:00:00Z',links:'synthetic-source'},route:{code:'SCIENCE-G1-01'},media:[{id:'synthetic-media'}]},entry={row:2,job};
@@ -32,6 +32,16 @@ assert.equal(appendNativeItems(first.queue,[{row:2,job:recheckJob}],()=>null,{re
 assert.equal(appendNativeItems(first.queue,[{row:2,job:{...recheckJob,status:'RETURNED'}}],resolve,{reopenResolved:true}).added,0,'the real native Sheet reconciliation must first authorize saved recovery');
 
 assert.deepEqual(mergeDurableNativeItem(recovered.queue.items[0],first.queue.items[0]),recovered.queue.items[0],'server manifest refresh must retain exactly proven Sheet-truth recovery');
+{const q=structuredClone(first.queue);q.items[0]={...q.items[0],state:'QUARANTINED',attempts:[{calls:0},{calls:0}],queueQuarantine:{reason:'NATIVE_RECONCILIATION_REQUIRED',rawId:null,gradeId:null},error:'NATIVE_RECONCILIATION_REQUIRED'};
+ const reopened={...job,status:'READY',sheetTruth:{state:'PENDING',reopenedBy:'newer_form_timestamp',previousNotice:'❌ CẦN NỘP LẠI — Tệp con vừa nộp lại vẫn là tệp cô đã xem'}};
+ const out=appendNativeItems(q,[{row:2,job:reopened}],resolve,{reopenResolved:true});assert.equal(out.added,1,'an uncalled quarantined item is released once the sweep reopens its job');assert.equal(out.queue.items[0].state,'PENDING_VALIDATION');assert.equal(out.queue.items[0].readbackRecovery.previousState,'QUARANTINED');assert.deepEqual(out.queue.items[0].attempts,q.items[0].attempts);
+ assert.deepEqual(mergeDurableNativeItem(out.queue.items[0],q.items[0]),out.queue.items[0],'the durable manifest accepts the release');
+ assert.equal(appendNativeItems(q,[{row:2,job:{...reopened,sheetTruth:{state:'PENDING'}}}],resolve,{reopenResolved:true}).added,0,'never without a sweep reopen');
+ assert.equal(appendNativeItems(q,[{row:2,job:reopened}],resolve).added,0,'never outside the native resolver pass');
+ assert.equal(appendNativeItems(q,[{row:2,job:reopened}],()=>null,{reopenResolved:true}).added,0,'never over a teacher comment or protected cell');
+ assert(!releasableQuarantine({...q.items[0],attempts:[{calls:1}]},reopened),'never after a paid call');
+ assert(!releasableQuarantine({...q.items[0],queueQuarantine:{rawId:'paid'}},reopened),'never with a saved result');
+ assert(!releasableQuarantine(q.items[0],{...reopened,rawId:'r'}),'never for a job holding a result');}
 const advanced={...first.queue.items[0],state:'HELD',attempts:[{calls:1},{calls:0}]};
 assert.equal(mergeDurableNativeItem(recovered.queue.items[0],advanced),advanced,'never replace a concurrently advanced durable row');
 
