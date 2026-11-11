@@ -44,3 +44,12 @@ console.log(JSON.stringify({universalPreprocessing:true,transientRetries:2,waitS
  let err;try{transcodeUniversal({input:in2,output:path.join(dir2,'out.mp3'),ffmpeg:'ff',run:never,sourceId:'s',modified:'m',sourceSize:100});}catch(e){err=e;}assert.equal(err?.message,'TRANSIENT_MEDIA_TRANSCODE');assert.match(err.detail,/Invalid data/,'the converter reason is kept');
  const k={error:'TRANSIENT_MEDIA_TRANSCODE',preprocessDetail:err.detail};retryPreparation(k,()=>{},0);assert.match(k.preprocessRetry.detail,/Invalid data/);assert.equal(k.preprocessDetail,undefined);
  console.log('PASS conversion falls back to tolerant reading and records the converter reason');}
+
+{const {truncatedUploadNotice,TRUNCATED_UPLOAD_PATTERN}=await import('./universal-media.mjs');const {noticeKind}=await import('./sheet-truth-state.mjs');
+ assert.match(truncatedUploadNotice(1,2),/^❌ CẦN NỘP LẠI — Tệp thứ hai con tải lên bị thiếu/);assert.match(truncatedUploadNotice(0,1),/^❌ CẦN NỘP LẠI — Tệp con tải lên bị thiếu/);
+ assert(TRUNCATED_UPLOAD_PATTERN.test('[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7f2aec0] stream 1, offset 0x13799fe: partial file'));
+ assert.equal(noticeKind('✅ ĐÃ NỘP'+String.fromCharCode(10)+'— NHẬN XÉT GV —'+String.fromCharCode(10)+truncatedUploadNotice(1,2)),'link','a cut upload never closes the task');
+ const os=await import('node:os');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cut-'));const input=path.join(dir,'in.mp4');fs.writeFileSync(input,Buffer.alloc(100));
+ const cut=(bin,args)=>args.includes('-y')?{status:1,stderr:'[mov @ 0x1] stream 1, offset 0x13799fe: partial file'}:{status:0,stderr:'Duration: 00:01:00.00'+String.fromCharCode(10)+'  Stream #0:1(und): Audio: aac (LC), 48000 Hz, stereo (default)'};
+ let err;try{transcodeUniversal({input,output:path.join(dir,'o.mp3'),ffmpeg:'ff',run:cut,sourceId:'file-2',modified:'m',sourceSize:100});}catch(e){err=e;}assert.equal(err.sourceId,'file-2');assert.match(err.detail,/partial file/);
+ console.log('PASS a cut upload is named by file and told once, free, as a resubmission that never closes');}

@@ -38,7 +38,7 @@ const paidJob=j=>!!(j.rawId||j.gradeId||j.apiUsage||j.usage||j.generateRequests|
 export const taskProviderCalls=(source,jobs=[])=>jobs.map(x=>x.job||x).filter(j=>j&&sourceTask(j.source||j.receipt)===sourceTask(source)&&paidJob(j)).length;
 export function noticeKind(text){
  const b=noticeBody(text)||String(text||'');
- if(/quyền xem|không hợp lệ|chưa đính kèm|không truy cập|rỗng|không còn tồn tại|riêng tư|đã bị xóa/iu.test(b))return 'link';
+ if(/tải lên chưa xong|quyền xem|không hợp lệ|chưa đính kèm|không truy cập|rỗng|không còn tồn tại|riêng tư|đã bị xóa/iu.test(b))return 'link';
  if(/không có tiếng|chưa nghe rõ/iu.test(b))return 'silent';
  if(/nhầm file của bài cũ|đã dùng cho bài cũ|vẫn là tệp/iu.test(b))return 'old_file';
  if(/chưa đúng bài được giao|sai bài|nhầm bài/iu.test(b))return 'wrong_task';

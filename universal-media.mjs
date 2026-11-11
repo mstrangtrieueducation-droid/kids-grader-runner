@@ -14,6 +14,10 @@ import {validatedAudioRequest,validateAudioPart} from './audio-payload-guard.mjs
 export const MEDIA_RESOLVER_VERSION='universal-media-resolver-20261027';
 export const PREPROCESS_VERSION='teacher-universal-preprocess-20261017';
 export const MAX_PART_BYTES=5*1024*1024;
+// Teacher11Nov (Vicky K18): a file whose upload was cut off cannot be heard however it is read.
+// Told once, free, after the tolerant readings failed on a complete download of that file.
+export const TRUNCATED_UPLOAD_PATTERN=/partial file|moov atom not found/i;
+export const truncatedUploadNotice=(index,count)=>'❌ CẦN NỘP LẠI — '+(count>1?'Tệp thứ '+(['một','hai','ba','bốn','năm'][index]||String(index+1))+' con':'Tệp con')+' tải lên bị thiếu (tải lên chưa xong) nên cô chưa nghe được phần này. Con tải lại tệp đó rồi nộp lại nhé!';
 export const EMPTY_LINK_NOTICE='❌ CẦN NỘP LẠI — Bài nộp chưa đính kèm link video/file. Con kiểm tra và nộp lại link nhé!';
 export function reusePreparedDownload(service,media,destination,{link=fs.linkSync,copy=fs.copyFileSync}={}){
  if(fs.existsSync(destination)&&fs.statSync(destination).size===Number(media.size))return destination;
@@ -128,7 +132,7 @@ export function transcodeUniversal({input,output,ffmpeg=process.env.FFMPEG_PATH|
   const tolerant=['-fflags','+genpts+discardcorrupt','-err_detect','ignore_err'],tries=[['tolerant',tolerant,chosen.args]];
   if(chosen.args.join(' ')!=='-map 0:a:0')tries.push(['first_audio_track',tolerant,['-map','0:a:0']]);
   let done=false;for(const [name,pre,args] of tries){try{fs.rmSync(working,{force:true});}catch{}if(converted(convert(pre,args))){chosen={...chosen,args,pre,fallback:name};done=true;break;}}
-  if(!done){const e=Error('TRANSIENT_MEDIA_TRANSCODE');e.detail=String(first.stderr||first.error?.message||'status '+first.status).trim().split('\n').filter(Boolean).slice(-3).join(' | ').slice(0,400);throw e;}
+  if(!done){const e=Error('TRANSIENT_MEDIA_TRANSCODE');e.sourceId=sourceId;e.detail=String(first.stderr||first.error?.message||'status '+first.status).trim().split('\n').filter(Boolean).slice(-3).join(' | ').slice(0,400);throw e;}
  }
  const after=probe(ffmpeg,working,run);if(!Number.isFinite(after.seconds))throw Error('TRANSIENT_MEDIA_INCOMPLETE_AUDIO');
  // Container/video duration and decoded packet timestamps may include a late

@@ -2,7 +2,7 @@ import {assertNativeEvidence,refreshNativeIntake} from './native-youtube.mjs';
 import {legacyMediaIdentity,nativeMetadataRepairEligible,NATIVE_METADATA_COMPAT} from './native-metadata-compat.mjs';
 import {sourceInMasterScope} from './master-submission-scope.mjs';
 import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
-import {hasSavedResult,hasRequest,preprocessingRecoverable,retryPreparation,isTransient,EMPTY_LINK_NOTICE,YOUTUBE_NOTICE,PREPROCESS_VERSION,universalValidatedRequest} from './universal-media.mjs';
+import {hasSavedResult,hasRequest,preprocessingRecoverable,retryPreparation,isTransient,EMPTY_LINK_NOTICE,TRUNCATED_UPLOAD_PATTERN,truncatedUploadNotice,YOUTUBE_NOTICE,PREPROCESS_VERSION,universalValidatedRequest} from './universal-media.mjs';
 
 export function installKidsPreprocessing(c,{g,service,isLatest,emit=()=>{}}){
  const oldMeta=c.fileMeta_;c.driveIds_=text=>service.ids(text);
@@ -37,6 +37,15 @@ export function installKidsPreprocessing(c,{g,service,isLatest,emit=()=>{}}){
  };
  const handle=c.handleError_;c.handleError_=(j,row,e)=>{
   if(e.message==='YOUTUBE_UNAVAILABLE')e=Error('TRANSIENT_MEDIA_YOUTUBE_OUTPUT_MISSING');
+  if(e.message==='TRANSIENT_MEDIA_TRANSCODE'&&TRUNCATED_UPLOAD_PATTERN.test(e.detail||'')&&e.sourceId&&!hasRequest(j)&&!hasSavedResult(j)){
+   const files=(j.media||[]).filter(m=>!m.isReference),index=files.findIndex(m=>m.id===e.sourceId),m=files[index];
+   // Only a complete download of that file proves the cut is in the upload, not in our transfer.
+   if(m&&Number(m.runnerDownloadBytes)>0&&Number(m.runnerDownloadBytes)===Number(m.size)&&Number(j.preprocessRetry?.attempts||0)>=2){
+    j.truncatedUpload={sourceId:e.sourceId,detail:String(e.detail).slice(0,300),at:new Date().toISOString(),providerCalls:0};
+    if(notice(j,row,truncatedUploadNotice(index,files.length))){emit({event:'TRUNCATED_UPLOAD_NOTICE',id:j.id,providerCalls:0});return;}
+    delete j.truncatedUpload;
+   }
+  }
   if(isTransient(e)&&!hasRequest(j)&&!hasSavedResult(j)){j.error=e.message;if(e.detail)j.preprocessDetail=e.detail;retryPreparation(j,()=>c.persist_(j,row));return;}
   return handle(j,row,e);
  };
