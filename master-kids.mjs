@@ -2,6 +2,7 @@ import {COMPONENT_POLICY,hasQuestionComponent} from './presentation-component-po
 import {scoredAssessment,SCORED_ASSESSMENT_INSTRUCTION} from './scored-assessment-policy.mjs';
 import {reviewColumn} from './review-column-resolution.mjs';
 import {requestFeedback} from './provider-generation-policy.mjs';
+import {sendTiered,receiptRaw} from './service-tier.mjs';
 import {providerFailure,assessmentFailure,holdSystemFailure,wrongAssignmentNotice,studentAssessmentNotice,LEGACY_GENERIC_NOTICE} from './grading-failure-policy.mjs';
 import {teacherFeedbackPrefix} from './dashboard-feedback.mjs';
 import {mergeTeacherMessage} from './teacher-feedback-state.mjs';
@@ -76,8 +77,8 @@ export function installMasterKids(c,catalog,{emit=()=>{}}={}){
   c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);
   c.recordMasterGeneration_?.(j);const started=Date.now();
   try{
-   const response=requestFeedback({job:j,options:{body:payload},send:({body})=>c.api_('/v1beta/models/'+MASTER_MODEL+':generateContent',apiKey,{method:'post',contentType:'application/json',payload:body}),persist:()=>{c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);},saveArtifact:raw=>c.saveArtifact_('recitation-rejected-'+j.id,raw),onRetry:()=>c.recordMasterGeneration_?.(j)});
-   const raw=JSON.parse(response.getContentText());j.usageRecordedAt=new Date().toISOString();j.apiUsage=c.kidsUsageReceipt_?.(raw,j.usageRecordedAt);j.rawId=c.saveArtifact_('master-raw-'+j.id,raw);
+   const response=requestFeedback({job:j,options:{body:payload},send:({body})=>sendTiered(j,body,(payload,extra)=>c.api_('/v1beta/models/'+MASTER_MODEL+':generateContent',apiKey,{method:'post',contentType:'application/json',payload,...extra})),persist:()=>{c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);},saveArtifact:raw=>c.saveArtifact_('recitation-rejected-'+j.id,raw),onRetry:()=>c.recordMasterGeneration_?.(j)});
+   const raw=JSON.parse(response.getContentText());j.usageRecordedAt=new Date().toISOString();j.apiUsage=c.kidsUsageReceipt_?.(receiptRaw(raw,j),j.usageRecordedAt);j.rawId=c.saveArtifact_('master-raw-'+j.id,raw);
    // All assessment/formatting uses this paid response, even if ancillary fields are absent.
    throw Error('FULL_FEEDBACK_READY');
   }catch(e){if(e.message!=='FULL_FEEDBACK_READY'){j.technicalFailures ||= [];j.technicalFailures.push({at:new Date().toISOString(),phase:'generation',code:e.message,httpCode:e.httpCode||null,details:e.apiDetails||null});}throw e;}finally{j.lastGenerateMs=Date.now()-started;c.persist_(j,c.masterActiveRow);c.flushMasterCheckpoint_?.(c.masterActiveRow);if(j.apiUsage)c.recordMasterUsage_?.(j);}

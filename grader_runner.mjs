@@ -29,7 +29,7 @@ import {masterSweepEnabled} from './master-cross-class-sweep.mjs';
 import {prepareKidsMasterSweep,installMasterScoreProtection,hasHostedKidsCache} from './master-kids-sweep.mjs';
 import {beginSheetBatch,replaySheetBatches} from './kids-sheet-batch.mjs';
 import {installContentRouting} from './kids-content-routing.mjs';
-import {installMasterKids} from './master-kids.mjs';
+import {installMasterKids} from './master-kids.mjs';import {installServiceTier} from './service-tier.mjs';
 import {installReturnedScorePolicy} from './returned-score-policy.mjs';
 import {installDashboardFeedback} from './dashboard-feedback.mjs';
 import {MASTER_MODEL,MASTER_TERMINAL,generationSpent} from './master-policy.mjs';
@@ -105,7 +105,7 @@ export function buildContext(cluster){
  const prop={getProperty:k=>props.get(k)||null,setProperty:(k,v)=>{props.set(k,String(v));return prop;},deleteProperty:k=>{props.delete(k);return prop;},setProperties:x=>{Object.entries(x).forEach(([k,v])=>props.set(k,String(v)));return prop;}};
  const c=vm.createContext({Date,console,FLEET_CLUSTER:cluster,PropertiesService:{getScriptProperties:()=>prop},Utilities:utilities(),SpreadsheetApp:{openById:id=>google.book(id),flush:()=>{},newRichTextValue:()=>new RichBuilder(),newTextStyle:()=>new Style()},
   DriveApp:{getFileById:id=>google.file(id)},ScriptApp:{getOAuthToken:()=>google.token()},Logger:{log:()=>{}},UrlFetchApp:{fetch:(url,o={})=>{
-   const headers={...(o.headers||{})};if(o.contentType)headers['Content-Type']=o.contentType;const q={url,method:(o.method||'GET').toUpperCase(),headers};if(o.payload instanceof Blob)q.bodyBase64=o.payload.bytes.toString('base64');else if(Array.isArray(o.payload))q.bodyBase64=Buffer.from(o.payload).toString('base64');else if(o.payload!==undefined)q.body=o.payload;return request(q);
+   const headers={...(o.headers||{})};if(o.contentType)headers['Content-Type']=o.contentType;const q={url,method:(o.method||'GET').toUpperCase(),headers,...(Number(o.timeoutMs)>0?{timeoutMs:Number(o.timeoutMs)}:{})};if(o.payload instanceof Blob)q.bodyBase64=o.payload.bytes.toString('base64');else if(Array.isArray(o.payload))q.bodyBase64=Buffer.from(o.payload).toString('base64');else if(o.payload!==undefined)q.body=o.payload;return request(q);
   }} });
  const source=path.join(root,'gas');for(const f of fs.readdirSync(source).filter(f=>f.endsWith('.gs')))vm.runInContext(fs.readFileSync(path.join(source,f),'utf8'),c,{filename:f});
  // Teacher approved upgrading every Kids class; never silently downgrade to Lite.
@@ -179,7 +179,7 @@ export function buildContext(cluster){
  }
  if(process.env.MASTER_BAREM_CATALOG){const catalog=MasterBaremCatalog.fromFile(process.env.MASTER_BAREM_CATALOG);installKidsBarem(c,catalog,vm.runInContext('FORMS',c));
  installContentRouting(c,catalog,{refresh:j=>{google.books.get(j.cls.spreadsheetId)?.cache.clear();},lock:j=>tryFileLock(path.join(cache,'locks','student-'+c.hash_([j.cls.spreadsheetId,c.norm_(j.receipt.student)])+'.lock')),onCall:()=>{paidCalls++;},emit});
- installMasterKids(c,catalog,{emit});
+ installMasterKids(c,catalog,{emit});installServiceTier(c);
  installLinkedDestinationBindings(c,{google,config});
  installStampedDestination(c);
  installKidsAppleInputRecovery(c,{g:google,root,ffmpeg,emit});

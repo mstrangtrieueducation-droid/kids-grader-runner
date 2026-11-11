@@ -28,6 +28,7 @@ jobs:
       RUNNER_API_LIMIT: ${{ vars.RUNNER_API_LIMIT || '16' }}
       RUNNER_VERIFY_NEW_MODEL: ${{ vars.RUNNER_VERIFY_NEW_MODEL || 'false' }}
       MODEL_GRADING_AVAILABLE: ${{ vars.MODEL_GRADING_AVAILABLE || 'true' }}
+      KIDS_SERVICE_TIER: ${{ vars.KIDS_SERVICE_TIER || 'flex' }}
       RUNNER_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       RUNNER_GITHUB_TOKEN: ${{ github.token }}
       GOOGLE_SHEETS_INTERVAL_MS: '6000'
@@ -49,6 +50,7 @@ jobs:
           SHEET_TRUTH_SYNC: 'false'
         run: |
           node master-compact-output-tests.mjs
+          node service-tier-tests.mjs
           node pedagogical-variety-tests.mjs
           node gated-resubmission-tests.mjs
           node teacher-named-regrades-tests.mjs

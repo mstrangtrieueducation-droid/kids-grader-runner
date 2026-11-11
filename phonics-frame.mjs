@@ -20,15 +20,16 @@ export function extractPresentationFrames(options){
 }
 export function phonicsFrameParts(job,{read=fs.readFileSync,exists=fs.existsSync}={}){
  if(job.rawId||job.gradeId)return [];
- const parts=[];
+ const parts=[],sent=new Set();
  for(const [i,m] of (job.media||[]).filter(m=>!m.isReference).entries()){
   if(!m.mime.startsWith('video/'))continue;
   const frames=['phonics','science','scienceK','critical','de','project'].includes(job.route?.kind)?(m.runnerContextFrames?.length?m.runnerContextFrames:m.runnerPdfFrame?[m.runnerPdfFrame]:[]):[];
   for(const frame of frames){if(!frame.path||!exists(frame.path))continue;
+   sent.add(i+'@'+frame.timeSeconds);
    parts.push({text:`Ảnh từ FILE HỌC SINH ${i+1}, tại ${frame.timeSeconds}s. Đây là khung hình của cùng tệp âm thanh, không phải tệp/bài mới. Đối chiếu chữ/hình và cách trình bày với barem text local của đúng bài. Không suy hành vi liên tục từ một ảnh, không coi nhìn từ khóa mindmap là đọc bài viết sẵn.`},{inlineData:{mimeType:'image/jpeg',data:read(frame.path).toString('base64')}});
   }
  }
- return parts.concat(screenFrameParts(job,{read,exists}));
+ return parts.concat(screenFrameParts(job,{read,exists,sent}));
 }
 
 export function screenFrameTimes(duration){
@@ -43,12 +44,14 @@ export function screenFramesReady(m,{exists=fs.existsSync}={}){
  const capture=m.screenGroundingCapture;if(capture?.version!==SCREEN_GROUNDING_VERSION||capture.sourceId!==m.id||capture.modified!==m.modified)return false;
  return capture.status==='unavailable'||!!m.runnerScreenFrames?.length&&m.runnerScreenFrames.every(f=>f.path&&exists(f.path));
 }
-export function screenFrameParts(job,{read=fs.readFileSync,exists=fs.existsSync}={}){
+export function screenFrameParts(job,{read=fs.readFileSync,exists=fs.existsSync,sent=new Set()}={}){
  if(job.rawId||job.gradeId)return [];
  job.screenGroundingPolicyVersion=SCREEN_GROUNDING_VERSION;job.screenGroundingFrames=[];const parts=[];
  for(const [i,m]of (job.media||[]).filter(m=>!m.isReference).entries())for(const frame of m.runnerScreenFrames||[]){
   if(!frame.path||!exists(frame.path)||frame.version!==SCREEN_GROUNDING_VERSION)continue;
   job.screenGroundingFrames.push({fileIndex:i,timeSeconds:frame.timeSeconds,sourceId:m.id});
+  // Teacher12Nov: the same frame is never paid for twice; it was already sent above at this exact time.
+  if(sent.has(i+'@'+frame.timeSeconds)){parts.push({text:`Khung hình THỰC TẾ của FILE HỌC SINH ${i+1} (fileIndex ${i}), tại ${frame.timeSeconds}s: chính là ảnh đã gửi ở trên tại cùng thời điểm; dùng lại ảnh đó. Đọc đúng câu/chỉ số tiến độ nếu nhìn thấy. Đây là cùng bài/audio; không cộng ảnh thành bài/câu mới. Phân biệt Lý thuyết/ví dụ với câu Thực hành. Nếu không đọc rõ hoặc chỉ thấy một phần, không tự suy tổng câu và không buộc học sinh làm câu chỉ có trong sách.`});continue;}
   parts.push({text:`Khung hình THỰC TẾ của FILE HỌC SINH ${i+1} (fileIndex ${i}), tại ${frame.timeSeconds}s. Đọc đúng câu/chỉ số tiến độ nếu nhìn thấy. Đây là cùng bài/audio; không cộng ảnh thành bài/câu mới. Phân biệt Lý thuyết/ví dụ với câu Thực hành. Nếu không đọc rõ hoặc chỉ thấy một phần, không tự suy tổng câu và không buộc học sinh làm câu chỉ có trong sách.`},{inlineData:{mimeType:frame.mime||'image/jpeg',data:read(frame.path).toString('base64')}});
  }
  return parts;

@@ -8,10 +8,10 @@ function kidsUsageReceipt_(raw,measuredAt){
  const lite25=/^gemini-2\.5-flash-lite(?:-|$)/.test(model),lite35=/^gemini-3\.5-flash-lite(?:-|$)/.test(model),flash=/^gemini-3\.[68]-flash(?:-|$)/.test(model),tier=String(u.serviceTier||'STANDARD').toUpperCase();
  const pricingAsOf=String(measuredAt||new Date().toISOString()).slice(0,10),future=pricingAsOf>='2027-01-01';
  const rates=flash25?{input:0.30,audio:1.00,output:2.50,cache:0.03}:flash20?{input:0.10,audio:0.70,output:0.40,cache:0.025}:flash?{input:future?1.50:0.75,audio:future?1.50:0.75,output:future?7.50:3.75,cache:future?0.15:0.075}:lite25?{input:0.10,audio:0.30,output:0.40,cache:0.01}:{input:0.30,audio:0.30,output:2.50,cache:0.03};
- const valid=(lite25||lite35||flash||flash25||flash20)&&tier==='STANDARD'&&[p,o,t,cache,audio].every(n=>Number.isInteger(n)&&n>=0)&&cache<=p&&audio<=p&&(!lite25||cache===0&&Array.isArray(u.promptTokensDetails));
+ const flex=tier==='FLEX',tierFactor=flex?0.5:1,valid=(lite25||lite35||flash||flash25||flash20)&&(tier==='STANDARD'||flex&&flash)&&[p,o,t,cache,audio].every(n=>Number.isInteger(n)&&n>=0)&&cache<=p&&audio<=p&&(!lite25||cache===0&&Array.isArray(u.promptTokensDetails));
  return {available:true,model,serviceTier:tier,promptTokens:p,audioInputTokens:audio,responseTokens:o,thinkingTokens:t,cachedInputTokens:cache,totalTokens:u.totalTokenCount,
-  paidRateEquivalentUsd:valid?((p-cache-audio)*rates.input+audio*rates.audio+cache*rates.cache+(o+t)*rates.output)/1e6:null,
-  invoiceChargeUsd:null,pricingAsOf,basis:'API_MEASURED_TOKENS_AT_PUBLISHED_STANDARD_RATE; RECONCILE_WITH_BILLING',pricingSource:'https://ai.google.dev/gemini-api/docs/pricing'};
+  paidRateEquivalentUsd:valid?tierFactor*((p-cache-audio)*rates.input+audio*rates.audio+cache*rates.cache+(o+t)*rates.output)/1e6:null,
+  invoiceChargeUsd:null,pricingAsOf,basis:flex?'API_MEASURED_TOKENS_AT_PUBLISHED_FLEX_RATE; RECONCILE_WITH_BILLING':'API_MEASURED_TOKENS_AT_PUBLISHED_STANDARD_RATE; RECONCILE_WITH_BILLING',pricingSource:'https://ai.google.dev/gemini-api/docs/pricing'};
 }
 function kidsGradeSchema_(form){
  const str={type:'string'},obj=p=>({type:'object',properties:p,required:Object.keys(p),additionalProperties:false});
