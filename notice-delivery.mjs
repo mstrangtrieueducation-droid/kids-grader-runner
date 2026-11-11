@@ -10,3 +10,15 @@ export function noticeDelivered(job,cellText){
  const cell=clean(cellText),notice=clean(job.autoNotice);
  return !!notice&&/CẦN NỘP LẠI/u.test(notice)&&cell.includes(notice);
 }
+// Teacher12Nov: items already quarantined by the missing-marker mistake are closed once,
+// after the live class cell is re-read and still holds the job's own notice.
+export function answeredQuarantine(item,job){
+ return item?.state==='QUARANTINED'&&!item.savedArtifact&&!item.delivery?.rawId&&!item.delivery?.gradeId&&!item.queueQuarantine?.rawId&&!item.queueQuarantine?.gradeId
+  &&!(item.attempts||[]).some(a=>Number(a.calls)>0)&&!!job?.id&&item.delivery?.jobId===job.id&&NOTICE_TERMINAL.has(job.status)&&!job.rawId&&!job.gradeId;
+}
+export function closeAnsweredQuarantine(item,job,cellText,now=new Date()){
+ if(!answeredQuarantine(item,job)||!noticeDelivered(job,cellText))return false;
+ item.noticeRecovery={policy:'kids-notice-delivered-20261112',at:now.toISOString(),previousState:item.state,previousReason:item.queueQuarantine?.reason||item.error||null,providerCalls:0};
+ item.state='ALREADY_PRESENT';item.verifiedAt=now.toISOString();item.error=null;item.nextAt=0;
+ return true;
+}

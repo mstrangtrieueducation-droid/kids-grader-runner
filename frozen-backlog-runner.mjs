@@ -1,5 +1,6 @@
 import {restoreScoredFeedback,reconcileScoredTodo} from './scored-feedback-recovery.mjs';
 import {writeManifestItems} from './manifest-writer.mjs';
+import {answeredQuarantine,closeAnsweredQuarantine} from './notice-delivery.mjs';
 import {recoverQuestionNotices} from './question-notice-recovery.mjs';
 import {openRecoveryItem} from './quarantine-recovery.mjs';
 import {unpaidRecoveryEligible,reopenUnpaidItem} from './unpaid-recovery.mjs';
@@ -52,8 +53,8 @@ export async function runFrozenBacklog(file,{minutes=300,table='FrozenBacklog',i
   }
   durable(reconcileScoredTodo(q.items,[...entriesByControl.values()].flat()));
   // Isolate old poison before allocating a worker. Paid history is never reset.
-  const isolated=[];let reopenedUnpaid=0;
-  for(const item of q.items){const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===item.target.spreadsheetId)),es=cluster&&entriesByControl.get(cluster.controlId),job=es?.find(x=>x.job.id===item.claim?.jobId)?.job||es?.find(x=>matchesTarget(x.job,item.target))?.job||{};item.preparationRank=preparationRank(job);if(isolateItem(item,job,{activeRun:process.env.GITHUB_RUN_ID}))isolated.push(item);if(openRecoveryItem(item)&&!isolated.includes(item))isolated.push(item);const entry=es?.find(x=>x.job===job);if(table==='KidsTodo'&&entry&&item.state==='QUARANTINED'&&unpaidRecoveryEligible(job)){try{if(reopenUnpaidItem(item,entry,es,{context:buildContext(cluster)})){if(!isolated.includes(item))isolated.push(item);reopenedUnpaid++;}}catch{}}}
+  const isolated=[],noticeContexts=new Map();let reopenedUnpaid=0;
+  for(const item of q.items){const cluster=config.clusters.find(c=>c.classes.some(x=>x.spreadsheetId===item.target.spreadsheetId)),es=cluster&&entriesByControl.get(cluster.controlId),job=es?.find(x=>x.job.id===item.claim?.jobId)?.job||es?.find(x=>matchesTarget(x.job,item.target))?.job||{};item.preparationRank=preparationRank(job);if(isolateItem(item,job,{activeRun:process.env.GITHUB_RUN_ID}))isolated.push(item);if(cluster&&answeredQuarantine(item,job)){try{let nc=noticeContexts.get(cluster.controlId);if(!nc){nc=buildContext(cluster);noticeContexts.set(cluster.controlId,nc);}if(closeAnsweredQuarantine(item,job,nc.destination_(job.cls,job.route,job.receipt.student).cell.getDisplayValue())&&!isolated.includes(item))isolated.push(item);}catch{}}if(openRecoveryItem(item)&&!isolated.includes(item))isolated.push(item);const entry=es?.find(x=>x.job===job);if(table==='KidsTodo'&&entry&&item.state==='QUARANTINED'&&unpaidRecoveryEligible(job)){try{if(reopenUnpaidItem(item,entry,es,{context:buildContext(cluster)})){if(!isolated.includes(item))isolated.push(item);reopenedUnpaid++;}}catch{}}}
   durable(isolated);console.log(JSON.stringify({event:'QUEUE_QUARANTINE_RECONCILED',isolated:isolated.length,reopenedUnpaid,providerCalls:0}));
   if(isolationOnly)return {providerCalls:0,isolated:isolated.length,counts:q.items.reduce((a,x)=>(a[x.state]=(a[x.state]||0)+1,a),{})};
   const bindingContexts=new Map(),nativeRows=new Map();
