@@ -51,6 +51,7 @@ jobs:
         run: |
           node master-compact-output-tests.mjs
           node service-tier-tests.mjs
+          node notice-delivery-tests.mjs
           node pedagogical-variety-tests.mjs
           node gated-resubmission-tests.mjs
           node teacher-named-regrades-tests.mjs

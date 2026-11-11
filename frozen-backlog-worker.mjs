@@ -7,7 +7,7 @@ import {authorizeInvalidRetry,initializeAuthorizedRetryInventory} from './author
 // Executed only as a child of the trusted GitHub campaign coordinator.
 import fs from 'node:fs';import vm from 'node:vm';
 import {matchesTarget,resolveFrozenTarget} from './frozen-backlog-policy.mjs';
-import {hasTeacherReview} from './teacher-feedback-state.mjs';
+import {hasTeacherReview} from './teacher-feedback-state.mjs';import {noticeDelivered} from './notice-delivery.mjs';
 import {approvalSession,acceptTeacherApprovals} from './teacher-approval-guards.mjs';
 import {addAutomaticAuthorizations} from './automatic-authorization.mjs';
 import {settleSheetTruth} from './sheet-truth-sync.mjs';
@@ -71,6 +71,7 @@ process.on('message',message=>{if(message.stop){process.disconnect();return;}con
    if(manual&&after===before&&hasTeacherReview(after)){c.teacherApprovalSession_.finish(j);c.teacherApprovalSession_.flush();c.persist_(j,entry.row);}
    const preparing=executable&&calls===0&&!j.rawId&&!j.gradeId&&['READY','WAITING_MEDIA','WAITING_INPUT','RETRY','PROCESSING'].includes(j.status);
    result={state:exact&&hasTeacherReview(after)?manual&&after===before?'ALREADY_PRESENT':'STAGED':j.rosterEligibility?.state==='NOT_IN_CURRENT_ROSTER'?'SKIPPED_NOT_IN_CURRENT_ROSTER':preparing?'PENDING_VALIDATION':j.nextAt>Date.now()?'RETRY':'HELD',verifiedAt:null,before,after,job:j,calls,error:j.error||null,nextAt:preparing?Math.max(Number(j.nextAt)||0,Date.now()+2000):Number(j.nextAt)||0};
+   if(result.state==='HELD'&&exact&&noticeDelivered(j,after))result={...result,state:'ALREADY_PRESENT',verifiedAt:new Date().toISOString(),error:null};
   }
   result.target=resolvedTarget;
   result.beforeNote=beforeNote;if(result.state==='STAGED')result.deliveryCell=structuredClone(c.destination_(j.cls,j.route,j.receipt.student).cell.cells()[0]?.values?.[0]);
