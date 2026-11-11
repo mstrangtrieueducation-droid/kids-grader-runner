@@ -90,3 +90,9 @@ console.log('PASS resubmissions: free gates first, one more request at most, not
  const bare='✅ ĐÃ NỘP THEO MÃ CŨ\nCHƯA TÁCH LOẠI BÀI\nThời gian: 09/11/2026 21:21\n\n— NHẬN XÉT GV —';if(!receiptOnlyCell(bare))throw Error('OLD_CODE_RECEIPT_NOT_EMPTY');
  const graded=bare+'\nChất lượng: đạt khoảng 85%.\n• Đọc đúng: Con đọc đầy đủ.';if(receiptOnlyCell(graded)||!hasTeacherReview(graded))throw Error('OLD_CODE_GRADED_TAKEN_AS_EMPTY');
  console.log('PASS an old-code receipt with no feedback is an empty cell; graded ones stay protected');}
+{const {stripCopiedParentAttempt,DASHBOARD_REPROCESS_AUTH:A}=await import('./dashboard-reprocess.mjs');const {hasRequest}=await import('./universal-media.mjs');
+ const child={id:'c',dashboardReprocessAuth:A,regradeParentId:'p',generateRequests:0,physicalGenerateRequests:1,masterGenerationStartedAt:'2026-11-09T14:44:05.319Z',providerFailure:{http:503},technicalFailures:[{code:'HTTP_503'}],masterSweep:{at:'2026-11-10T09:46:47.167Z'}};
+ if(!hasRequest(child))throw Error('FIXTURE');if(!stripCopiedParentAttempt(child)||hasRequest(child)||!/HTTP_503/.test(child.parentAttemptRecord))throw Error('COPIED_ATTEMPT_NOT_CLEARED');
+ const own={id:'o',dashboardReprocessAuth:A,generateRequests:0,physicalGenerateRequests:1,masterGenerationStartedAt:'2026-11-10T10:00:00.000Z',masterSweep:{at:'2026-11-10T09:46:47.167Z'}};if(stripCopiedParentAttempt(own))throw Error('OWN_ATTEMPT_CLEARED');
+ if(stripCopiedParentAttempt({...child,physicalGenerateRequests:1,generateRequests:1}))throw Error('SPENT_CHILD_CLEARED');
+ console.log('PASS a dashboard child no longer carries the failed call of its parent; its own attempts are never cleared');}
