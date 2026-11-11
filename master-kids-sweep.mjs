@@ -11,7 +11,7 @@ export function hostedKidsSweep(context,create){if(!hostedSweeps.has(context))ho
 export function pendingKidsCache(sweep,jobs){return jobs.some(({job})=>mayResumeSaved(job)&&sweep.allowsJob(job));}
 export const hasHostedKidsCache=c=>hostedSweeps.get(c)?.hasCachedWork?.();
 export function prepareKidsMasterSweep(c,cluster,google,{emit=()=>{},receipts=null}={}){const build=()=>{
- c.recoverProviderRetries_?.();
+ c.recoverProviderRetries_?.();c.releaseNamedRegrades_?.();
  const tabs=c.masterSweepTabs_,catalog=c.guideCatalog_(),snapshotFor=currentBatchSnapshot(google,cls=>c.targetSnapshot_(cls)),routes=new Map(),latest=new Map(),jobs=c.loadJobs_(),byReceipt=new Map();
  const receiptKey=s=>[c.norm_(s.className),s.sourceTab,s.row,c.norm_(s.student),c.norm_(s.code),s.links].join('|');let intakeAdded=0;
  authorizeEmptyDashboardReprocess(c,jobs,{emit});

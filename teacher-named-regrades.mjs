@@ -23,9 +23,9 @@ export function releaseNamedRegrade(job,now=new Date()){
  job.status='READY';job.error='';job.nextAt=0;return true;
 }
 export function installNamedRegrades(c,{emit=()=>{}}={}){
- const recover=c.recoverContentRouting_;
- c.recoverContentRouting_=()=>{
-  const result=recover?.()||{};let released=0;
+ // Teacher11Nov: the continuous service never reaches the content-recovery phase, so the
+ // master sweep (every intake) calls this directly.
+ c.releaseNamedRegrades_=()=>{let released=0;
   for(const {job,row} of c.loadJobs_()){
    if(!namedRegradeReleasable(job))continue;
    try{const cell=c.destination_(job.cls,job.route,job.receipt.student).cell,text=cell.getDisplayValue();
@@ -33,6 +33,8 @@ export function installNamedRegrades(c,{emit=()=>{}}={}){
     if(releaseNamedRegrade(job)){c.persist_(job,row);released++;emit({event:'TEACHER_NAMED_REGRADE_RELEASED',id:job.id,providerCalls:0});}
    }catch(e){emit({event:'TEACHER_NAMED_REGRADE_DEFERRED',id:job.id,error:String(e.message||''),providerCalls:0});}
   }
-  return {...result,namedRegradesReleased:released};
+  return released;
  };
+ const recover=c.recoverContentRouting_;
+ c.recoverContentRouting_=()=>({...(recover?.()||{}),namedRegradesReleased:c.releaseNamedRegrades_()});
 }
