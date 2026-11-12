@@ -3,8 +3,8 @@
 // once: a refused Flex call returns no result, so this is still one graded result per submission.
 // Set the repository variable KIDS_SERVICE_TIER=standard to return to the old behaviour.
 export const SERVICE_TIER_POLICY='kids-flex-first-v1-20261112';
-export const FLEX_SERVER_TIMEOUT_S=180;
-export const FLEX_CLIENT_TIMEOUT_MS=300000;
+export const FLEX_SERVER_TIMEOUT_S=100;
+export const FLEX_CLIENT_TIMEOUT_MS=130000;
 export const STANDARD_FALLBACK_MS=240000;
 const FALLBACK_CODES=new Set([429,503,504]);
 
@@ -39,7 +39,6 @@ export function receiptRaw(raw,job){
  const u=raw?.usageMetadata;if(!u||u.serviceTier||!job?.servedServiceTier)return raw;
  return {...raw,usageMetadata:{...u,serviceTier:job.servedServiceTier}};
 }
-export function installServiceTier(c,env=process.env){
- const reserve=c.generationReserve_;
- if(typeof reserve==='function'&&requestedTier(env)==='flex')c.generationReserve_=()=>Math.max(reserve(),FLEX_CLIENT_TIMEOUT_MS+STANDARD_FALLBACK_MS+30000);
-}
+// Owner12Nov evening: never widen the generation reserve. Each queue item has a 5-minute
+// budget; a larger reserve stopped every generation (the job stayed READY) and blocked intake.
+export function installServiceTier(){}

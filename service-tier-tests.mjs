@@ -23,7 +23,8 @@ assert.equal(JSON.parse(withTier(body,'flex')).service_tier,'flex');
 // Receipt sees the served tier; the saved raw response is untouched.
 {const raw={usageMetadata:{promptTokenCount:1}};const r=receiptRaw(raw,{servedServiceTier:'FLEX'});assert.equal(r.usageMetadata.serviceTier,'FLEX');assert.equal(raw.usageMetadata.serviceTier,undefined);}
 // Workers keep enough time for a Flex call plus a Standard fallback before a deadline.
-{const c={generationReserve_:()=>90000};installServiceTier(c,{});assert.ok(c.generationReserve_()>=FLEX_CLIENT_TIMEOUT_MS);const s={generationReserve_:()=>90000};installServiceTier(s,{KIDS_SERVICE_TIER:'standard'});assert.equal(s.generationReserve_(),90000);}
+// The generation reserve is never changed: a queue item has a 5-minute budget (ITEM_MS).
+{const c={generationReserve_:()=>90000};installServiceTier(c,{});assert.equal(c.generationReserve_(),90000);assert.ok(FLEX_CLIENT_TIMEOUT_MS<5*60000-90000);}
 // A frame already sent at the same time is not sent twice; its screen label stays.
 {const frame=t=>({path:'f'+t,timeSeconds:t,mime:'image/jpeg'});
  const job={route:{kind:'science'},media:[{mime:'video/mp4',runnerContextFrames:[frame(10),frame(40)],runnerScreenFrames:[{...frame(1),version:'screen-first-v1-20261015'},{...frame(40),version:'screen-first-v1-20261015'}]}]};
