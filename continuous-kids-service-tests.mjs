@@ -48,3 +48,21 @@ await runKidsService({deadline:14*60000,now:()=>clock,sleep:async ms=>{clock+=ms
  runTodo:async()=>assert.fail('quarantine/cooldown is not due work'),runFrozen:async()=>({counts:{QUARANTINED:13}}),discover:async()=>assert.fail('no full scan')});
 assert(quarantineIntake>0,'isolated and cooling-down old work must not suppress new Form intake');
 console.log('PASS restored due queue drains before Form/history intake; quarantine and cooldown do not block new intake; no real provider calls.');
+
+// Owner12Nov: a due item that never moves (Philip, 409 loops) cannot keep the Form out.
+{let clock=0,intakes=0,drains=0;
+ await runKidsService({deadline:60*60000,now:()=>clock,sleep:async ms=>{clock+=ms;},emit:()=>{},
+  loadTodo:()=>({items:[{state:'PENDING_VALIDATION',nextAt:0}]}),
+  intake:async()=>{intakes++;return {due:false,handled:0};},
+  prepareTodo:async()=>({queue:{items:[{state:'PENDING_VALIDATION'}]}}),
+  runTodo:async()=>{drains++;clock+=20000;return {counts:{PENDING_VALIDATION:1},providerCalls:0};},
+  runFrozen:async()=>({counts:{},providerCalls:0}),discover:async()=>{}});
+ assert(intakes>=3,'a stuck due item still lets the Form in at least every ten minutes (intakes='+intakes+')');
+ let c2=0,in2=0,moving=0;
+ await runKidsService({deadline:60*60000,now:()=>c2,sleep:async ms=>{c2+=ms;},emit:()=>{},
+  loadTodo:()=>({items:[{state:'PENDING_VALIDATION',nextAt:0}]}),intake:async()=>{in2++;return {due:false,handled:0};},
+  prepareTodo:async()=>({queue:{items:[{state:'PENDING_VALIDATION'}]}}),
+  runTodo:async()=>{moving++;c2+=60000;return {counts:{VERIFIED_WRITTEN:moving},providerCalls:1};},
+  runFrozen:async()=>({counts:{},providerCalls:0}),discover:async()=>{}});
+ assert(in2>=4,'even a queue that keeps moving yields to intake every ten minutes (intakes='+in2+')');
+ console.log('PASS new submissions are read at least every ten minutes even when a due item never finishes');}

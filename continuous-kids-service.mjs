@@ -3,9 +3,12 @@ import {serviceMinutes,ITEM_MS} from './workload-lanes.mjs';
 import {discoveryAllowed} from './persistent-kids-queue.mjs';
 import {campaignClosed} from './frozen-backlog-policy.mjs';
 const remaining=counts=>Object.entries(counts||{}).filter(([state])=>!campaignClosed(state)).reduce((n,[,v])=>n+v,0);
+// Owner12Nov: one queue item that never progresses (KIDS 31 Philip looped 409 times on 12/11)
+// must never keep new Form submissions out. Intake runs at least this often whatever is due.
+export const INTAKE_GUARANTEE_MS=10*60000;
 const signature=counts=>JSON.stringify(Object.entries(counts||{}).sort());
 export async function runKidsService({deadline,intake,runFrozen,prepareTodo,discover,runTodo,loadTodo=()=>null,isolate=async()=>{},checkUpgrade=mainRevisionChanged,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms)),emit=x=>console.log(JSON.stringify(x))}){
- let frozenRemaining=1,nextFrozen=0,nextTodo=0,previousFrozen='',previousTodo='',freshSlices=0,upgradeRequested=false,isolated=false;
+ let lastIntakeAt=now(),frozenRemaining=1,nextFrozen=0,nextTodo=0,previousFrozen='',previousTodo='',freshSlices=0,upgradeRequested=false,isolated=false;
  const drainTodo=async()=>{
   const report=await runTodo(serviceMinutes(deadline,now())),fingerprint=signature(report.counts),moved=!!report.providerCalls||!!report.preparationAdvanced||fingerprint!==previousTodo;
   upgradeRequested ||= !!report.upgradeRequested;previousTodo=fingerprint;nextTodo=moved?0:now()+10*60000;return moved;
@@ -21,11 +24,14 @@ export async function runKidsService({deadline,intake,runFrozen,prepareTodo,disc
    const durable=await loadTodo(),due=(durable?.items||[]).filter(x=>!campaignClosed(x.state)&&!(x.nextAt>now()));
    if(due.length){
     emit({event:'KIDS_DURABLE_QUEUE_BEFORE_INTAKE',remaining:due.length,workers:8,fullClassScans:0});
-    await drainTodo();if(upgradeRequested)return {handover:true,upgradeRequested:true};continue;
+    const moved=await drainTodo();if(upgradeRequested)return {handover:true,upgradeRequested:true};
+    if(moved&&now()-lastIntakeAt<INTAKE_GUARANTEE_MS)continue;
+    emit({event:'KIDS_INTAKE_GUARANTEED',due:due.length,moved,providerCalls:0});
    }
    // Intake is independent of held/uncertain old jobs. It reads Form tails and
    // delegates every pupil/assignment/status decision to the native sweep.
    let incoming;
+   lastIntakeAt=now();
    try{incoming=await intake();}catch(e){incoming={due:false,handled:0,failed:true};emit({event:'KIDS_INTAKE_DEFERRED_EXISTING_QUEUE_CONTINUES',code:/^[A-Z0-9_]+$/.test(e.message||'')?e.message:'INTAKE_FAILED',providerCalls:0});}
    let progress=!!incoming.handled||!!incoming.more;
    // Reopened native submissions may have entered the durable queue in a

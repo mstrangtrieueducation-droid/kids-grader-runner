@@ -7,7 +7,7 @@ const fail=code=>{const e=Error('HTTP_'+code);e.httpCode=code;return e;};
 const body=JSON.stringify({contents:[{parts:[{text:'x'}]}]});
 
 // Flex is requested by default, with the long timeout and a server hint.
-{const j={},calls=[];sendTiered(j,body,(p,x)=>{calls.push({p:JSON.parse(p),x});return ok('');},{env:{}});
+{const j={},calls=[];sendTiered(j,body,(p,x)=>{calls.push({p:JSON.parse(p),x});return ok('');},{env:{},clock:()=>Date.UTC(2026,10,12,3,0)});
  assert.equal(calls.length,1);assert.equal(calls[0].p.service_tier,'flex');assert.equal(calls[0].x.timeoutMs,FLEX_CLIENT_TIMEOUT_MS);assert.ok(calls[0].x.headers['X-Server-Timeout']);assert.equal(j.servedServiceTier,'FLEX');}
 // The served-tier header wins.
 {const j={};sendTiered(j,body,()=>ok('standard'),{env:{}});assert.equal(j.servedServiceTier,'STANDARD');}
@@ -32,3 +32,17 @@ assert.equal(JSON.parse(withTier(body,'flex')).service_tier,'flex');
  assert.equal(parts.filter(p=>p.inlineData).length,3);assert.equal(job.screenGroundingFrames.length,2);
  assert.ok(parts.some(p=>p.text?.includes('chính là ảnh đã gửi ở trên')));}
 console.log('service-tier tests passed');
+
+// Owner12Nov guard: no installer may widen the generation reserve beyond half an item's budget.
+{const {ITEM_MS}=await import('./workload-lanes.mjs');const {installServiceTier,FLEX_SERVER_TIMEOUT_S}=await import('./service-tier.mjs');
+ const c={generationReserve_:()=>90000};installServiceTier(c,{});installServiceTier(c,{KIDS_SERVICE_TIER:'flex'});
+ if(!(c.generationReserve_()<=ITEM_MS/2))throw Error('GENERATION_RESERVE_EXCEEDS_ITEM_BUDGET');
+ if(!(FLEX_SERVER_TIMEOUT_S*1000<ITEM_MS/2))throw Error('FLEX_WAIT_EXCEEDS_ITEM_BUDGET');
+ console.log('PASS generation reserve and Flex wait stay inside the five-minute item budget');}
+
+{const {flexWaitSeconds,sendTiered}=await import('./service-tier.mjs');
+ const vn=(h,m)=>Date.UTC(2026,10,12,h-7,m);
+ if(flexWaitSeconds(vn(20,0))!==30||flexWaitSeconds(vn(18,29))!==100||flexWaitSeconds(vn(23,15))!==100||flexWaitSeconds(vn(10,0))!==100)throw Error('PEAK_WINDOW');
+ const seen=[];const job={};sendTiered(job,{a:1},(p,o)=>{seen.push(o);return {getAllHeaders:()=>({})};},{env:{},clock:()=>vn(21,0)});
+ if(seen[0].headers['X-Server-Timeout']!=='30'||seen[0].timeoutMs!==60000)throw Error('PEAK_TIMEOUT '+JSON.stringify(seen[0]));
+ console.log('PASS Flex waits at most 30 s in the evening rush and 100 s off-peak');}
