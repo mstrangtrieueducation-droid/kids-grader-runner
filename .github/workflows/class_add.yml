@@ -1,0 +1,38 @@
+name: Owner-requested new class in the grader (class-add)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'class-requests/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: kids-class-add
+  cancel-in-progress: false
+jobs:
+  add:
+    if: github.repository == 'mstrangtrieueducation-droid/kids-grader-runner' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+      - name: Validate the tool without secrets
+        run: node class-add-tests.mjs
+      - name: Inspect or add the class inside the trusted runner
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          PRIVATE_BUNDLE_KEY: ${{ secrets.PRIVATE_BUNDLE_KEY }}
+        run: node class-add.mjs
+      - name: Save the re-locked bundle
+        run: |
+          if git diff --quiet -- approved-policy.enc; then echo "bundle unchanged"; exit 0; fi
+          git config user.name "Grading Runner"
+          git config user.email "grading-runner@users.noreply.github.com"
+          git add approved-policy.enc
+          git commit -m "KIDS 40 added to the grader's class list, copied from KIDS 39 (owner 14/11)"
+          git pull --rebase origin main
+          git push origin HEAD:main
